@@ -1,3 +1,4 @@
+#include "portable_sdl.h"
 #define WIN32_LEAN_AND_MEAN
 #define CINTERFACE
 #define COBJMACROS
@@ -332,7 +333,7 @@ int game_network_transport_close(GameApplication *a){
     n->initialized=0;n->opened=0;n->local=n->host=0;n->failed=0;n->accepting=1;
     memset(n->peers,0,sizeof(n->peers));packets_clear(n);sessions_clear(n);return 1;
 }
-uint32_t game_network_milliseconds(GameApplication *a){(void)a;return (uint32_t)GetTickCount();}
+uint32_t game_network_milliseconds(GameApplication *a){(void)a;return (uint32_t)(uint32_t)SDL_GetTicks();}
 static uint32_t result_code(HRESULT hr){
     if(SUCCEEDED(hr))return DP_OK;
     if(hr==DPNERR_INVALIDPLAYER || hr==DPNERR_PLAYERLOST || hr==DPNERR_PLAYERNOTREACHABLE)return (uint32_t)DPERR_INVALIDPLAYER;

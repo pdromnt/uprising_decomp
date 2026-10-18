@@ -7,10 +7,10 @@ scripts live in `source/`; builds emit EXEs beside the assets.
 source/
   core/          Native algorithms, record owners and source-defined initial data
   game/          Application, menus, level simulation, weapons and presentation
-  platform/      Windows services, input, audio, OpenGL and networking
+  platform/      SDL window/events/OpenGL, remaining Windows services
   resources/     Application icon, version information and Windows resource script
-  third_party/   libsmacker and its license/provenance
-  cmake/         Explicit shipping source manifest
+  third_party/   libsmacker and third-party licenses
+  cmake/         Shipping source manifest and pinned SDL dependency
   scripts/       Incremental build and release packaging
   tests/         Asset-free native checks
 docs/            Build and manual-validation instructions
@@ -44,3 +44,9 @@ Glide SDK function table or fallback loader. `core/render_texture_cache.c` uses
 texture identities instead of simulated VRAM addresses and eviction spans.
 Texture owners release their device resources explicitly. Original pixel formats,
 depth arithmetic and bounded stream-cache records remain for visual parity.
+
+SDL3 owns the main window, event pump, OpenGL context, swap and shared monotonic
+clock. `platform/portable_sdl.h` is the window/event boundary. DirectDraw menu
+surfaces, GDI fonts, DirectInput, MCI/DirectSound, startup splash and DirectPlay
+still borrow Windows services; they are the next connected replacements. The
+native-message hook exists only for MCI notification and input reacquisition.

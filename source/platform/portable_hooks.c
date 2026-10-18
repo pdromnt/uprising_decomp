@@ -1,3 +1,4 @@
+#include "portable_sdl.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
@@ -25,7 +26,7 @@ LRESULT CALLBACK game_application_message_hook(int code,WPARAM word,LPARAM param
         break;
     case HCBT_CREATEWND:
         if(!get(m,0x597090u) && get(m,0x597088u)) {
-            uint32_t tick=timeGetTime();
+            uint32_t tick=(uint32_t)SDL_GetTicks();
             game_memory_write_u32(m,0x5970a0u,tick);
             game_memory_write_u32(m,0x597090u,(uint32_t)((int32_t)tick%300000));
         }

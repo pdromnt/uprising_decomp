@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include "portable_hooks.h"
 #include "portable_input_devices.h"
+#include "portable_sdl.h"
 #include <windows.h>
 #include "game_initial_data.h"
 #include "application_config.h"
@@ -262,8 +263,7 @@ int game_application_ui_begin(GameApplication *app) {
     return gl1_create(app,p);
 }
 
-/*439930: actual SDK context/fog/texture setup. Locals are native SDK values;
- * the legacy fog bytes are a bounded published table, not a CPU stack image. */
+/*439930: SDL-owned context and native fog/texture setup. */
 int game_application_level_graphics_begin(GameApplication *a) {
     PortablePlatform *p=a->platform;uint8_t fog[64];uint32_t palette[256];
     float density;uint32_t bits=0x37fba882;unsigned i;char diagnostic[160];
@@ -275,9 +275,8 @@ int game_application_level_graphics_begin(GameApplication *a) {
         snprintf(diagnostic,sizeof(diagnostic),"native graphics initialization rejected: initialized=%d opened=%d fault=%d",p?p->renderer_initialized:0,p?p->window_opened:0,a->memory.fault);
         game_application_log(a,"%s\n",diagnostic);return 0;
     }
-    /* A hidden window is never GetActiveWindow(). Give the SDK the actual
-     * native owner instead of relying on its foreground-window discovery. */
-    if(!gl1_open((HWND)game_menu_window_handle(a))){
+    /* Borrow the explicit SDL owner; foreground discovery is unnecessary. */
+    if(!gl1_open(game_menu_sdl_window(a))){
         snprintf(diagnostic,sizeof(diagnostic),"native OpenGL window open failed: owner=%p",game_menu_window_handle(a));game_application_log(a,"%s\n",diagnostic);return 0;
     }
     p->window_opened=1;p->capture_attempted=0;memcpy(&density,&bits,sizeof(density));
@@ -335,8 +334,8 @@ int game_application_frame_depth_state(GameApplication *a,int enabled){
     gl1_color_mode(RENDER_COLOR_CONSTANT);gl1_constant(0x83b9be);return 1;
 }
 extern int game_menu_level_surface_flip(GameApplication *);
-/* Opt-in evidence from the actual SDK front buffer. No new presentation owner
- * or CPU capture bridge; the LFB pointer is borrowed until its matching unlock. */
+/* Opt-in evidence from the actual front buffer. Pixel views are borrowed only
+ * until unmap; capture does not own another presentation surface. */
 static void capture_game_frame(GameApplication *a,unsigned buffer){
     PortablePlatform *p=a->platform;char directory[MAX_PATH],path[MAX_PATH+32];DWORD length;
     RenderPixelView info={0};BITMAPFILEHEADER header={0};BITMAPINFOHEADER bitmap={0};
@@ -1014,6 +1013,7 @@ int game_application_platform_stop(GameApplication *app) {
         free(platform->user_directory);
         free(platform);
     }
+    SDL_Quit();
     free(app->memory.data);
     memset(app, 0, sizeof(*app));
     return ok;
@@ -1076,7 +1076,7 @@ const char *game_application_command_line(GameApplication *app) {
     return ((PortablePlatform *)app->platform)->command;
 }
 void game_application_sleep(GameApplication *app, unsigned milliseconds) {
-    (void)app; Sleep(milliseconds);
+    (void)app; SDL_Delay(milliseconds);
 }
 int game_application_directory(GameApplication *app, const char *path) {
     DWORD attributes;

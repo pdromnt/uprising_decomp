@@ -1,3 +1,4 @@
+#include "portable_sdl.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
@@ -11,7 +12,7 @@ extern int game_application_audio_muted(GameApplication *);
  * retry timer IDs stay full width and never enter legacy record fields. */
 static struct {GameApplication *app;UINT_PTR retry;} music_retry;
 /* Original 0063c750 GetTickCount import, shared by UI/game timing callers. */
-uint32_t game_menu_milliseconds(GameApplication *a){(void)a;return (uint32_t)GetTickCount();}
+uint32_t game_menu_milliseconds(GameApplication *a){(void)a;return (uint32_t)(uint32_t)SDL_GetTicks();}
 uint32_t game_music_device_open(GameApplication *a,uint32_t *device,uint32_t *volume) {
     MCI_OPEN_PARMSA open;MCI_SET_PARMS set;MCI_GETDEVCAPS_PARMS caps;MCI_GENERIC_PARMS close;
     uint32_t code;memset(&open,0,sizeof(open));open.lpstrDeviceType="cdaudio";

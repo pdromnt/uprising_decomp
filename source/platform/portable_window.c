@@ -1,4 +1,7 @@
 #include "app_identity.h"
+#include "portable_sdl.h"
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_system.h>
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
 #include <windows.h>
@@ -23,6 +26,8 @@ typedef struct MenuTextSurface {
 typedef struct MenuWindow {
     GameAddress identity;
     HWND handle;
+    SDL_Window *window;
+    int sdl_initialized;
     HINSTANCE instance;
     HMODULE library;
     LPDIRECTDRAW draw;
@@ -31,11 +36,8 @@ typedef struct MenuWindow {
     PALETTEENTRY colors[256];
     unsigned width,height;
     int hidden,exclusive,windowed,native_draw;
-    int pointer_capture_requested,pointer_clipped;
-    RECT pointer_clip_bounds;
+    int pointer_capture_requested;
     int32_t isolated_pointer[2];
-    ATOM window_class;
-    char class_name[128];
     HFONT fonts[7];
     MenuTextSurface *text_surfaces;
     void *frame_pixels;
@@ -46,39 +48,28 @@ typedef struct MenuWindow {
 static int offscreen_window(const MenuWindow *w){return w->hidden || w->native_draw;}
 static int present_windowed_front(MenuWindow *);
 static int pointer_clip_release(MenuWindow *w){
-    if(w && w->pointer_clipped){
-        RECT current;
-        if(!GetClipCursor(&current))return 0;
-        if(EqualRect(&current,&w->pointer_clip_bounds) && !ClipCursor(NULL))return 0;
-        w->pointer_clipped=0;
-    }
-    return 1;
+    return !w || !w->window || SDL_SetWindowMouseGrab(w->window,false);
 }
-/*The HWND owner also owns confinement. Never acquire it for background or
- *automated play, and never release another application's confinement. */
+/* SDL owns confinement and releases it on focus loss. Physical capture is
+ * never requested by isolated automation, pause or option screens. */
 int game_menu_pointer_capture(GameApplication *a,int enabled){
-    MenuWindow *w=a->menu_window;RECT client;POINT first,last;
+    MenuWindow *w=a->menu_window;SDL_WindowFlags flags;
     if(!w)return !enabled;
     if(game_application_isolated_input(a))return 1;
     if(game_memory_read_u32(&a->memory,0x5acbe4) || game_memory_read_u32(&a->memory,0x5910a4))enabled=0;
     w->pointer_capture_requested=enabled!=0;
-    if(!enabled || w->hidden || GetForegroundWindow()!=w->handle || IsIconic(w->handle))
+    flags=SDL_GetWindowFlags(w->window);
+    if(!enabled || w->hidden || !(flags&SDL_WINDOW_INPUT_FOCUS) || (flags&SDL_WINDOW_MINIMIZED))
         return pointer_clip_release(w);
-    if(!GetClientRect(w->handle,&client))return 0;
-    if(client.right<=client.left || client.bottom<=client.top)return pointer_clip_release(w);
-    first.x=client.left;first.y=client.top;last.x=client.right;last.y=client.bottom;
-    if(!ClientToScreen(w->handle,&first) || !ClientToScreen(w->handle,&last))return 0;
-    client.left=first.x;client.top=first.y;client.right=last.x;client.bottom=last.y;
-    if(!ClipCursor(&client))return 0;
-    w->pointer_clip_bounds=client;w->pointer_clipped=1;return 1;
+    return SDL_SetWindowMouseGrab(w->window,true);
 }
 
-/*418f20: post the actual level-loop termination message once. */
+/*418f20: publish the loop's owned termination flag once. */
 int game_level_request_end(GameApplication *a){
     if(game_memory_read_u32(&a->memory,0x5ac970))return !a->memory.fault;
     if(!a->menu_window || !a->menu_window->handle)return 0;
     game_memory_write_u32(&a->memory,0x5ac970,1);
-    return !a->memory.fault && PostMessageA(a->menu_window->handle,WM_USER+7,0,0)!=0;
+    return !a->memory.fault;
 }
 
 /* Actual shared input/MCI/font services; they are still mandatory native links. */
@@ -86,6 +77,7 @@ int game_level_request_end(GameApplication *a){
 
 extern int game_menu_music_notify(GameApplication *,uint32_t,uintptr_t); /* 00542e60 */
 extern void game_application_splash_end(GameApplication *);
+extern int game_application_level_graphics_end(GameApplication *);
 static MenuTextSurface *text_surface_find(MenuWindow *,GameAddress);
 
 static int window_name(GameMemory *m,GameAddress at,char name[128]) {
@@ -140,91 +132,56 @@ static void acquire_input(GameApplication *a) {
     if(!game_menu_input_acquire(a,0) || !game_menu_input_acquire(a,1) ||
        (game_memory_read_u32(&a->memory,0x604768u) && !game_menu_input_acquire(a,2)))a->memory.fault=1;
 }
-/* 00505f00: native MSG payloads and window handles remain full-width. */
-static LRESULT CALLBACK window_procedure(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
-    GameApplication *a=(GameApplication *)GetWindowLongPtrA(hwnd,GWLP_USERDATA);
-    if(message==WM_NCCREATE) {
-        a=((CREATESTRUCTA *)lparam)->lpCreateParams;
-        SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)a);
+/* Only the not-yet-migrated MCI and input services consume native messages.
+ * SDL owns dispatch, focus, exposure, close and the lifetime of its HWND. */
+static bool SDLCALL window_message_hook(void *userdata,MSG *message){
+    GameApplication *a=userdata;
+    if(!a->menu_window || message->hwnd!=a->menu_window->handle)return true;
+    if(message->message==MM_MCINOTIFY && game_memory_read_u32(&a->memory,0x59d828u)){
+        if(!game_menu_music_notify(a,(uint32_t)message->wParam,(uintptr_t)message->lParam))a->memory.fault=1;
+    }else if(message->message==WM_USER+8){
+        if(!game_menu_input_acquire(a,(unsigned)message->wParam))a->memory.fault=1;
     }
-    if(a) {
-        GameMemory *m=&a->memory;
-        switch(message) {
-        case WM_SYSCOMMAND:
-            if(a->menu_window && a->menu_window->windowed &&
-               ((wparam&0xfff0u)==SC_SIZE || (wparam&0xfff0u)==SC_MAXIMIZE))return 0;
+    return true;
+}
+int game_menu_pump_events(GameApplication *a,int deliver_input){
+    SDL_Event event;MenuWindow *w=a->menu_window;unsigned drained=0;
+    if(!w || !w->window)return 0;
+    while(drained++<64 && SDL_PollEvent(&event)){
+        switch(event.type){
+        case SDL_EVENT_QUIT:case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+            if(!pointer_clip_release(w))return 0;
+            game_memory_write_u32(&a->memory,0x59d4c8,1);break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            game_memory_write_u32(&a->memory,0x6270f4,1);acquire_input(a);
+            if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
-        case WM_CLOSE:
-            /* Let the application unwind gameplay/SDK resources before the
-             * window owner destroys its HWND and DirectDraw surfaces. */
-            (void)pointer_clip_release(a->menu_window);
-            game_memory_write_u32(m,0x59d4c8,1);PostQuitMessage(0);return 0;
-        case WM_DESTROY:(void)pointer_clip_release(a->menu_window);game_memory_write_u32(m,0x59d4c8,1);PostQuitMessage(0);break;
-        case WM_USER+7:game_memory_write_u32(m,0x5ac970,1);return 0;
-        case WM_SETFOCUS:
-            acquire_input(a);
-            if(a->menu_window && !game_menu_pointer_capture(a,a->menu_window->pointer_capture_requested))m->fault=1;
-            break;
-        case WM_KILLFOCUS:
-            if(!pointer_clip_release(a->menu_window))m->fault=1;
-            break;
-        case WM_MOVE:case WM_SIZE:
-            if(a->menu_window && a->menu_window->pointer_capture_requested &&
-               !game_menu_pointer_capture(a,1))m->fault=1;
-            break;
-        case WM_ERASEBKGND:return 1;
-        case WM_PAINT:
-            /*The native GDI destination is disposable; expose/resize must
-             *repaint from the existing owned front surface even when no menu
-             *widget is dirty. Accelerated gameplay keeps its own presenter. */
-            if(a->menu_window && a->menu_window->native_draw && a->menu_window->front &&
-               !game_memory_read_u32(m,0x5840f0)){
-                PAINTSTRUCT paint;
-                BeginPaint(hwnd,&paint);EndPaint(hwnd,&paint);
-                if(!present_windowed_front(a->menu_window))m->fault=1;
-                return 0;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:case SDL_EVENT_WINDOW_MINIMIZED:
+            if(!pointer_clip_release(w) || !game_menu_input_unacquire(a))return 0;
+            game_memory_write_u32(&a->memory,0x6270f4,
+                w->hidden || game_application_isolated_input(a)?1:0);break;
+        case SDL_EVENT_WINDOW_RESTORED:
+            if(SDL_GetWindowFlags(w->window)&SDL_WINDOW_INPUT_FOCUS){
+                game_memory_write_u32(&a->memory,0x6270f4,1);acquire_input(a);
             }
+            if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
-        case WM_ACTIVATEAPP: {
-            uint32_t active=game_memory_read_u32(m,0x6270f4u);
-            /* Automated input owns its simulation activation as well as its
-             * cursor. Working in another app must not pause the test or require
-             * stealing desktop focus. Interactive play retains focus behavior. */
-            if(a->menu_window && (a->menu_window->hidden || game_application_isolated_input(a))){
-                game_memory_write_u32(m,0x6270f4u,1);break;
-            }
-            if(!active && wparam)acquire_input(a);
-            else if(active && !wparam && !game_menu_input_unacquire(a))m->fault=1;
-            game_memory_write_u32(m,0x6270f4u,wparam!=0);
-            if(a->menu_window && !game_menu_pointer_capture(a,a->menu_window->pointer_capture_requested))m->fault=1;
-            if(!wparam && (!a->menu_window || !a->menu_window->windowed)) {
-                uint32_t state=game_memory_read_u32(m,0x624f8cu);
-                if(state==8u || state==10u){CloseWindow(hwnd);ShowWindow(hwnd,SW_MINIMIZE);}
-            }
+        case SDL_EVENT_WINDOW_MOVED:
+            {RECT bounds;
+             if(!GetWindowRect(w->handle,&bounds))return 0;
+             game_memory_write_u32(&a->memory,w->identity+0x58,(uint32_t)bounds.left);
+             game_memory_write_u32(&a->memory,w->identity+0x5c,(uint32_t)bounds.top);}
+            if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
-        }
-        case WM_SETCURSOR:
-            if(game_application_isolated_input(a))break;
-            SetCursor(game_memory_read_u32(m,0x597f8cu)?LoadCursorA(NULL,IDC_ARROW):NULL);return 1;
-        case WM_DISPLAYCHANGE:
-            if((!a->menu_window || !a->menu_window->windowed) && game_memory_read_u32(m,0x6270f4u) && !IsIconic(hwnd)) {
-                RECT bounds={0,0,GetSystemMetrics(SM_CXSCREEN),GetSystemMetrics(SM_CYSCREEN)};
-                AdjustWindowRectEx(&bounds,WS_POPUP,0,0);
-                SetWindowPos(hwnd,NULL,bounds.left,bounds.top,bounds.right-bounds.left,
-                    bounds.bottom-bounds.top,SWP_NOZORDER|SWP_NOACTIVATE);
-            }
-            break;
-        case MM_MCINOTIFY:
-            if(game_memory_read_u32(m,0x59d828u) &&
-                !game_menu_music_notify(a,(uint32_t)wparam,(uintptr_t)lparam))m->fault=1;
-            break;
-        case WM_USER+8:
-            if(!game_menu_input_acquire(a,(unsigned)wparam))m->fault=1;
+        case SDL_EVENT_WINDOW_EXPOSED:
+            if(w->front && !game_memory_read_u32(&a->memory,0x5840f0) && !present_windowed_front(w))return 0;
             break;
         default:break;
         }
+        if(deliver_input && game_memory_read_u32(&a->memory,0x6270f4) &&
+           !game_menu_event_forward(a,&event))return 0;
     }
-    return DefWindowProcA(hwnd,message,wparam,lparam);
+    return !a->memory.fault;
 }
 static int create_surfaces(MenuWindow *w) {
     DDSURFACEDESC desc;DDSCAPS caps;HRESULT result;
@@ -256,6 +213,7 @@ static void window_surfaces_release(MenuWindow *w) {
     if(w->front){IDirectDrawSurface_Release(w->front);w->front=NULL;}
 }
 void *game_menu_window_handle(GameApplication *a) {return a->menu_window?a->menu_window->handle:NULL;}
+SDL_Window *game_menu_sdl_window(GameApplication *a){return a->menu_window?a->menu_window->window:NULL;}
 static void display_unfinished(GameApplication *a,const char *kind,uint32_t identity) {
     char message[112];snprintf(message,sizeof(message),"%s requires native reconstruction: %08x",kind,(unsigned)identity);
     game_application_log(a,"%s\n",message);
@@ -357,6 +315,13 @@ static int pointer_scale(MenuWindow *w,POINT *point,int to_client){
     if(x<INT32_MIN || x>INT32_MAX || y<INT32_MIN || y>INT32_MAX)return 0;
     point->x=(LONG)x;point->y=(LONG)y;return 1;
 }
+int game_menu_pointer_from_client(GameApplication *a,int32_t coordinates[2]){
+    MenuWindow *w=a->menu_window;POINT point;
+    if(!w || !coordinates)return 0;
+    point.x=coordinates[0];point.y=coordinates[1];
+    if(!pointer_scale(w,&point,0))return 0;
+    coordinates[0]=point.x;coordinates[1]=point.y;return 1;
+}
 int game_menu_pointer_from_screen(GameApplication *a,int32_t coordinates[2]){
     MenuWindow *w=a->menu_window;POINT point;
     if(!coordinates)return 0;
@@ -423,7 +388,7 @@ int game_menu_window_mode_restore(GameApplication *a) {
     game_memory_write_u32(m,0x626e78,w->identity+0x128);
     game_memory_write_u32(m,0x62707c,w->identity+0x12c);
     if(!game_application_isolated_input(a)){
-        SetCursor(LoadCursorA(NULL,IDC_ARROW));
+        if(!SDL_ShowCursor())return 0;
     }
     return !m->fault;
 }
@@ -431,6 +396,9 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity) {
     MenuWindow *w=a->menu_window;
     if(!w || identity!=w->identity)return;
     (void)pointer_clip_release(w);
+    /* Also covers a failed level transition: the GL context borrows this
+     * SDL window and must be retired before SDL releases the window/DC. */
+    (void)game_application_level_graphics_end(a);
     /*Cooperative input and force-feedback services borrow this HWND. Retire
      *their owners while it is still valid; platform-stop repeats are harmless. */
     game_application_force_feedback_close(a,1);
@@ -442,8 +410,9 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity) {
         IDirectDraw_Release(w->draw);
     }
     game_menu_window_resources_end(a);
-    if(w->handle)DestroyWindow(w->handle);
-    if(w->window_class)UnregisterClassA(w->class_name,w->instance);
+    SDL_SetWindowsMessageHook(NULL,NULL);
+    if(w->window)SDL_DestroyWindow(w->window);
+    if(w->sdl_initialized)SDL_QuitSubSystem(SDL_INIT_VIDEO);
     if(w->library)FreeLibrary(w->library);
     game_memory_write_u32(&a->memory,0x627068u,0);
     game_memory_write_u32(&a->memory,0x626e78u,0);
@@ -451,11 +420,11 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity) {
     game_memory_write_u32(&a->memory,0x627904u,0);
     scene_projection_storage_free(w->identity);free(w);a->menu_window=NULL;
 }
-/* 004aa780/004ab2f0/004aac70/004ab800: real Win32 and DirectDraw objects.
+/* 004aa780/004ab2f0/004aac70/004ab800: SDL window with borrowed Windows services.
  * Hidden execution uses actual indexed offscreen surfaces and the same C draw
  * consumers; it neither changes the desktop mode nor creates a visible window. */
 GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigned width,unsigned height) {
-    MenuWindow *w;WNDCLASSA cls;char title[128];NativeDrawCreate create;RECT bounds;
+    MenuWindow *w;NativeDrawCreate create;RECT bounds;
     GameMemory *m=&a->memory;GameAddress p;
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
@@ -464,22 +433,28 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
     w->identity=p;w->instance=instance;w->width=width;w->height=height;a->menu_window=w;
     w->isolated_pointer[0]=(int32_t)(width/2);w->isolated_pointer[1]=(int32_t)(height/2);
     w->hidden=GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)!=0;
-    w->windowed=GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0)!=0;
-    w->native_draw=w->windowed && GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW",NULL,0)!=0;
-    if(w->native_draw)game_application_log(a,"native windowed DirectDraw: %s\n","system offscreen surfaces");
-    if(!window_name(m,0x58fd18u,w->class_name))goto fail;
-    strcpy(title,UPRISING_WINDOW_TITLE);
-    memset(&cls,0,sizeof(cls));cls.lpfnWndProc=window_procedure;cls.hInstance=instance;
-    cls.hIcon=LoadIconA(instance,MAKEINTRESOURCEA(UPRISING_ICON_ID));cls.hbrBackground=GetStockObject(BLACK_BRUSH);
-    cls.lpszClassName=w->class_name;
-    w->window_class=RegisterClassA(&cls);if(!w->window_class)goto fail;
-    {DWORD style=w->windowed?(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX):WS_POPUP|WS_SYSMENU;
-     RECT client={0,0,(LONG)width,(LONG)height};
-     if(w->windowed && !AdjustWindowRectEx(&client,style,FALSE,0))goto fail;
-     w->handle=CreateWindowExA(w->hidden || w->windowed?0:WS_EX_TOPMOST,w->class_name,title,style,
-        0,0,client.right-client.left,client.bottom-client.top,NULL,NULL,instance,a);}
+    w->windowed=1;w->native_draw=1;
+    SDL_SetMainReady();
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
+    SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE,"0");
+    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
+    if(!SDL_InitSubSystem(SDL_INIT_VIDEO))goto fail;
+    w->sdl_initialized=1;
+    if(!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
+       !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24) || !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8) ||
+       !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1))goto fail;
+    w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+    if(!w->window)goto fail;
+    {int top,left;
+     /* Preserve the previous outer-window origin, including for matched
+      * performance runs: desktop occlusion can affect presentation cost. */
+     if(!SDL_GetWindowBordersSize(w->window,&top,&left,NULL,NULL) ||
+        !SDL_SetWindowPosition(w->window,left,top))goto fail;}
+    w->handle=SDL_GetPointerProperty(SDL_GetWindowProperties(w->window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,NULL);
     if(!w->handle || !game_menu_window_resources_begin(a))goto fail;
-    SendMessageA(w->handle,WM_SETICON,ICON_BIG,(LPARAM)cls.hIcon);
+    SDL_SetWindowsMessageHook(window_message_hook,a);
+    if(!SDL_StartTextInput(w->window))goto fail;
+    SendMessageA(w->handle,WM_SETICON,ICON_BIG,(LPARAM)LoadIconA(instance,MAKEINTRESOURCEA(UPRISING_ICON_ID)));
     SendMessageA(w->handle,WM_SETICON,ICON_SMALL,(LPARAM)LoadImageA(instance,
         MAKEINTRESOURCEA(UPRISING_ICON_ID),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_SHARED));
     w->library=game_application_backend_library(a,"ddraw.dll");if(!w->library)goto fail;
@@ -516,9 +491,10 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
     if(width==640u)game_memory_write_u32(m,0x597f80u,1);
     if(m->fault)goto fail;
     if(w->hidden || game_application_isolated_input(a))game_memory_write_u32(m,0x6270f4u,1);
-    if(!w->hidden){ShowWindow(w->handle,w->windowed?SW_SHOWNOACTIVATE:SW_SHOWMAXIMIZED);UpdateWindow(w->handle);}
+    if(!w->hidden && !SDL_ShowWindow(w->window))goto fail;
+    game_application_log(a,"SDL window ready: %s\n",SDL_GetCurrentVideoDriver());
     return p;
-fail:game_menu_window_destroy(a,p);return 0;
+fail:game_application_log(a,"SDL window initialization failed: %s\n",SDL_GetError());game_menu_window_destroy(a,p);return 0;
 }
 int game_menu_surface_prepare(GameApplication *a,int *restored) {
     MenuWindow *w=a->menu_window;HRESULT result;
@@ -568,7 +544,7 @@ int game_menu_present_frame(GameApplication *a,uint32_t interval) {
     if(game_memory_read_u32(&a->memory,0x5840f0))return game_level_screen_present(a,interval);
     if(!w || !game_menu_surface_prepare(a,&restored))return 0;
     full.left=full.top=0;full.right=(int32_t)w->width;full.bottom=(int32_t)w->height;
-    if(interval)Sleep(interval);
+    if(interval)SDL_Delay(interval);
     return game_menu_surface_present_rectangle(a,&full);
 }
 int game_menu_level_surface_flip(GameApplication *a){

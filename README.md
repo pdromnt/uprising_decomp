@@ -48,10 +48,10 @@ the asset-free checks. See [docs/BUILDING.md](docs/BUILDING.md).
 ## Status and contributing
 
 Windows x86 gameplay has received iterative manual testing and original-code
-comparisons. Windows x64 has build/core-check coverage; complete x64 gameplay,
+comparisons. Windows x64 has targeted gameplay/build/core-check coverage; full x64 gameplay,
 natural campaign/tutorial progression and broader multiplayer acceptance remain
-manual validation. Other platforms and SDL3 are deferred. A successful link or
-smoke test does not establish whole-game parity.
+manual validation. SDL3 platform migration is underway; other platforms remain
+deferred. A successful link or smoke test does not establish whole-game parity.
 
 See [CODEBASE.md](CODEBASE.md), [BACKLOG.md](BACKLOG.md), and
 [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md). Report the mission, exact action,

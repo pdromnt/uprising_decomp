@@ -53,7 +53,7 @@ static void gl1_sky_select(const char *name){
     snprintf(base,sizeof(base),"%s",name);extension=strrchr(base,'.');if(extension)*extension=0;
     snprintf(path,sizeof(path),"GRIDS/skies/%s2.bmp",base);(void)gl1_sky_load(1,path);
     snprintf(path,sizeof(path),"GRIDS/skies/%st.bmp",base);(void)gl1_sky_load(2,path);
-    g->sky_tick=GetTickCount();g->fog_pending=g->sky_loaded;
+    g->sky_tick=(uint32_t)SDL_GetTicks();g->fog_pending=g->sky_loaded;
     snprintf(message,sizeof(message),"native OpenGL1 sky %s: base=%d detail=%d horizon=%d\n",name,g->sky_loaded,g->sky_layers[1]!=0,g->sky_layers[2]!=0);
     game_application_log(g->application,"%s",message);
 }
@@ -84,7 +84,7 @@ static int gl1_sky_begin(const GameSkyFrame *frame){
     fov=2*atanf(frame->center[0]/g->projection_scale);if(!(fov>0.01f))fov=6.28318530718f*0.22f;
     g->sky_yaw_scale=(g->width/256.0f)*6.28318530718f/fov;
     g->sky_offset=isfinite(frame->speed) && fabsf(frame->speed)<=1000?
-        (float)(DWORD)(GetTickCount()-g->sky_tick)*frame->speed/100000:0;
+        (float)(DWORD)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000:0;
     glPushAttrib(GL_CURRENT_BIT|GL_ENABLE_BIT|GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_TEXTURE_BIT|GL_SCISSOR_BIT);
     glDepthMask(GL_FALSE);glEnable(GL_DEPTH_TEST);glDisable(GL_CULL_FACE);glDisable(GL_ALPHA_TEST);glDisable(GL_FOG);
     glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
@@ -212,7 +212,7 @@ static int gl1_remote_sky(const GameRemoteSkyFrame *frame){
     scale=isfinite(frame->scale) && frame->scale>1 && frame->scale<=100000?frame->scale:width*0.596f;
     fov=2*atanf(width*0.5f/scale);if(!(fov>0.01f))fov=6.28318530718f*0.22f;
     u0=-frame->yaw*(width/256)*6.28318530718f/fov;u1=u0+width/256;
-    if(isfinite(frame->speed) && fabsf(frame->speed)<=1000)offset=(float)(DWORD)(GetTickCount()-g->sky_tick)*frame->speed/100000;
+    if(isfinite(frame->speed) && fabsf(frame->speed)<=1000)offset=(float)(DWORD)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000;
     g->projection_center=(bounds[0]+bounds[2])*0.5f;g->projection_scale=scale;
     glEnable(GL_SCISSOR_TEST);glScissor(bounds[0],g->height-bounds[3],(int)width,(int)height);
     glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_CULL_FACE);glDisable(GL_FOG);glDisable(GL_BLEND);

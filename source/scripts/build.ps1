@@ -25,6 +25,8 @@ if(!$Compiler){throw 'MinGW-w64 GCC is required; pass -Compiler or add gcc.exe t
 $Compiler=(Resolve-Path -LiteralPath $Compiler).Path
 $tools=Split-Path -Parent $Compiler
 $prefix=[IO.Path]::GetFileNameWithoutExtension($Compiler) -replace 'gcc$',''
+$cxx=Join-Path $tools ($prefix+'g++.exe')
+if(!(Test-Path -LiteralPath $cxx)){throw 'The matching MinGW-w64 g++ is required for SDL Windows platform glue.'}
 $windres=Join-Path $tools 'windres.exe'
 if(!(Test-Path -LiteralPath $windres)){$windres=Join-Path $tools ($prefix+'windres.exe')}
 $nm=Join-Path $tools 'nm.exe'
@@ -44,8 +46,8 @@ if(Test-Path -LiteralPath $output){
 }
 $build=Join-Path $project ('build/windows-'+$Bits)
 $testOption=if($Tests){'ON'}else{'OFF'}
-$arguments=@('-S',$project,'-B',$build,'-G','Ninja',"-DCMAKE_MAKE_PROGRAM=$($ninja.Replace('\','/'))","-DCMAKE_C_COMPILER=$($Compiler.Replace('\','/'))",
-    "-DCMAKE_RC_COMPILER=$($windres.Replace('\','/'))","-DCMAKE_C_FLAGS=-m$Bits","-DCMAKE_BUILD_TYPE=$Configuration",
+$arguments=@('-S',$project,'-B',$build,'-G','Ninja',"-DCMAKE_MAKE_PROGRAM=$($ninja.Replace('\','/'))","-DCMAKE_C_COMPILER=$($Compiler.Replace('\','/'))","-DCMAKE_CXX_COMPILER=$($cxx.Replace('\','/'))",
+    "-DCMAKE_RC_COMPILER=$($windres.Replace('\','/'))","-DCMAKE_C_FLAGS=-m$Bits","-DCMAKE_CXX_FLAGS=-m$Bits","-DCMAKE_BUILD_TYPE=$Configuration",
     "-DUPRISING_ASSET_DIRECTORY=$($OutputDirectory.Replace('\','/'))","-DUPRISING_EXECUTABLE_NAME=$([IO.Path]::GetFileNameWithoutExtension($ExecutableName))","-DBUILD_TESTING=$testOption")
 & $cmake @arguments
 if($LASTEXITCODE){throw 'Configuration failed'}

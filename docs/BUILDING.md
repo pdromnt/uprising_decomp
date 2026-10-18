@@ -1,6 +1,6 @@
 # Building
 
-Use Windows, MinGW-w64 GCC (with the desired multilib target), windres, CMake
+Use Windows, MinGW-w64 GCC/G++ (with the desired multilib target), windres, CMake
 3.24+ and Ninja. `source/scripts/build.ps1` finds tools on PATH, or GCC at the existing
 local TDM installation and CMake/Ninja from Visual Studio. Set `-Compiler` to
 override GCC. MSVC and non-Windows backends are not currently supported.
@@ -8,6 +8,12 @@ override GCC. MSVC and non-Windows backends are not currently supported.
 The batch shortcut is `source\scripts\build.bat`; it forwards the same arguments
 to `build.ps1`, preferring PowerShell 7 when installed. Pass `-?` to view help.
 CI calls the PowerShell script directly.
+
+The first configure downloads the checksum-pinned SDL 3.4.16 source release;
+subsequent builds reuse it. SDL is linked statically, so no SDL DLL installation
+or launch flags are required. Window/events/timing and OpenGL contexts use SDL;
+menu surfaces, physical input, audio and networking still have Windows services
+until their respective migration stages.
 
 ```powershell
 ./source/scripts/build.ps1 -Bits 32 -Tests

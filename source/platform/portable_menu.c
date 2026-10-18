@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "application_entry.h"
 #include "portable_input_devices.h"
+#include "portable_sdl.h"
 
 /*5617a0: C-locale uppercase is byte arithmetic; a non-default locale uses
  * native Win32 mapping on full-width buffers. The original retains input on
@@ -65,71 +66,76 @@ extern void game_menu_window_destroy(GameApplication *, GameAddress);
 
 /* 00515820: real cursor service, with the original published state. */
 int game_menu_cursor_mode(GameApplication *app,int visible) {
-    HCURSOR cursor=NULL;
     if(game_application_isolated_input(app)){
         game_memory_write_u32(&app->memory,0x597f8cu,visible!=0);return !app->memory.fault;
     }
-    if(visible) {
-        cursor=LoadCursorA(NULL,IDC_ARROW);
-        if(!cursor)return 0;
-    }
     game_memory_write_u32(&app->memory,0x597f8cu,visible!=0);
-    SetCursor(cursor);
-    /*515850 clears the cursor without decrementing ShowCursor's counter. */
-    if(visible)ShowCursor(TRUE);
-    return !app->memory.fault;
+    return (visible?SDL_ShowCursor():SDL_HideCursor()) && !app->memory.fault;
 }
 int game_menu_command_start(GameApplication *app) {
     return game_menu_cursor_mode(app,1);
 }
 
-/* 00538e80 takes host MSG values. Only known scalar message payloads are
- * decoded; pointer-bearing LPARAM values never become 32-bit record pointers. */
-extern int game_menu_pointer_from_screen(GameApplication *,int32_t[2]);
-int game_menu_event_forward(GameApplication *app,const MSG *message) {
+/* Menu controllers keep their original scalar key/message IDs. The event
+ * source and positions are SDL values; no MSG, LPARAM or host pointer crosses
+ * into a game record. Text input and navigation are delivered separately. */
+int game_menu_event_forward(GameApplication *app,const SDL_Event *event){
     GameMemory *m=&app->memory;
-    GameAddress controller=game_memory_read_u32(m,0x59d4c0u),window;
-    uint32_t code=message->message;
-    if(game_application_isolated_input(app) &&
-       ((code>=WM_KEYFIRST && code<=WM_KEYLAST) || (code>=WM_MOUSEFIRST && code<=WM_MOUSELAST)))return !m->fault;
-    switch(code) {
-    case WM_MOVE:case WM_SIZE:case WM_DISPLAYCHANGE:
-        window=game_memory_read_u32(m,0x59d4bcu);
-        if(!window)return 0;
-        game_memory_write_u32(m,window+0x58u,(uint32_t)(int32_t)(int16_t)LOWORD(message->lParam));
-        game_memory_write_u32(m,window+0x5cu,(uint32_t)(int32_t)(int16_t)HIWORD(message->lParam));
+    GameAddress controller=game_memory_read_u32(m,0x59d4c0u);
+    uint32_t code=0,buttons=0;int32_t point[2];
+    if(game_application_isolated_input(app))return !m->fault;
+    switch(event->type){
+    case SDL_EVENT_KEY_DOWN:{
+        uint32_t key=0,flags=0x1000000u;
+        switch(event->key.scancode){
+        case SDL_SCANCODE_LEFT:key=0x25;break;case SDL_SCANCODE_UP:key=0x26;break;
+        case SDL_SCANCODE_RIGHT:key=0x27;break;case SDL_SCANCODE_DOWN:key=0x28;break;
+        case SDL_SCANCODE_HOME:key=0x24;break;case SDL_SCANCODE_END:key=0x23;break;
+        case SDL_SCANCODE_PAGEUP:key=0x21;break;case SDL_SCANCODE_PAGEDOWN:key=0x22;break;
+        case SDL_SCANCODE_INSERT:key=0x2d;break;case SDL_SCANCODE_DELETE:key=0x2e;break;
+        case SDL_SCANCODE_BACKSPACE:key=8;flags=0;break;
+        case SDL_SCANCODE_TAB:key=9;flags=0;break;
+        case SDL_SCANCODE_RETURN:case SDL_SCANCODE_KP_ENTER:key=13;flags=0;break;
+        case SDL_SCANCODE_ESCAPE:key=27;flags=0;break;
+        default:return !m->fault;
+        }
+        return game_menu_controller_key(app,controller,key,flags);
+    }
+    case SDL_EVENT_TEXT_INPUT:{
+        const unsigned char *text=(const unsigned char *)event->text.text;
+        /* The game's font/edit records use bytes, not UTF-8. Reject unsupported
+         * characters instead of inserting individual UTF-8 continuation bytes. */
+        for(;*text;++text)if(*text<128 && !game_menu_controller_key(app,controller,*text,0))return 0;
         return !m->fault;
-    case WM_KEYDOWN:
-        if(!(message->lParam&0x1000000))return !m->fault;
-        /* The retail extended-key bit selects keydown delivery. */
-        return game_menu_controller_key(app,controller,(uint32_t)message->wParam,(uint32_t)message->lParam);
-    case WM_CHAR:
-        return game_menu_controller_key(app,controller,(uint32_t)message->wParam,(uint32_t)message->lParam);
-    case WM_LBUTTONDOWN:
-        game_memory_write_u32(m,0x59d4ccu,1);break;
-    case WM_LBUTTONUP:
-        game_memory_write_u32(m,0x59d4ccu,0);game_memory_write_u32(m,0x627ab8u,0);break;
-    case WM_MOUSEMOVE:case WM_LBUTTONDBLCLK:case WM_RBUTTONDOWN:case WM_RBUTTONUP:break;
+    }
+    case SDL_EVENT_MOUSE_MOTION:
+        code=0x200;point[0]=(int32_t)event->motion.x;point[1]=(int32_t)event->motion.y;
+        buttons=event->motion.state;break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:case SDL_EVENT_MOUSE_BUTTON_UP:{
+        int down=event->type==SDL_EVENT_MOUSE_BUTTON_DOWN;
+        if(event->button.button==SDL_BUTTON_LEFT){
+            /* Menus register down/up regions. Gameplay owns its separate
+             * buffered double-click handling (including citadel selection). */
+            code=down?0x201:0x202;
+            game_memory_write_u32(m,0x59d4ccu,down);
+            if(!down)game_memory_write_u32(m,0x627ab8u,0);
+        }else if(event->button.button==SDL_BUTTON_RIGHT)code=down?0x204:0x205;
+        else return !m->fault;
+        point[0]=(int32_t)event->button.x;point[1]=(int32_t)event->button.y;
+        buttons=SDL_GetMouseState(NULL,NULL);break;
+    }
     default:return !m->fault;
     }
-    {int32_t point[2]={(int32_t)message->pt.x,(int32_t)message->pt.y};
-     return game_menu_pointer_from_screen(app,point) &&
-        game_menu_controller_pointer(app,controller,code,point[0],point[1],(uint32_t)message->wParam);}
+    /* Internal flags retain left=1/right=2/middle=16 rather than SDL's order. */
+    buttons=((buttons&SDL_BUTTON_LMASK)?1u:0u)|((buttons&SDL_BUTTON_RMASK)?2u:0u)|
+        ((buttons&SDL_BUTTON_MMASK)?16u:0u)|((SDL_GetModState()&SDL_KMOD_SHIFT)?4u:0u)|
+        ((SDL_GetModState()&SDL_KMOD_CTRL)?8u:0u);
+    return game_menu_pointer_from_client(app,point) &&
+        game_menu_controller_pointer(app,controller,code,point[0],point[1],buttons);
 }
-/* 00539010: drain queued messages after a state transition. */
-int game_menu_transition_notify(GameApplication *app) {
-    MSG message;
-    while(PeekMessageA(&message,NULL,0,0,PM_NOREMOVE)) {
-        int result=GetMessageA(&message,NULL,0,0);
-        if(result<0)return 0;
-        if(!result)game_memory_write_u32(&app->memory,0x59d4c8u,1);
-        else {TranslateMessage(&message);DispatchMessageA(&message);}
-    }
-    return !app->memory.fault;
-}
-
-/* 00538b40: pump real host messages, drive menu/game consumers and retire
- * the same published objects. No register state, synthetic messages or CPU ABI. */
+/* State changes discard pending physical input, while servicing close/focus. */
+int game_menu_transition_notify(GameApplication *app){return game_menu_pump_events(app,0);}
+/* 00538b40: pump SDL events and drive the existing menu/game owners. */
 int game_application_menu_loop(GameApplication *app, void *instance, const char *level) {
     GameMemory *m = &app->memory;
     GameAddress window = 0, controller = 0, event = 0;
@@ -141,7 +147,7 @@ int game_application_menu_loop(GameApplication *app, void *instance, const char 
     const char *windowed_setting=getenv("UPRISING_RECOMP_WINDOWED");
     int background_windowed=windowed_setting && !strcmp(windowed_setting,"1");
     const char *stage = "window construction";
-    MSG message;
+
     window = game_menu_window_construct(app, instance, 640u, 480u);
     if (!window) goto done;
     game_memory_write_u32(m, 0x59d4bcu, window);
@@ -166,7 +172,7 @@ int game_application_menu_loop(GameApplication *app, void *instance, const char 
         if (strstr(level, "gotocampaign")) {
             if (!game_menu_request(app, controller, 0x45u, 1000u, 18u) ||
                 !game_menu_command_start(app)) goto done;
-            ShowCursor(TRUE);
+            SDL_ShowCursor();
             goto pump;
         }
         request = 17u;
@@ -175,22 +181,10 @@ int game_application_menu_loop(GameApplication *app, void *instance, const char 
 pump:
     stage = "message/frame pump";
     while (!m->fault && !game_memory_read_u32(m, 0x59d4c8u)) {
-        DWORD frame_started=GetTickCount();
-        unsigned messages=0;
+        DWORD frame_started=(uint32_t)SDL_GetTicks();
+
         GdiFlush();
-        /* Bound the pump so a busy host queue cannot starve controllers or
-         * presentation. Remove atomically: never block in GetMessage after
-         * peeking a message that a host callback may have consumed. */
-        while (messages++<64 && PeekMessageA(&message, NULL, 0, 0, PM_REMOVE)) {
-            if (message.message==WM_QUIT) {
-                game_memory_write_u32(m, 0x59d4c8u, 1u);
-                break;
-            }
-            if (game_memory_read_u32(m, 0x6270f4u) &&
-                !game_menu_event_forward(app, &message)) {stage="event delivery";goto done;}
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
-        }
+        if(!game_menu_pump_events(app,1)){stage="event delivery";goto done;}
         /* Network handshakes and the guarded windowed profile keep their menu
          * owners running without stealing desktop focus. Physical events and
          * device polling remain focus-gated; activation still releases devices.
@@ -214,18 +208,18 @@ pump:
                 uint32_t frame=animation?game_memory_read_u32(m,animation+0x300u):0;
                 if(background_windowed && animation && game_memory_read_u32(m,animation+0x308u) &&
                    (animation!=paced_drawer || frame!=drawer_frame)) {
-                    uint32_t now=GetTickCount();
+                    uint32_t now=(uint32_t)SDL_GetTicks();
                     int32_t wait;
                     if(animation!=paced_drawer)drawer_deadline=now+17u;
                     wait=(int32_t)(drawer_deadline-now);
-                    if(wait>0)Sleep((DWORD)wait);
-                    now=GetTickCount();
+                    if(wait>0)SDL_Delay((DWORD)wait);
+                    now=(uint32_t)SDL_GetTicks();
                     if((int32_t)(now-drawer_deadline)>17)drawer_deadline=now;
                     drawer_deadline+=17u;
                     paced_drawer=animation;drawer_frame=frame;
                 }else {
                     paced_drawer=animation;drawer_frame=frame;
-                    drawer_deadline=GetTickCount()+17u;
+                    drawer_deadline=(uint32_t)SDL_GetTicks()+17u;
                 }
             }
             if (!game_menu_window_present(app, window)) {stage="window presentation";goto done;}
@@ -242,11 +236,11 @@ pump:
              * Include controller/presentation time, including nested gameplay,
              * and never accumulate missed frames after a slow operation. */
             if(background_windowed && !m->fault && !game_memory_read_u32(m,0x59d4c8u)) {
-                DWORD elapsed=GetTickCount()-frame_started;
-                if(elapsed<17u)Sleep(17u-elapsed);
+                DWORD elapsed=(uint32_t)SDL_GetTicks()-frame_started;
+                if(elapsed<17u)SDL_Delay(17u-elapsed);
             }
         }else if(!m->fault && !game_memory_read_u32(m,0x59d4c8u))
-            MsgWaitForMultipleObjectsEx(0,NULL,INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+            SDL_Delay(10);
     }
     ok = !m->fault;
 done:

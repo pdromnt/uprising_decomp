@@ -19,7 +19,7 @@ typedef struct Gl1Texture {
 } Gl1Texture;
 typedef struct Gl1Device {
     GameApplication *application;
-    HWND window;HDC dc;HGLRC context;DWORD thread;
+    SDL_Window *window;SDL_GLContext context;SDL_ThreadID thread;
     PFNGLGENFRAMEBUFFERSPROC gen_framebuffers;
     PFNGLBINDFRAMEBUFFERPROC bind_framebuffer;
     PFNGLFRAMEBUFFERTEXTURE2DPROC framebuffer_texture;
@@ -67,16 +67,15 @@ static void gl1_fail(const char *reason){
 static int gl1_ready(void){
     Gl1Device *g=gl1_current;
     if(!g || !g->context || g->failed)return 0;
-    if(g->thread!=GetCurrentThreadId()){gl1_fail("wrong context thread");return 0;}
-    if(wglGetCurrentContext()!=g->context && !wglMakeCurrent(g->dc,g->context)){
-        gl1_fail("make current");return 0;
-    }
+    if(g->thread!=SDL_GetCurrentThreadID()){gl1_fail("wrong context thread");return 0;}
+    /* This owner is the only context user on the window thread. Context
+     * creation binds it; teardown unbinds it. Avoid SDL TLS lookups for every
+     * primitive/state command, and verify ownership at the frame boundary. */
     return 1;
 }
-static PROC gl1_extension(const char *core,const char *extension){
-    PROC p=wglGetProcAddress(core);
-    if(!p || p==(PROC)(uintptr_t)1 || p==(PROC)(uintptr_t)2 ||
-       p==(PROC)(uintptr_t)3 || p==(PROC)(intptr_t)-1)p=wglGetProcAddress(extension);
+static SDL_FunctionPointer gl1_extension(const char *core,const char *extension){
+    SDL_FunctionPointer p=SDL_GL_GetProcAddress(core);
+    if(!p)p=SDL_GL_GetProcAddress(extension);
     return p;
 }
 static void gl1_dimensions(int lod,int aspect,unsigned *width,unsigned *height){
@@ -384,14 +383,15 @@ static void gl1_quad(GLuint texture){
     gl1_screen_rect(0,0,gl1_current->width,gl1_current->height);
 }
 static void gl1_swap(int32_t interval){
-    Gl1Device *g=gl1_current;RECT client;unsigned old;(void)interval;
+    Gl1Device *g=gl1_current;int width,height;unsigned old;(void)interval;
     if(!gl1_ready())return;
+    if(SDL_GL_GetCurrentContext()!=g->context){gl1_fail("lost current context");return;}
     if(glGetError()!=GL_NO_ERROR){gl1_fail("OpenGL draw/state error");return;}
     old=g->front;g->front=g->back;g->back=old;
     glPushAttrib(GL_ALL_ATTRIB_BITS);g->bind_framebuffer(GL_FRAMEBUFFER,0);
-    if(!GetClientRect(g->window,&client)){gl1_fail("present client extent");glPopAttrib();return;}
-    glViewport(0,0,client.right-client.left,client.bottom-client.top);gl1_quad(g->colors[g->front]);
-    if(!SwapBuffers(g->dc))gl1_fail("swap buffers");
+    if(!SDL_GetWindowSizeInPixels(g->window,&width,&height)){gl1_fail("present client extent");glPopAttrib();return;}
+    glViewport(0,0,width,height);gl1_quad(g->colors[g->front]);
+    if(!SDL_GL_SwapWindow(g->window))gl1_fail("swap buffers");
     g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);glPopAttrib();glViewport(0,0,g->width,g->height);
 }
 static int32_t gl1_map_pixels(int write,unsigned buffer,RenderPixelView *info){
@@ -442,18 +442,17 @@ static int gl1_unmap_pixels(void){
 static void gl1_close(void){
     Gl1Device *g=gl1_current;unsigned i;if(!g)return;
     if(g->context){
-        if(wglGetCurrentContext()==g->context || wglMakeCurrent(g->dc,g->context)){
+        if(SDL_GL_GetCurrentContext()==g->context || SDL_GL_MakeCurrent(g->window,g->context)){
             for(i=0;i<4096;i++)if(g->textures[i].name)glDeleteTextures(1,&g->textures[i].name);
             if(g->delete_framebuffers)g->delete_framebuffers(2,g->framebuffers);
             if(g->delete_renderbuffers && g->depth)g->delete_renderbuffers(1,&g->depth);
             glDeleteTextures(2,g->colors);glDeleteTextures(3,g->sky_layers);
             if(g->lfb_texture)glDeleteTextures(1,&g->lfb_texture);
             if(g->remote_mask)glDeleteTextures(1,&g->remote_mask);
-            wglMakeCurrent(NULL,NULL);
+            SDL_GL_MakeCurrent(g->window,NULL);
         }
-        wglDeleteContext(g->context);g->context=NULL;
+        SDL_GL_DestroyContext(g->context);g->context=NULL;
     }
-    if(g->dc){ReleaseDC(g->window,g->dc);g->dc=NULL;}
     for(i=0;i<4096;i++){free(g->textures[i].pixels);memset(g->textures+i,0,sizeof(g->textures[i]));}
     memset(g->texture_index,0,sizeof(g->texture_index));
     free(g->lfb);free(g->rgba);g->lfb=NULL;g->rgba=NULL;g->bound=NULL;g->locked=0;
@@ -464,20 +463,16 @@ static void gl1_close(void){
     g->remote_mask=g->lfb_texture=0;
 }
 static void gl1_shutdown(void){gl1_close();free(gl1_current);gl1_current=NULL;}
-static int32_t gl1_open(HWND handle){
-    Gl1Device *g=gl1_current;PIXELFORMATDESCRIPTOR descriptor={0};int format;unsigned i;
+static int32_t gl1_open(SDL_Window *window){
+    Gl1Device *g=gl1_current;unsigned i;
 
-    if(!g || g->context || !IsWindow((HWND)handle))return 0;
-    g->failed=0;g->window=(HWND)handle;g->width=640;g->height=480;g->front=0;g->back=1;
-    descriptor.nSize=sizeof(descriptor);descriptor.nVersion=1;
-    descriptor.dwFlags=PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER;
-    descriptor.iPixelType=PFD_TYPE_RGBA;descriptor.cColorBits=32;descriptor.cDepthBits=24;descriptor.cStencilBits=8;
-    g->dc=GetDC(g->window);if(!g->dc)goto failed;
-    format=GetPixelFormat(g->dc);
-    if(!format){format=ChoosePixelFormat(g->dc,&descriptor);if(!format || !SetPixelFormat(g->dc,format,&descriptor))goto failed;}
-    g->context=wglCreateContext(g->dc);if(!g->context || !wglMakeCurrent(g->dc,g->context))goto failed;
-    g->thread=GetCurrentThreadId();
-#define GL1_EXTENSION(field,core,ext) do{PROC entry=gl1_extension(core,ext);if(!entry)goto failed;memcpy(&g->field,&entry,sizeof(entry));}while(0)
+    if(!g || g->context || !window)return 0;
+    g->failed=0;g->window=window;g->width=640;g->height=480;g->front=0;g->back=1;
+    g->context=SDL_GL_CreateContext(window);if(!g->context)goto failed;
+    g->thread=SDL_GetCurrentThreadID();
+    /* The established renderer is paced by its game clock, not vsync. */
+    SDL_GL_SetSwapInterval(0);
+#define GL1_EXTENSION(field,core,ext) do{SDL_FunctionPointer entry=gl1_extension(core,ext);if(!entry)goto failed;memcpy(&g->field,&entry,sizeof(entry));}while(0)
     GL1_EXTENSION(gen_framebuffers,"glGenFramebuffers","glGenFramebuffersEXT");
     GL1_EXTENSION(bind_framebuffer,"glBindFramebuffer","glBindFramebufferEXT");
     GL1_EXTENSION(framebuffer_texture,"glFramebufferTexture2D","glFramebufferTexture2DEXT");

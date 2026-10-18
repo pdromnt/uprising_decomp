@@ -1,3 +1,4 @@
+[CmdletBinding()]
 param(
     [ValidateSet(32,64)][int]$Bits=32,
     [string]$Compiler,

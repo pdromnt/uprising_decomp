@@ -5,6 +5,10 @@ Use Windows, MinGW-w64 GCC (with the desired multilib target), windres, CMake
 local TDM installation and CMake/Ninja from Visual Studio. Set `-Compiler` to
 override GCC. MSVC and non-Windows backends are not currently supported.
 
+The batch shortcut is `source\scripts\build.bat`; it forwards the same arguments
+to `build.ps1`, preferring PowerShell 7 when installed. Pass `-?` to view help.
+CI calls the PowerShell script directly.
+
 ```powershell
 ./source/scripts/build.ps1 -Bits 32 -Tests
 ./source/scripts/build.ps1 -Bits 64 -OutputDirectory ./source/build/stage64 -Tests

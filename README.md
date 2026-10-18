@@ -30,7 +30,7 @@ is future work.
 
 ## Building
 
-From the repository root, run `build.bat` or:
+From the repository root, run `source\scripts\build.bat` or:
 
 ```powershell
 ./source/scripts/build.ps1 -Bits 32

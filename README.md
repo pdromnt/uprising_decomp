@@ -9,6 +9,9 @@ execute generated x86 instructions, use a CPU/x87 interpreter, load Glide, or re
 the original executable. Recovered addresses and bounded legacy records remain
 where they preserve behavior; this is still a decompilation, not a new engine.
 
+Most of the game runs fine, but it is still under heavy testing and may have
+crashes that have not yet been found.
+
 ## Running
 
 Place the reconstructed `uprising.exe` (x86) or `uprising64.exe` (x64) beside `uprising.cln`, `FONTS/`, `GRIDS/`,

@@ -1,0 +1,16 @@
+CAMPAIGN_RANKING
+4
+
+
+OBJECTIVE_BEGIN
+Local rebels have secretly revealed the location of an unoccupied command bunker in the hotzone’s southwest. Upon fortifying that position, you should have a stronghold from which to assault the rest of the hotzone. As with other worlds, control of the hotzone is key to removing the Imperium. Once all citadels are secured, we will bring Sahara under our protection.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Reports confirm information provided by local rebel groups. Most Imperial activity is located in the northern and western sections of the hotzone, with less activity found in the southern and eastern sections. Expanding east and swiftly adding the southeastern territory to your stronghold looks to be your most successful strategy.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Just outside the Imperial Core, the desert planet of Sahara is used for ammunition production and exportation. Tired of a central role in the Imperium’s ability to expand and conquer, rebel leaders on Sahara have indicated a desire to break from Imperial control. Providing the main ammunition supply for their fleets, Sahara’s capture will wound the Imperium’s lasting power in this war.
+DESCRIPTION_END

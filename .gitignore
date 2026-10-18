@@ -1,0 +1,46 @@
+# Private history, reverse engineering, original support archive and oracles
+/recomp-project/
+# Generated user data and diagnostics
+/CONFIG/
+/saves/
+/scrshts/
+/runtime-logs/
+/headless-captures/
+/FONTS/settings.cfg
+/FONTS/keymap.cfg
+/uprising-recomp-settings.ini
+*.log
+*.dmp
+*.tmp
+*.bak
+# Reproducible build output: binaries are supplied by CI
+/source/build/
+/source/dist/
+/build/
+/dist/
+*.exe
+*.dll
+*.DLL
+*.vxd
+*.VXD
+*.o
+*.obj
+*.res
+*.a
+*.lib
+*.pdb
+# Existing x86 OGG music adapter (still required until the SDL audio migration)
+!/WINMM.dll
+!/libogg-0.dll
+!/libvorbis-0.dll
+!/libvorbisfile-3.dll
+# Editor / OS output
+.vs/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

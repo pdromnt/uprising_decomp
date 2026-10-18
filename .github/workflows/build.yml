@@ -1,0 +1,37 @@
+name: Windows builds
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bits: 32
+            platform: x86
+          - bits: 64
+            platform: x64
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up MinGW
+        id: mingw
+        uses: egor-tensin/setup-mingw@v3
+        with:
+          platform: ${{ matrix.platform }}
+      - name: Build and run asset-free checks
+        shell: pwsh
+        run: |
+          $compiler=(Get-Command '${{ steps.mingw.outputs.gcc }}').Source
+          ./source/scripts/build.ps1 -Bits ${{ matrix.bits }} -Compiler $compiler -OutputDirectory ./source/build/package -ExecutableName uprising.exe -Configuration Release -Tests
+      - uses: actions/upload-artifact@v7
+        with:
+          name: uprising-windows-${{ matrix.platform }}
+          path: source/build/package/uprising.exe
+          if-no-files-found: error
+          retention-days: 7

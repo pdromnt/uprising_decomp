@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+Local allies have given us the location of an unoccupied citadel in the southern snow passages of Rhemorrah.  As the only defense for the nearby technology center, the Imperium citadels on Rhemorrah must be seized and fortified to ensure the safe transportation of our research teams.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Spy reports indicate that the Imperium has not expanded to the twin command bunkers east of your drop zone.  To increase the odds of a successful campaign on Rhemorrah, capture the citadels before the Imperium organizes a counterattack.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Rich in naturally occurring cold fusion energy, Rhemorrah became an interest to the Imperium when their scientists found evidence that focusing the planet’s energy fields could potentially gate fleets between sectors. While experiments have not yet succeeded, reports indicate that they are progressing rapidly. Capturing Rhemorrah will cease the development of this important technology, and control of the planet’s energy resources will benefit research into new weapon technologies.
+DESCRIPTION_END

@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+Having recently established a small outpost on the planet Ghorvati, our troops are in close proximity to Ghorvati’s hotzone. Gaining control of Ghorvati’s starport will force the Imperium to relinquish control over the sector, thus losing the means of reinforcing nearby defensive fronts. 
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Spy reports indicate that the starport’s peripheral defenses possess advanced warning systems. Expect quick countermeasures upon taking your first citadel. 
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Residing on the pastoral planet of Ghorvati lies a major Imperial starport. Having become an important asset in recent years, the starport functions as a way station for Imperial fleets en route to reinforce defensive fronts. Having been unable to quell the recent revolt on Ghorvati, the Imperium has heavily fortified the starport in an effort to keep it operational.
+DESCRIPTION_END

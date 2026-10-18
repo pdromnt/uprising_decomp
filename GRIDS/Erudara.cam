@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+1
+
+OBJECTIVE_BEGIN
+Due to the Imperium expansion group transporting only a minimal supply count, most of the hotzone remains unoccupied. Thus, there will be plenty of time to construct a citadel before being detected. The Imperium holds Erudara from a well-defended citadel in the hotzone's northeast. To make Erudara a stronghold in this sector, we must seize that citadel from Imperial control.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Reports show a weakness in the Imperium's defensive strategy.  Their citadel at the hotzone's center will function to resupply defensive units during an attack upon the main Imperium citadel. Destroying the center citadel will benefit our attempts at quickly seizing Erudara.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Reports show that an Imperial expansion group has settled on the snow planet Erudara. Due to our advancements on other strategic fronts, it is doubtful that the Imperium will allocate resources from their home worlds to strengthen defenses here. Capturing Erudara will aid our efforts towards creating a stronghold in this sector for launching future attacks.
+DESCRIPTION_END

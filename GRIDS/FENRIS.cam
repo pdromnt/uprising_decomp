@@ -1,0 +1,17 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+As the capture of Fenris will aid us in multiple ways, we are prepared to supply additional forces at your will. By positioning your Wraith in the Claim Square of citadels under your control, that will signal us to gate in a squad of troops. Use your forces in conjunction with those that we can provide to secure all citadels in the hotzone.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+The transit network of Fenris is vast, so look for teleports to quickly move around the hotzone.  Main teleport sites are located near the city processing and storage facilities.  In addition the city has many supply depots that regularly receive shipments of weapons and supplies, find them and exploit them for your efforts.   
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+The capitol of Fenris was constructed to be the Imperium's major communications relay. Due to its design, the structure is capable of focusing the hotzone's energy to instantly transmit and receiving thousands of Imperial communications. Taking Fenris would not only allow us to put its awesome communications capabilities to our use, but it should allow us to intercept Imperial transmissions at will.
+DESCRIPTION_END
+
+

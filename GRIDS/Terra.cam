@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+4
+
+OBJECTIVE_BEGIN
+Removing the Imperium from Terra will force them to rely on reserve power, weakening their ability to launch further attacks. Gaining the ability to tap Terra's power supply will shift the momentum of this war, allowing us to fund large assaults upon the remaining Imperium home worlds. We need to secure all of Terra's citadels to guarantee control of this hotzone.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Adamant about holding Terra's power supply, the Imperium has littered the hotzone with aggressive native forces. Unlike some past campaigns, focusing on defense will be a must for winning Terra. Take caution and secure areas before moving on. However, do not be lazy with expanding, there is no doubt the Imperium will quickly take measures to deny attempts at removing them from Terra.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+With a unique ability to regenerate power, Terra has been enslaved since the beginning of Imperium rule. Seizing this world will not only put its power to our use, but it will weaken the Imperium's ability to both fund future attacks and to replenish units on their defensive fronts. Control of Terra may become a key element during the final battles of this war.
+DESCRIPTION_END

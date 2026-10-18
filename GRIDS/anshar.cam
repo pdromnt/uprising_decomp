@@ -1,0 +1,16 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+We believe the Imperium has no intentions of settling on Anshar. While they are planning to counter the Uprising, it is unlikely that they are prepared to defend against a surprise attack. There should be unoccupied command bunkers upon your arrival. Lay siege to their fortifications and capture all citadels to eradicate the Imperium from Anshar.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Reports indicate that a valuable unowned citadel lies at the center of the hotzone. Move quickly to avoid Imperial detection. 
+SPYINFO_END
+
+
+DESCRIPTION_BEGIN
+A sudden increase in Imperium activity on the lava planet Anshar leads us to believe they are organizing a large counter attack. Anshar’s proximity to several of our important bases makes an Imperial counter attack a legitimate threat to the Uprising. Capturing Anshar and deflecting the chance of a successful counter attack is extremely important in continuing our war effort. 
+DESCRIPTION_END

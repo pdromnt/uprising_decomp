@@ -1,0 +1,17 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+Imperium Tactical Training Facility \n This Imperial maze is used to test new recruits' strategical and tactical decisions.  As in the past, either the last Wraith Commander standing or the one able to control all citadels is promoted to a battlefield commander.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+PI4 This is some Formatted Information that might be gotten from a spy on maze.lfl.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Good luck!
+DESCRIPTION_END
+
+

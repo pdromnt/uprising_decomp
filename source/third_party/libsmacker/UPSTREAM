@@ -1,0 +1,9 @@
+libsmacker 1.2.0 by Greg Kennedy, LGPL-2.1-or-later (see COPYING).
+Source: https://github.com/greg-kennedy/libsmacker
+Revision: 76094fb9c8e98bd5fac982c504e8d9aeff3ece01
+Local changes: allocation failure unwinds instead of terminating the process;
+null-safe partial cleanup; PCM words use explicit little-endian byte access;
+bounded palette/audio chunks with decode-error propagation; palette scratch
+is local to each decode rather than shared static storage. Status/read/bit
+results use int so failures stay negative with unsigned plain char targets.
+The preserved Smacker32/oracle builds are not changed.

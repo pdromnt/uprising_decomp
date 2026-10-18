@@ -1,0 +1,18 @@
+CAMPAIGN_RANKING
+4
+
+OBJECTIVE_BEGIN
+Dakka’s power transfer facility is located at the bottom of an dormant volcano at center of the hotzone. Once you have reached the dropzone, you must discover a way to lower the central volcano’s gate defenses, and disable the power transfer station. 
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Reports indicate that the Imperium has recently withdrawn forces from the citadel to the west of the drop zone. Proceed quickly before an alerted Imperium defensive force reacquires the area.
+SPYINFO_END
+
+
+DESCRIPTION_BEGIN
+The volcanic planet Dakka is one of the Imperium’s most fortified strongholds.  At the center of the Imperium base lies a power transfer facility that single-handedly powers the infrastructures of several Imperium weapons factories. Gaining control of the power transfer station would deal a decisive blow to the Imperium’s war efforts on several fronts. 
+DESCRIPTION_END
+
+

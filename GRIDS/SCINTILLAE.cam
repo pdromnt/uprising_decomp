@@ -1,0 +1,17 @@
+CAMPAIGN_RANKING
+2
+
+OBJECTIVE_BEGIN
+Secure the Imperiums top-secret weapons research facility.  If you can destroy one of the tech centers maintaining the magnetic shield surrounding the planet we should be able to establish a teleporter lock to send you some reinforcements before the other tech centers can compensate for the distortion in the magnetic shield.  Good luck commander.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+2
+There are gates that will hinder your assault on the weapons research facility.  Destroying the rabble buildings that guard these areas will drop these gates.
+There are teleporters near the start position that become activated automatically for one day when the gates drop, this should sufficient time to complete your mission.  One special note sir, you should purchase a tech level of a weapon that can destroy buildings.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Scintillae is a dry arid planet inhospitable to most life having lost all of it's water long ago.  All liquid that remains on the planet now is an extremely high molarity sulfuric acid that has slowly precipitated from the atmosphere.  The Imperium has chosen this planet for this very reason in hopes that no one will wander into this area of space seeking an oasis on their long journey coreward. Here they are conducting top-secret weapons research on a fortified base located somewhere on the planet's surface.  To conceal their efforts the Imperium has constructed a magnetic shield that blocks all attempts to scan the surface and inhibits teleportation to the ground. Our engineers have rigged your Wraith with high gain FTL booster so that we can get you upon the surface for a seek and destroy mission.
+DESCRIPTION_END
+

@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+6
+
+OBJECTIVE_BEGIN
+As its legend commands, the appearance of Nataselah signals the birth of what the Uprising has fought to achieve. It is time for a new order to emerge and for an old empire to fall. It is time to put an end to the Imperium. For us to put an end to Imperial rule, you must conquer the fortress and enter the Nucleus.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+We have been unsuccessful retrieving information on the fortress. All but one mission has vanished into silence. Brought from unrepeatable circumstances, we located a vacant area in front of the fortress. Before you initiate your attack, we will send a squad to establish two citadels at the mouth of the fortress. Hopefully, they will provide enough cover to start your final mission. Good luck…
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Previously considered no more than legend, the mythical planet Nataselah recently surfaced at the epicenter of Imperial space. Lore encompassing the planet speaks of its resurrection accompanying the births of new empires and the deaths of old. Looming above its surface lies a seemingly impenetrable fortress. Shielded at the heart of this fortress rests the Imperial Core.
+DESCRIPTION_END

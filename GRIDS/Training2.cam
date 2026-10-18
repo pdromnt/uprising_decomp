@@ -1,0 +1,19 @@
+CAMPAIGN_RANKING
+0
+
+PROBEINFO_BEGIN
+1
+PI1 This is some Formatted Information that might be gotten from a probe of train.lfl.
+PROBEINFO_END
+
+SPYINFO_BEGIN
+1
+PI4 This is some Formatted Information that might be gotten from a spy on train.lfl.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Training Mission
+DESCRIPTION_END
+
+
+

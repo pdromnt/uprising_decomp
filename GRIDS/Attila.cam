@@ -1,0 +1,16 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+While we have been aware of the Imperium's of  Attila for organizing attacks, its terrain has been advantageous for Imperium defense, causing attempts at seizing Attila to fail. For Attila to become a tactical waypoint for continued advancement deeper into Imperium space, we need to knock out each Imperium citadel and gain control of the remainder of the hotzone.
+OBJECTIVE_END
+
+
+SPYINFO_BEGIN
+1
+Information retrieved from fallen enemy units shows that the Imperium is centered in the hotzone's southeast, so the remaining terrain will not be as much a threat. The southeast citadel is used for regrouping units. To stand guard, it is constructed as units arrive, but disassemble as they leave. If timed correctly, it will unoccupied upon your arrival.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Historically, the water world of Attila has lent itself to very few successful assaults. Due to its easily defendable terrain, Imperium forces use Attila as a place to group for organized attacks. Putting Attila's guard in our hands would provide an ideal environment to stockpile our goods and would allow us to launch large attacks from a base closer to the Imperium home worlds.
+DESCRIPTION_END

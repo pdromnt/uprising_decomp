@@ -1,0 +1,17 @@
+* text=auto
+*.c text eol=lf
+*.h text eol=lf
+*.inc text eol=lf
+*.ps1 text eol=lf
+*.bat text eol=crlf
+*.ico binary
+*.dll binary
+*.ogg binary
+*.smk binary
+*.cln binary
+FONTS/** binary
+GRIDS/** binary
+Music/** binary
+VIDEO/** binary
+README.TXT -text
+hints.txt -text

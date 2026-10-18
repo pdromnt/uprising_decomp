@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+4
+
+OBJECTIVE_BEGIN
+In attempts to take their planet back from Imperial rule, militia forces have renewed the fight to free Nan. As their support in the Uprising is valuable, we need you to help remove Nan from Imperial control. Use the citadel captured by Nan's militia to initiate your attack. Once you secure the hotzone and its citadels, we will move in and destroy all remaining Imperium influence.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+To defend citadels from Nan's militias, native forces that supported Imperial rule were aided by the Imperium in establishing and fortifying defensive compounds.  The structure and placement of the compounds are designed to both defend Imperium citadels and help attack citadels that fall into enemy control. If we hope to free Nan, intelligence recommends equal attention paid to these compounds as to the Imperium.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+A supporting planet until a short time ago, Nan's resistance was overwhelmed by an Imperium invasion. Nan's people surrendered out of reverence towards their planet being ravished by war. Soon thereafter, surprising the Imperium, local militia seized and fortified a citadel. Eager to rejoin the Uprising and eradicate the Imperium, militia forces on Nan await our help to free their planet.
+DESCRIPTION_END

@@ -1,0 +1,28 @@
+#include <windows.h>
+#include "version.h"
+101 ICON "uprising.ico"
+1 VERSIONINFO
+FILEVERSION UPRISING_VERSION
+PRODUCTVERSION UPRISING_VERSION
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Uprising: Join or Die - RE/Decompiled\0"
+            VALUE "FileVersion", UPRISING_VERSION_STRING
+            VALUE "InternalName", "uprising\0"
+            VALUE "OriginalFilename", UPRISING_ORIGINAL_FILENAME
+            VALUE "ProductName", "Uprising: Join or Die - RE/Decompiled\0"
+            VALUE "ProductVersion", UPRISING_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

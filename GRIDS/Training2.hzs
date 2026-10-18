@@ -1,0 +1,1205 @@
+START_SCRIPT_FILE
+
+
+
+#Begin integer variables
+
+#Sectional On/Off switches
+VDECL VINT SETUP        0
+VDECL VINT FIRST_MOVE   0
+VDECL VINT CLAIM        0
+VDECL VINT MAP          0
+VDECL VINT DONE_MAP     0
+VDECL VINT CITADEL      0
+VDECL VINT SECOND_MOVE  0
+VDECL VINT TARGETING    0
+VDECL VINT BATTLE       0
+
+
+#Time delays for actions
+VDECL VINT ACTION_TIME       0
+VDECL VINT ACTION_TIME2      0
+VDECL VINT ACTION_TIME3      0
+VDECL VINT BILLBOARD_TIME    0
+VDECL VINT BILLBOARD_TIME2   0
+VDECL VINT CITADEL_TIME      0
+VDECL VINT SET_ACTION_TIME2  0
+VDECL VINT END_GAME_TIME     0
+VDECL VINT CHECK_TIME        0
+
+
+#On/Off switches for voices
+VDECL VINT VOICE1   0
+VDECL VINT VOICE2   0
+VDECL VINT VOICE3   0
+VDECL VINT VOICE4   0
+VDECL VINT VOICE5   0
+VDECL VINT VOICE6   0
+VDECL VINT VOICE7   0
+VDECL VINT VOICE8   0
+VDECL VINT VOICE9   0
+VDECL VINT VOICE10  0
+VDECL VINT VOICE11  0
+VDECL VINT VOICE12  0
+VDECL VINT VOICE13  0
+VDECL VINT VOICE14  0
+VDECL VINT VOICE15  0
+
+
+#On/Off switches for billboards
+VDECL VINT BILLBOARD1  0
+VDECL VINT BILLBOARD2  0
+VDECL VINT BILLBOARD3  0
+VDECL VINT BILLBOARD4  0
+
+
+#Checks for actions within sections
+VDECL VINT CHECK_MAP        0
+VDECL VINT CHECK_BUILINGS   1
+VDECL VINT CHECK_CITADEL    0
+VDECL VINT DID_CITADEL      0
+VDECL VINT CHECK_TARGETING  0
+VDECL VINT DID_TARGETING    0
+VDECL VINT CHECK_BATTLE     0
+VDECL VINT DID_BATTLE       0
+
+
+#Msc variables
+VDECL VINT BLDG_COUNT             0
+VDECL VINT BOMBER_UPGRADE_COUNT   0
+VDECL VINT TANK_UPGRADE_COUNT     0
+VDECL VINT AAV_UPGRADE_COUNT      0
+VDECL VINT SLDR_UPGRADE_COUNT     0
+VDECL VINT POWER_UPGRADE_COUNT    0
+VDECL VINT PLAYER_SOLDIER_COUNT   0
+VDECL VINT SLDR_COUNT             0
+VDECL VINT SLDR_GNRTR_BLDG_COUNT  0
+VDECL VINT REMOVED_INFANTRY       0
+VDECL VINT KILLED_INFANTRY        0
+VDECL VINT KILL_INF1              0
+VDECL VINT KILL_INF2              0
+VDECL VINT KILL_INF3              0
+VDECL VINT KILL_INF4              0
+VDECL VINT CREATE_TURRETS         0
+VDECL VINT TURRET_COUNT           0
+
+#End integer variables
+
+
+
+#Begin location variables
+VDECL VLOC COMMAND_BUNKER LOC ( 108, 128, 4600 )
+VDECL VLOC BATTLE_LOC     LOC ( 130, 194, 0 )
+VDECL VLOC GATE           LOC ( 133, 165, 0 )
+VDECL VLOC TANK1_LOC      LOC ( 118, 128, 4600 )
+VDECL VLOC AAV1_LOC       LOC ( 118, 128, 4600 )
+VDECL VLOC TANK3_LOC      LOC ( 161, 194, 0 )
+VDECL VLOC TANK4_LOC      LOC ( 112, 212, 0 )
+VDECL VLOC TURRET1_LOC    LOC ( 132, 184, 0 )
+VDECL VLOC TURRET2_LOC    LOC ( 144, 200, 0 )
+VDECL VLOC TURRET3_LOC    LOC ( 116, 200, 0 )
+
+#DM I added this for the unit tporting and recycling
+#VDECL VLOC STAGING_LOC    LOC (  90, 144, 0 )
+
+
+
+#End location variables
+
+
+
+	IF ( VBL_TEST SETUP EQUAL 0 ) THEN
+	(
+		SET_USE_DEFAULT_VICTORY 0
+		SET_GATE GATE1 1
+		SET_GATE GATE2 1
+		SET_GATE GATE3 1
+		CHANGE_VBL ACTION_TIME SET GAME_TIME
+		CHANGE_VBL ACTION_TIME SET 3
+		CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+		CHANGE_VBL BILLBOARD_TIME ADD 1
+		CHANGE_VBL SETUP SET 1
+	)
+
+
+IF (VBL_TEST PLAYER_TANK_HEALTH 0 GREATER_THAN 0) THEN
+(
+
+	IF ( AND (( VBL_TEST SETUP EQUAL 1 ) ( VBL_TEST FIRST_MOVE EQUAL 0 )) ) THEN
+	(
+
+		IF ( NOT ( CLOSE_PT HTANK 0 COMMAND_BUNKER 15 ) ) THEN
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+			(
+
+				IF ( VBL_TEST VOICE1 EQUAL 0 ) THEN
+				(
+					# "Alright, sir, pilot your Wraith to the nearby command bunker."
+					PLAY_SOUND TMT01
+					CHANGE_VBL VOICE1 SET 1
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT01
+					CHANGE_VBL ACTION_TIME ADD 10
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT01
+					CHANGE_VBL ACTION_TIME ADD 2
+					CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 3
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST VOICE1 EQUAL 1 ) THEN
+					(
+						# "Move towrads the flashing navigation point on your radar, Commander."
+						PLAY_SOUND TMT02
+						CHANGE_VBL VOICE1 SET 2
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+	          				CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT02
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT02
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 3
+					)
+					ELSE
+					(
+						# "Pilot your Wraith to the nearby command bunker, sir."
+						PLAY_SOUND TMT03
+						CHANGE_VBL VOICE1 SET 0
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+						CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT03
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT03
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 3
+					)
+				)
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+			(
+
+				IF ( VBL_TEST BILLBOARD1 EQUAL 0 ) THEN
+				(
+					SET_NAV_POINT COMMAND_BUNKER ON
+					SHOW_BILLBOARD {MOUSE CONTROLS YOUR VIEW \nUP AND DOWN ARROWS MOVE FORWARD AND BACK} 7
+					CHANGE_VBL BILLBOARD1 SET 1
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST BILLBOARD1 EQUAL 1 ) THEN
+					(
+						SHOW_BILLBOARD {MOUSE CONTROLS YOUR VIEW \nUP AND DOWN ARROWS MOVE FORWARD AND BACK} 7
+						CHANGE_VBL BILLBOARD1 SET 2
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+					)
+					ELSE
+					(
+						SHOW_BILLBOARD {FOLLOW THE FLASHING NAV POINT ON RADAR} 5
+						CHANGE_VBL BILLBOARD1 SET 0
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+					)
+				)
+			)
+		)
+		ELSE
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+				# "Good."
+				PLAY_SOUND TMT04
+		        	SET_NAV_POINT COMMAND_BUNKER OFF
+				SHOW_BILLBOARD {DESTINATION REACHED}
+				CHANGE_VBL FIRST_MOVE SET 1
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT04
+                                CHANGE_VBL ACTION_TIME ADD 1
+				CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT04
+                                CHANGE_VBL ACTION_TIME2 ADD 4
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+      			)
+		)
+	)
+
+
+
+	IF ( AND (( VBL_TEST FIRST_MOVE EQUAL 1 ) ( VBL_TEST CLAIM EQUAL 0 )) ) THEN
+	(
+
+		IF ( CLOSE_PT HTANK 0 COMMAND_BUNKER 20 ) THEN
+		(
+
+			IF ( AND (( VBL_TEST BILLBOARD2 EQUAL 0 ) ( CLOSE_PT HTANK 0 COMMAND_BUNKER 5 )) ) THEN
+			(
+				SHOW_BILLBOARD {YOU ARE IN THE CLAIM SQUARE} 5
+				CHANGE_VBL BILLBOARD2 SET 1
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+			(
+
+				IF ( VBL_TEST VOICE2 EQUAL 0 ) THEN
+				(
+					# "Now drive into the Claim Sqaure and call in your first Citadel."
+					PLAY_SOUND TMT05
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT05
+					CHANGE_VBL ACTION_TIME ADD 5
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT05
+					CHANGE_VBL ACTION_TIME2 ADD 3
+					CHANGE_VBL BILLBOARD4 SET 0
+					CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 3
+					CHANGE_VBL VOICE2 SET 1
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST VOICE2 EQUAL 1 ) THEN
+					(
+						# "The Claim Square is lowered and clearly marked by warning stripes."
+						PLAY_SOUND TMT06
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+						CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT06
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT06
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+						CHANGE_VBL BILLBOARD4 SET 0
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 3
+						CHANGE_VBL VOICE2 SET 2
+					)
+					ELSE
+					(
+						# "Sir, you need to be inside the Claim Square to call in a Citadel."
+						PLAY_SOUND TMT07
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+						CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT07
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL BILLBOARD4 SET 1
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT07
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 3
+						CHANGE_VBL VOICE2 SET 0
+					)
+				)
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+			(
+
+				IF ( VBL_TEST BILLBOARD4 EQUAL 0 ) THEN
+				(
+					SHOW_BILLBOARD {PRESS 'F9' TO CALL IN A CITADEL} 5
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+					SHOW_BILLBOARD {THE CLAIM SQUARE IS LOWERED \nAND MARKED BY WARNING STRIPES} 6
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+			)
+		)
+		ELSE
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+				# "Pilot your Wraith to the nearby command bunker, sir."
+				PLAY_SOUND TMT03
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD 4
+				CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+				CHANGE_VBL ACTION_TIME2 ADD 10
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+			)
+		)
+
+
+		IF ( CITADEL_OWNED 0 0 ) THEN
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+
+				IF ( VBL_TEST VOICE14 EQUAL 0 ) THEN
+				(
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD 3
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 2
+					CHANGE_VBL VOICE14 SET 1
+				)
+				ELSE
+				(
+					# "Well done."
+					PLAY_SOUND TMT08
+					SHOW_BILLBOARD {CITADEL CALLED IN}
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD 4
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+					CHANGE_VBL CITADEL_TIME SET GAME_TIME
+					CHANGE_VBL CITADEL_TIME ADD 30
+					CHANGE_VBL CLAIM SET 1
+				)
+			)
+		)
+	)
+
+
+	IF ( AND (( VBL_TEST CLAIM EQUAL 1 ) ( NOT ( CITADEL_OWNED 0 0 ) )) ) THEN
+	(
+		CHANGE_VBL CLAIM SET 0
+	)
+
+
+
+	IF ( AND (( VBL_TEST CLAIM EQUAL 1 ) ( VBL_TEST MAP EQUAL 0 )) ) THEN
+	(
+
+		IF ( NOT ( PLAYER_PROPS 0 IN_OVERHEAD_MAP ) ) THEN
+		(
+
+			IF ( VBL_TEST CHECK_MAP EQUAL 0 ) THEN
+			(
+
+				IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+				(
+					# "Switch to your satellite map and build some factories."
+					PLAY_SOUND TMT09
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT09
+                                        CHANGE_VBL ACTION_TIME ADD 3
+					CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 3
+				)
+
+
+				IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+				(
+					SHOW_BILLBOARD {PRESS 'O' FOR MAP} 7
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+			)
+			ELSE
+			(
+				GOTO_OVERHEAD 0
+			)
+		)
+		ELSE
+		(
+			CHANGE_VBL CHECK_MAP SET 1
+
+			COUNT_OBJECTS 0 BOMBER_UPGRADE_BLDG BOMBER_UPGRADE_COUNT
+			COUNT_OBJECTS 0 TANK_UPGRADE_BLDG TANK_UPGRADE_COUNT
+			COUNT_OBJECTS 0 AAV_UPGRADE_BLDG AAV_UPGRADE_COUNT
+			COUNT_OBJECTS 0 SLDR_UPGRADE_BLDG SLDR_UPGRADE_COUNT
+			COUNT_OBJECTS 0 ENERGY_BLDG POWER_UPGRADE_COUNT
+
+			CHANGE_VBL BLDG_COUNT SET 0
+			CHANGE_VBL BLDG_COUNT ADD BOMBER_UPGRADE_COUNT
+			CHANGE_VBL BLDG_COUNT ADD TANK_UPGRADE_COUNT
+			CHANGE_VBL BLDG_COUNT ADD AAV_UPGRADE_COUNT
+			CHANGE_VBL BLDG_COUNT ADD SLDR_UPGRADE_COUNT
+			CHANGE_VBL BLDG_COUNT ADD POWER_UPGRADE_COUNT
+
+
+			IF ( OR (( VBL_TEST BLDG_COUNT EQUAL 0 ) ( VBL_TEST BLDG_COUNT EQUAL 1 )) ) THEN
+			(
+
+				IF ( OR ( ( OR (( VBL_TEST SLDR_UPGRADE_COUNT EQUAL 1 ) ( VBL_TEST POWER_UPGRADE_COUNT EQUAL 1 )) ) ( VBL_TEST BLDG_COUNT EQUAL 0 ) ) ) THEN
+				(
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+					(
+
+						IF ( VBL_TEST VOICE3 EQUAL 0 ) THEN
+						(
+							CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME2 ADD 3
+							CHANGE_VBL VOICE3 SET 1
+						)
+						ELSE
+						(
+
+							IF ( VBL_TEST VOICE3 EQUAL 1 ) THEN
+							(
+								# "Let's build one power and one infantry factory."
+								PLAY_SOUND TMT10
+								CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+								CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT10
+								CHANGE_VBL ACTION_TIME2 ADD 7
+								CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+								CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT10
+								CHANGE_VBL ACTION_TIME3 ADD 3
+								CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+								CHANGE_VBL BILLBOARD_TIME ADD 2
+								CHANGE_VBL VOICE3 SET 2
+							)
+							ELSE
+							(
+
+								IF ( VBL_TEST VOICE3 EQUAL 2 ) THEN
+								(
+									# "You need to build one Power and one Infantry factory to move on."
+									PLAY_SOUND TMT12
+									CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+									CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT12
+                                                                        CHANGE_VBL ACTION_TIME2 ADD 25
+									CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+									CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT12
+                                                                        CHANGE_VBL ACTION_TIME3 ADD 1
+									CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+									CHANGE_VBL BILLBOARD_TIME ADD 3
+									CHANGE_VBL VOICE3 SET 3
+								)
+								ELSE
+								(
+									# "Let's get those factories built, sir."
+									PLAY_SOUND TMT11
+									CHANGE_VBL VOICE3 SET 1
+									CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+									CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT11
+                                                                        CHANGE_VBL ACTION_TIME2 ADD 20
+									CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+									CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT11
+                                                                        CHANGE_VBL ACTION_TIME3 ADD 1
+									CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+									CHANGE_VBL BILLBOARD_TIME ADD 2
+								)
+							)
+						)
+					)
+
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+					(
+                                                SHOW_BILLBOARD {CLICK THE FACTORY BUTTONS} 6
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+					)
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME3 ) THEN
+					(
+						# "You need to build one Power and one Infantry factory to move on."
+						PLAY_SOUND TMT12
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT12
+						CHANGE_VBL ACTION_TIME2 ADD 3
+						CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT12
+						CHANGE_VBL ACTION_TIME3 ADD 8
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 3
+					)
+
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+					(
+						SHOW_BILLBOARD {AT MIDDLE RIGHT, CLICK FACTORY AND CLICK 'SELL'} 7
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+						CHANGE_VBL BILLBOARD_TIME2 SET ACTION_TIME3
+						CHANGE_VBL BILLBOARD_TIME2 ADD 1
+					)
+				)
+			)
+			ELSE
+			(
+
+				IF ( AND (( VBL_TEST SLDR_UPGRADE_COUNT EQUAL 1 ) ( VBL_TEST POWER_UPGRADE_COUNT EQUAL 1 )) ) THEN
+				(
+					SHOW_BILLBOARD {YOU'VE BUILT THE CORRECT FACTORIES} 4
+					CHANGE_VBL MAP SET 1
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD 10
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME3 ) THEN
+					(
+
+						IF ( VBL_TEST VOICE15 EQUAL 0 ) THEN
+						(
+							# "You haven't built the correct factories, Commander."
+							PLAY_SOUND TMT13
+							CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME2 ADD 5
+							CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT13
+                                                        CHANGE_VBL ACTION_TIME3 ADD 15
+							CHANGE_VBL BILLBOARD_TIME2 SET GAME_TIME
+							CHANGE_VBL BILLBOARD_TIME2 ADD 3
+							CHANGE_VBL VOICE15 SET 1
+						)
+						ELSE
+						(
+							# "You need to build one Power and one Infantry factory to move on."
+							PLAY_SOUND TMT12
+							CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME2 ADD 5
+							CHANGE_VBL ACTION_TIME3 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME3 ADD SOUND_LENGTH TMT12
+                                                        CHANGE_VBL ACTION_TIME3 ADD 30
+							CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+							CHANGE_VBL BILLBOARD_TIME ADD 2
+							CHANGE_VBL VOICE15 SET 0
+						)
+					)
+
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME2 ) THEN
+					(
+						SHOW_BILLBOARD {AT MIDDLE RIGHT, CLICK FACTORY AND CLICK 'SELL'} 8
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+						CHANGE_VBL BILLBOARD_TIME2 SET ACTION_TIME3
+						CHANGE_VBL BILLBOARD_TIME2 ADD 1
+					)
+				)
+			)
+		)
+	)
+
+
+
+	IF ( AND (( VBL_TEST MAP EQUAL 1 ) ( VBL_TEST DONE_MAP EQUAL 0 )) ) THEN
+	(
+
+		IF ( PLAYER_PROPS 0 IN_OVERHEAD_MAP ) THEN
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+			(
+
+				IF ( VBL_TEST VOICE4 EQUAL 0 ) THEN
+				(
+					# "An infantry factory deploys troops.  A power factory mines power from a citadel.  All units and factories cost power to build."
+					PLAY_SOUND TMT14
+					CHANGE_VBL VOICE4 SET 1
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT14
+                                        CHANGE_VBL ACTION_TIME ADD 10
+					CHANGE_VBL ACTION_TIME2 SET ACTION_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 1
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST VOICE4 EQUAL 1 ) THEN
+					(
+						# "Let's return to your Wraith."
+						PLAY_SOUND TMT15
+						CHANGE_VBL VOICE4 SET 2
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+						CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT15
+                                                CHANGE_VBL ACTION_TIME ADD 30
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+					)
+					ELSE
+					(
+						# "Commander, please return to your Wraith."
+						PLAY_SOUND TMT16
+						CHANGE_VBL VOICE4 SET 1
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+						CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT16
+                                                CHANGE_VBL ACTION_TIME ADD 30
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 2
+					)
+				)
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+			(
+				SHOW_BILLBOARD {PRESS 'O' OR 'ESC' TO EXIT} 8
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+			)
+
+		)
+		ELSE
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+				CHANGE_VBL DONE_MAP SET 1
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD 6
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+			)
+		)
+	)
+
+
+
+	IF ( AND (( VBL_TEST DONE_MAP EQUAL 1 ) ( VBL_TEST CITADEL EQUAL 0 )) ) THEN
+	(
+
+		IF ( NOT ( PLAYER_PROPS 0 IN_CITADEL ) ) THEN
+		(
+
+			IF ( VBL_TEST CHECK_CITADEL EQUAL 0 ) THEN
+			(
+
+				IF ( AND (( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL CITADEL_TIME )) ) THEN
+				(
+
+					IF ( VBL_TEST VOICE5 EQUAL 0 ) THEN
+					(
+						# "Now switch to your Citadel's turret view."
+						PLAY_SOUND TMT17
+						CHANGE_VBL VOICE5 SET 1
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD 5
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 2
+					)
+					ELSE
+					(
+						# "Switch to your Citadel's turret view, sir."
+						PLAY_SOUND TMT18
+						CHANGE_VBL VOICE5 SET 0
+						CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME ADD 20
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT18
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+						CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+						CHANGE_VBL BILLBOARD_TIME ADD 2
+					)
+				)
+
+
+				IF ( AND (( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL CITADEL_TIME )) ) THEN
+				(
+					SHOW_BILLBOARD {PRESS 'F12' TO SWITCH TO CITADEL TURRET} 5
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+			)
+			ELSE
+			(
+
+				IF ( VBL_TEST DID_CITADEL EQUAL 1 ) THEN
+				(
+					CHANGE_VBL CITADEL SET 1
+					CHANGE_VBL ACTION_TIME SET GAME_TIME
+					CHANGE_VBL ACTION_TIME ADD 4
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+					GOTO_CITADEL 0
+				)
+			)
+		)
+		ELSE
+		(
+			CHANGE_VBL CHECK_CITADEL SET 1
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+
+				IF ( VBL_TEST VOICE6 EQUAL 0 ) THEN
+				(
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 2
+					CHANGE_VBL VOICE6 SET 1
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST VOICE6 EQUAL 1 ) THEN
+					(
+						# "Good, Commander."
+						PLAY_SOUND TMT20
+						CHANGE_VBL VOICE6 SET 2
+						CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+						CHANGE_VBL ACTION_TIME2 ADD 2
+					)
+					ELSE
+					(
+
+						IF ( VBL_TEST VOICE6 EQUAL 2 ) THEN
+						(
+							# "You can fire the Citadel's cannon to defend it from attack."
+							PLAY_SOUND TMT21
+							SHOW_BILLBOARD {MOUSE CONTROLS VIEW \nLEFT CLICK FIRES CANNON} 5
+							CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME2 ADD 5
+							CHANGE_VBL VOICE6 SET 3
+						)
+						ELSE
+						(
+
+							IF ( VBL_TEST VOICE6 EQUAL 3 ) THEN
+							(
+								# "Okay, let's destroy some enemy units with your Citadel's cannon."
+								PLAY_SOUND TMT22
+								CHANGE_VBL VOICE6 SET 4
+								CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+								CHANGE_VBL ACTION_TIME2 ADD 5
+							)
+							ELSE
+							(
+
+								IF ( VBL_TEST VOICE6 EQUAL 4 ) THEN
+								(
+									# "Here comes the attack."
+									PLAY_SOUND TMT23
+									CREATE_UNIT TANK1 5 AI_TANK TANK1_LOC YAW (0) NULL NULL
+									CREATE_UNIT AAV1  5 AAV     AAV1_LOC  YAW (0) NULL NULL
+									CHANGE_VBL VOICE6 SET 999
+								)
+							)
+						)
+					)
+				)
+			)
+
+
+			IF ( AND (( LIVED_AND_DIED TANK1 ) ( LIVED_AND_DIED AAV1 )) ) THEN
+			(
+				CHANGE_VBL DID_CITADEL SET 1
+
+
+				IF ( VBL_TEST SET_ACTION_TIME2 EQUAL 0 ) THEN
+				(
+					CHANGE_VBL SET_ACTION_TIME2 SET 1
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 4
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+					CHANGE_VBL BILLBOARD_TIME ADD 2
+				)
+				ELSE
+				(
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+					(
+
+						IF ( VBL_TEST VOICE7 EQUAL 0 ) THEN
+						(
+							# "Good shooting, Commander.  Let's switch back to your Wraith."
+							PLAY_SOUND TMT24
+							CHANGE_VBL VOICE7 SET 1
+							CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+							CHANGE_VBL ACTION_TIME2 ADD 10
+							CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+							CHANGE_VBL BILLBOARD_TIME ADD 3
+						)
+						ELSE
+						(
+
+							IF ( VBL_TEST VOICE7 EQUAL 1 ) THEN
+							(
+								# "Please switch back to your Wraith, sir."
+								PLAY_SOUND TMT25
+								CHANGE_VBL VOICE7 SET 2
+								CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                                CHANGE_VBL ACTION_TIME2 ADD 20
+								CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+								CHANGE_VBL BILLBOARD_TIME ADD 2
+							)
+							ELSE
+							(
+								# "Commander, please return to your Wraith."
+								PLAY_SOUND TMT16
+								CHANGE_VBL VOICE7 SET 1
+								CHANGE_VBL ACTION_TIME SET GAME_TIME
+								CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT16
+                                                                CHANGE_VBL ACTION_TIME2 ADD 20
+								CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+								CHANGE_VBL BILLBOARD_TIME ADD 2
+							)
+						)
+					)
+
+
+					IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+					(
+						SHOW_BILLBOARD {PRESS 'ESC' TO RETURN TO WRAITH} 5
+						CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+						CHANGE_VBL BILLBOARD_TIME ADD 1
+					)
+				)
+			)
+		)
+	)
+
+
+#Remove this section and incorporate the CLOSE_PT HTANK COMMAND_BUNKER with the next section.
+	IF ( AND (( VBL_TEST CITADEL EQUAL 1 ) ( VBL_TEST SECOND_MOVE EQUAL 0 )) ) THEN
+	(
+
+		IF ( NOT ( CLOSE_PT HTANK 0 COMMAND_BUNKER 10 ) ) THEN
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+			(
+				# "Follow the nav point on your radar"
+				SET_NAV_POINT COMMAND_BUNKER ON
+				PLAY_SOUND TMT35
+				SHOW_BILLBOARD {FOLLOW THE FLASHING NAV POINT ON RADAR} 4
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT35
+                                CHANGE_VBL ACTION_TIME ADD 30
+			)
+		)
+		ELSE
+		(
+			SET_NAV_POINT COMMAND_BUNKER OFF
+			CHANGE_VBL SECOND_MOVE SET 1
+			CHANGE_VBL ACTION_TIME SET GAME_TIME
+			CHANGE_VBL ACTION_TIME ADD 5
+			CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+			CHANGE_VBL ACTION_TIME2 ADD 6
+			CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+			CHANGE_VBL BILLBOARD_TIME ADD 1
+		)
+	)
+
+
+
+	IF ( AND (( VBL_TEST SECOND_MOVE EQUAL 1 ) ( VBL_TEST TARGETING EQUAL 0 )) ) THEN
+	(
+		COUNT_OBJECTS 0 SOLDIER PLAYER_SOLDIER_COUNT
+
+		IF ( NOT ( VBL_TEST PLAYER_SOLDIER_COUNT GREATER_THAN 0 ) ) THEN
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN ACTION_TIME ) THEN
+			(
+				# "Your factory has produced some troops.  Aim at a ground point and deploy them at will."
+				PLAY_SOUND TMT26
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD 10
+				CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+				CHANGE_VBL ACTION_TIME2 ADD 5
+				CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 3
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN BILLBOARD_TIME ) THEN
+			(
+				SHOW_BILLBOARD {PRESS 'F1' TO DEPLOY INFANTRY} 6
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+			)
+		)
+		ELSE
+		(
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+			(
+
+				IF ( VBL_TEST VOICE9 EQUAL 0 ) THEN
+				(
+					# "Your men are deployed, sir, and are IDed by green target boxes."
+					PLAY_SOUND TMT27
+					CHANGE_VBL VOICE9 SET 1
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 6
+					CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+				ELSE
+				(
+					# "You can recall allied units from the battlefield for a small power credit."
+					PLAY_SOUND TMT31
+					CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+					CHANGE_VBL ACTION_TIME2 ADD 999
+					CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+					CHANGE_VBL BILLBOARD_TIME ADD 1
+				)
+			)
+
+
+			IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+			(
+				SHOW_BILLBOARD {TO RECALL A UNIT \nTARGET IT AND PRESS 'DELETE'} 6
+				CHANGE_VBL TARGETING SET 1
+				CHANGE_VBL ACTION_TIME SET GAME_TIME
+				CHANGE_VBL ACTION_TIME ADD 10
+				CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+				CHANGE_VBL BILLBOARD_TIME ADD 1
+			)
+		)
+	)
+
+
+
+	IF ( AND (( VBL_TEST TARGETING EQUAL 1 ) ( VBL_TEST BATTLE EQUAL 0 )) ) THEN
+	(
+                COUNT_OBJECTS 5 SLDR_GNRTR_BLDG SLDR_GNRTR_BLDG_COUNT
+                IF ( VBL_TEST SLDR_GNRTR_BLDG_COUNT GREATER_THAN 0 ) THEN
+                (
+
+                        IF ( AND (( VBL_TEST CHECK_BATTLE EQUAL 0 ) ( NOT ( CLOSE_PT HTANK 0 GATE 15 ) )) ) THEN
+                        (
+                                IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+                                (
+                                        IF ( VBL_TEST VOICE10 EQUAL 0 ) THEN
+                                        (
+                                                # "Good, Commander.  Now move to the gate northeast of your Citadel for a combat drill."
+                                                SET_NAV_POINT GATE ON
+                                                PLAY_SOUND TMT34
+                                                CHANGE_VBL VOICE10 SET 1
+                                                CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME ADD 15
+                                                CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT34
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+                                                CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+                                                CHANGE_VBL BILLBOARD_TIME ADD 1
+                                        )
+                                        ELSE
+                                        (
+
+                                                IF ( VBL_TEST VOICE10 EQUAL 1 ) THEN
+                                                (
+                                                        # "Follow the flashing nav point on your radar, sir."
+                                                        PLAY_SOUND TMT35
+                                                        CHANGE_VBL VOICE10 SET 2
+                                                        CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME ADD 30
+                                                        CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT35
+                                                        CHANGE_VBL ACTION_TIME2 ADD 1
+                                                        CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+                                                        CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                )
+                                                ELSE
+                                                (
+                                                        # "Sir, please move to the gate northeast of your citadel."
+                                                        PLAY_SOUND TMT36
+                                                        CHANGE_VBL VOICE10 SET 1
+                                                        CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME ADD 30
+                                                        CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT36
+                                                        CHANGE_VBL ACTION_TIME2 ADD 1
+                                                        CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+                                                        CHANGE_VBL BILLBOARD_TIME ADD 3
+                                                )
+                                        )
+                                )
+
+
+                                IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+                                (
+                                        SHOW_BILLBOARD {FOLLOW FLASHING NAV POINT ON RADAR} 5
+                                        CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+                                        CHANGE_VBL BILLBOARD_TIME ADD 1
+                                )
+                        )
+                        ELSE
+                        (
+                                CHANGE_VBL CHECK_BATTLE SET 1
+
+                                IF ( VBL_TEST BILLBOARD3 EQUAL 0 ) THEN
+                                (
+                                        SHOW_BILLBOARD {YOU ARE AT THE GATE}
+                                        CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                        CHANGE_VBL ACTION_TIME2 ADD 1
+                                        CHANGE_VBL BILLBOARD3 SET 1
+                                )
+
+
+                                IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME2 ) THEN
+                                (
+                                        IF ( VBL_TEST VOICE11 EQUAL 0 ) THEN
+                                        (
+                                                # "Just North is a lightly guarded enemy troop factory.  Target it in your sites and deploy your troops to plant explosives at its base."
+                                                PLAY_SOUND TMT37
+                                                CHANGE_VBL VOICE11 SET 1
+                                                CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME ADD SOUND_LENGTH TMT37
+                                                CHANGE_VBL ACTION_TIME ADD 15
+                                                CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                CHANGE_VBL ACTION_TIME2 ADD SOUND_LENGTH TMT37
+                                                CHANGE_VBL ACTION_TIME2 ADD 1
+                                                CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+                                                CHANGE_VBL BILLBOARD_TIME ADD SOUND_LENGTH TMT37
+                                                CHANGE_VBL BILLBOARD_TIME ADD 4
+                                                CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                CHANGE_VBL END_GAME_TIME ADD 5
+                                        )
+                                        ELSE
+                                        (
+
+                                                IF ( VBL_TEST VOICE11 EQUAL 1 ) THEN
+                                                (
+                                                        SET_GATE GATE2 0
+                                                        SET_NAV_POINT GATE OFF
+                                                        CREATE_UNIT TURRET1 5 LIGHT_TURRET TURRET1_LOC YAW(0) NULL NULL
+                                                        CREATE_UNIT TURRET2 5 LIGHT_TURRET TURRET2_LOC YAW(0) NULL NULL
+                                                        CREATE_UNIT TURRET3 5 LIGHT_TURRET TURRET3_LOC YAW(0) NULL NULL
+                                                        CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME ADD 5
+                                                        CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                        CHANGE_VBL ACTION_TIME2 ADD 15
+                                                        CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+                                                        CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                        CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                        CHANGE_VBL END_GAME_TIME ADD 5
+                                                        CHANGE_VBL VOICE11 SET 2
+                                                )
+                                                ELSE
+                                                (
+                                                        IF  (CLOSE_PT HTANK 0 BATTLE_LOC 25 ) THEN
+                                                        (
+                                                                SET_NAV_POINT BATTLE_LOC OFF
+
+                                                                IF ( VBL_TEST VOICE11 EQUAL 2 ) THEN
+                                                                (
+                                                                        #NEED TO TEST FOR TURRETS STILL BEING ALIVE
+                                                                        COUNT_OBJECTS 5 LIGHT_TURRET TURRET_COUNT
+
+                                                                        IF ( VBL_TEST TURRET_COUNT GREATER_THAN 0 ) THEN
+                                                                        (
+                                                                                # "Destroy those gun turrets, Commmander!"
+                                                                                PLAY_SOUND TMT38
+                                                                        )
+
+
+                                                                        CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                                        CHANGE_VBL ACTION_TIME ADD 5
+                                                                        CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                                        CHANGE_VBL ACTION_TIME2 ADD 30
+                                                                        CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+                                                                        CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                                        CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                                        CHANGE_VBL END_GAME_TIME ADD 5
+                                                                        CHANGE_VBL VOICE11 SET 3
+                                                                )
+                                                                ELSE
+                                                                (
+
+                                                                        IF ( VBL_TEST VOICE11 EQUAL 3 ) THEN
+                                                                        (
+                                                                                # "Your Wraith can't destroy a factory.  Use troops instead!"
+                                                                                PLAY_SOUND TMT39
+                                                                                CHANGE_VBL VOICE11 SET 4
+                                                                                CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                                                CHANGE_VBL ACTION_TIME ADD 5
+                                                                                CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                                                CHANGE_VBL ACTION_TIME2 ADD 25
+                                                                                CHANGE_VBL BILLBOARD_TIME SET GAME_TIME
+                                                                                CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                                                CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                                                CHANGE_VBL END_GAME_TIME ADD 5
+                                                                        )
+                                                                        ELSE
+                                                                        (
+                                                                                # "Deploy more troops against the factory, sir."
+                                                                                PLAY_SOUND TMT40
+                                                                                CHANGE_VBL VOICE11 SET 2
+                                                                                CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                                                CHANGE_VBL ACTION_TIME ADD 5
+                                                                                CHANGE_VBL ACTION_TIME2 SET GAME_TIME
+                                                                                CHANGE_VBL ACTION_TIME2 ADD 25
+                                                                                CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+                                                                                CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                                                CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                                                CHANGE_VBL END_GAME_TIME ADD 5
+                                                                        )
+                                                                )
+                                                        )
+                                                        ELSE
+                                                        (
+
+                                                                IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL ACTION_TIME ) THEN
+                                                                (
+                                                                        # "Find the flashing navigation point on your radar, and move towards it."
+                                                                        PLAY_SOUND TMT02
+                                                                        SET_NAV_POINT BATTLE_LOC ON
+                                                                        CHANGE_VBL ACTION_TIME SET GAME_TIME
+                                                                        CHANGE_VBL ACTION_TIME ADD 15
+                                                                        CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME
+                                                                        CHANGE_VBL BILLBOARD_TIME ADD 1
+                                                                        CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                                                        CHANGE_VBL END_GAME_TIME ADD 5
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                        IF ( VBL_TEST GAME_TIME GREATER_THAN_EQUAL BILLBOARD_TIME ) THEN
+                                        (
+                                                SHOW_BILLBOARD {REMEMBER, TARGET THE ENEMY GENERATOR AND \nPRESS 'F1' TO DEPLOY INFANTRY} 8
+                                                CHANGE_VBL BILLBOARD_TIME SET ACTION_TIME2
+                                                CHANGE_VBL BILLBOARD_TIME ADD 1
+                                        )
+
+                                )
+                        )
+                )
+                ELSE
+                (
+                        IF (AND (( VBL_TEST GAME_TIME GREATER_THAN_EQUAL END_GAME_TIME ) ( VBL_TEST VOICE11 GREATER_THAN 1 ))) THEN
+                        (
+
+                                IF ( VBL_TEST VOICE13 EQUAL 0 ) THEN
+                                (
+                                        # "Well done, Commander, you've completed your second level of training."
+                                        PLAY_SOUND TMT41
+                                        CHANGE_VBL END_GAME_TIME SET GAME_TIME
+                                        CHANGE_VBL END_GAME_TIME ADD SOUND_LENGTH TMT41
+                                        CHANGE_VBL END_GAME_TIME ADD 1
+                                        CHANGE_VBL VOICE13 SET 1
+                                )
+                                ELSE
+                                (
+                                        CHANGE_VBL BATTLE SET 1
+                                        SET_GATE GATE3 0
+                                        END_MISSION 0 1 10 {\n  CONGRATULATIONS ON YOUR SUCCESSFUL COMPLETION OF TRAINING MISSION 2. \n \n IN TRAINING MISSION 3 YOU'LL GET A CHANCE TO EXPERIMENT WITH BOMBERS AND PUT TOGETHER ALL OF THE PIECES YOU'VE LEARNED SO FAR.}
+                                )
+
+                        )
+                )
+        )
+)
+
+END_SCRIPT_FILE

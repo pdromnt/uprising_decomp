@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+1
+
+OBJECTIVE_BEGIN
+Considering Priva valueless, many units on Priva were recalled to Imperium space, leaving much of the terrain vacant. Keeping intermittent contact with a single citadel in the hotzone, the Imperium will not be alerted of our attack in time to react. To put Priva's mineral content in our hands, we need to find and destroy the Imperium citadel, ultimately ending the Imperium's contact with Priva.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+The mining facility in this hotzone was constructed to channel resources past citadel checkpoints to a citadel at the channel's end. This final citadel was used to transport the mineral resources off Priva. While reports show little activity at each checkpoint, we have traced Imperium transmissions back to the citadel at the channel's end.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Previously an Imperium planet mined bare, scans of Priva report scattered deposits of valuable minerals. Moving on to reap planets that offered greater rewards, the Imperium left only a low-tech level citadel behind. Removing the Imperium will put the planet's resources to our use. Its location in this sector and its mineral content make Priva a perfect base for fleet production and repair.
+DESCRIPTION_END

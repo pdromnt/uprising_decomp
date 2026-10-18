@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+3
+
+OBJECTIVE_BEGIN
+A hotzone used for testing of new unit and weapons technology, Centari's command bunker layout was created to be simple.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+PI4 This is some Formatted Information that might be gotten from a spy on HILLS.lfl.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Maybe I'll tell you something about this mission someday.
+DESCRIPTION_END

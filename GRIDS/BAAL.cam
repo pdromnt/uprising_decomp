@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+5
+
+OBJECTIVE_BEGIN
+We are ready to introduce new technology to the Imperium. Orbiting above Baal is an assault flotilla. When operational, all Imperium fleets in orbit will be destroyed. To charge the flotilla, you must enter the hotzone and amass 16000 power units. The citadel at the hotzone's center will be your means for transferring the energy, so maintain control of it or your mission will fail.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+The key to controlling Baal is to amass power rather than spend it, we recommend both upgrading your power buildings to absorb Baal's energy more quickly and upgrading your citadel towers for stronger defense.  It is also well advised to purchase units prior to landing on Baal.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Used as a waypoint in the supposed war against the Horde, the Imperium now uses Baal for launching fleets from within Imperial space. A successful attack upon Baal will provide us with a fortification along a major  Imperium supply line hampering their ability to reinforce their defensive fronts.
+DESCRIPTION_END

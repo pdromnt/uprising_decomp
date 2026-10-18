@@ -1,0 +1,16 @@
+/build/
+/dist/
+/.vs/
+/.vscode/
+*.o
+*.obj
+*.res
+*.exe
+*.dll
+*.log
+*.tmp
+*.user
+*.pdb
+/CONFIG/
+/saves/
+/scrshts/

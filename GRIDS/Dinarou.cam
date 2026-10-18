@@ -1,0 +1,15 @@
+CAMPAIGN_RANKING
+2
+
+OBJECTIVE_BEGIN
+Able to observe the entire hotzone from the highest mountain, the Imperial citadel keeps Dinarou safe from attack. The command center's vantagepoint allows the Imperium to quickly organize defensive strategies to deflect any assault. Knocking out the citadel will keep Imperium forces in enough disarray to allow us to seize Dinarou.
+OBJECTIVE_END
+
+SPYINFO_BEGIN
+1
+Satellite photos show two paths to the hotzone's center eroded through its mountains. As Dinarou is used for agricultural purposes, all Imperium citadels are located near the eroded waterways.  Thus, Dinarou's streams should guide you to the Imperium command center.
+SPYINFO_END
+
+DESCRIPTION_BEGIN
+Dinarou is an agriculturally rich planet. Neighboring Imperial contingents fleets use this outpost to replenish their food supplies. Seizing this haven should dampen the threat that long-range Imperium fleets pose on our home worlds. Controlling Dinarou provides us with an outpost for our forces to replenish supplies on their way into Imperium space.
+DESCRIPTION_END

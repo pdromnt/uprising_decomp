@@ -1,6 +1,6 @@
 #include "model_assets.h"
 #include "application_archives.h"
-#include "glide_texture_cache.h"
+#include "render_texture_cache.h"
 #include "scene_projection_storage.h"
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +34,7 @@ static int read_texture(GameApplication *a,ResourceFile *file,uint32_t requested
         aux=scene_projection_storage_allocate(112,"cached texture NCC table");
         if(!aux || !game_memory_write(&a->memory,aux,ncc,112))goto done;
     }
-    record=game_glide_texture_create(&a->memory,flags|requested_flags,header+16,pixels,bytes);
+    record=game_render_texture_create(&a->memory,flags|requested_flags,header+16,pixels,bytes);
     if(!record)goto done;
     game_memory_write_u32(&a->memory,record+24,aux);aux=0;
     game_memory_write_u32(&a->memory,record+28,word(header+28));

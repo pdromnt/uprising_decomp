@@ -62,7 +62,7 @@ set(CORE_SOURCES
     core/gameplay_spatial.c
     core/gameplay_state.c
     core/gameplay_teardown.c
-    core/glide_texture_cache.c
+    core/render_texture_cache.c
     core/input_controller.c
     core/level_citadels.c
     core/level_clock.c
@@ -158,7 +158,6 @@ set(CORE_SOURCES
     core/tagged_scalar_stream.c
     core/terrain_asset.c
     core/terrain_edge_stream.c
-    core/texture_residency.c
     core/texture_store.c
     core/trail_model.c
     core/ui_frame.c

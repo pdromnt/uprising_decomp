@@ -1,7 +1,7 @@
 #ifndef UPRISING_TEXTURE_STORE_H
 #define UPRISING_TEXTURE_STORE_H
 #include "asset_texture.h"
-#include "texture_residency.h"
+#include <stdint.h>
 typedef struct TextureRecord {
     uint32_t id,key,flags,last_use,address;
     uint32_t cache_a,cache_b;int cache_valid;
@@ -26,10 +26,4 @@ int texture_store_resize_indexed(TextureRecord *,const uint8_t *,size_t,uint32_t
 void texture_store_release(TextureStore *);
 
 int texture_store_remove(TextureStore *,uint32_t key);
-typedef int (*TextureUpload)(void *,uint32_t address,const TextureRecord *);
-/* Native records are authoritative. Optional legacy callbacks handle only owners
-   absent from the store while the shared residency ring still contains them. */
-int texture_store_upload(TextureStore *,TextureResidency *,uint32_t key,uint32_t frame,
-    TextureUpload,void *upload_context,TextureLastUse,TextureEvict,void *legacy_context,
-    uint32_t *uploaded_bytes);
 #endif

@@ -78,32 +78,3 @@ int texture_store_remove(TextureStore *store,uint32_t key) {
     }link=&record->next;}
     return 0;
 }
-
-typedef struct UploadOwners {
-    TextureStore *store;TextureLastUse last_use;TextureEvict evict;void *legacy;
-} UploadOwners;
-static uint32_t upload_last_use(void *context,uint32_t key) {
-    UploadOwners *owners=context;TextureRecord *record=texture_store_find(owners->store,key);
-    return record?record->last_use:(owners->last_use?owners->last_use(owners->legacy,key):UINT32_MAX);
-}
-static void upload_evict(void *context,uint32_t key) {
-    UploadOwners *owners=context;TextureRecord *record=texture_store_find(owners->store,key);
-    if(record)record->flags&=0x7fffffffu;
-    else if(owners->evict)owners->evict(owners->legacy,key);
-}
-int texture_store_upload(TextureStore *store,TextureResidency *ring,uint32_t key,uint32_t frame,
-    TextureUpload upload,void *context,TextureLastUse last_use,TextureEvict evict,void *legacy,
-    uint32_t *uploaded_bytes) {
-    TextureRecord *record=texture_store_find(store,key);uint32_t address=ring->base;
-    UploadOwners owners={store,last_use,evict,legacy};*uploaded_bytes=0;
-    if(!record || !upload || record->image.size>UINT32_MAX)return 0;
-    if(!texture_residency_allocate(ring,key,(uint32_t)record->image.size,frame,
-        upload_last_use,upload_evict,&owners,&address)) {
-        record->address=address;record->flags&=0x7fffffffu;return 1;
-    }
-    record->address=address;
-    if(!upload(context,address,record)) {
-        record->flags&=0x7fffffffu;texture_residency_forget(ring,key);return 0;
-    }
-    record->flags|=0x80000000u;*uploaded_bytes=(uint32_t)record->image.size;return 1;
-}

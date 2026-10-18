@@ -1,5 +1,6 @@
 #include "game_memory.h"
 #include "game_initial_data.h"
+#include "render_texture_cache.h"
 #include "asset_bitmap.h"
 #include "game_matrix.h"
 #include "game_string_search.h"
@@ -278,6 +279,57 @@ static int resource_projection_read(void *context,GameAddress address,void *byte
 }
 static int resource_projection_write(void *context,GameAddress address,const void *bytes,size_t size) {
     (void)context;return scene_projection_storage_write(address,bytes,size) || render_arena_write(address,bytes,size);
+}
+typedef struct RenderCacheProbe {
+    TextureRecord records[40];unsigned uploads,releases,resets;int reject;
+} RenderCacheProbe;
+static int cache_stats(void *context,uint32_t out[5]){(void)context;memset(out,0,20);return 1;}
+static int cache_upload(void *context,uint32_t key,const uint8_t format[4],GameAddress data,uint32_t bytes){
+    RenderCacheProbe *p=context;(void)key;(void)format;(void)data;
+    if(!bytes || p->reject)return 0;++p->uploads;return 1;
+}
+static TextureRecord *cache_record(void *context,uint32_t id){
+    RenderCacheProbe *p=context;unsigned i;
+    for(i=0;i<40;i++)if(p->records[i].id==id)return p->records+i;
+    return NULL;
+}
+static int cache_owned(void *context,uint32_t key,const AssetTexture *image){
+    RenderCacheProbe *p=context;(void)key;
+    if(!image->pixels || !image->size || p->reject)return 0;++p->uploads;return 1;
+}
+static void cache_release(void *context,uint32_t key){RenderCacheProbe *p=context;(void)key;++p->releases;}
+static void cache_reset(void *context){++((RenderCacheProbe *)context)->resets;}
+static int check_render_texture_lifetime(void){
+    RenderCacheProbe probe={0};GameMemory memory;uint8_t pixel[8]={0},format[4]={8,8,3,5};
+    uint8_t *bytes=calloc(1,0x280000);GameAddress streamed;unsigned i;
+    GameRenderTextureServices services={&probe,cache_stats,cache_upload,cache_record,cache_owned,cache_release,cache_reset};
+    CHECK(bytes);game_memory_initialize(&memory,bytes,0x400000,0x280000);
+    memory.read_fallback=resource_projection_read;memory.write_fallback=resource_projection_write;
+    CHECK(game_render_texture_cache_begin(&memory,&services));
+    /* More than the retired 2MiB budget remains resident without ring eviction. */
+    for(i=0;i<40;i++){
+        TextureRecord *t=probe.records+i;t->id=0xfd000001u+i;t->image.pixels=pixel;t->image.size=131072;
+        CHECK(game_render_texture_use(&memory,t->id,&services));CHECK(t->address==t->id);
+    }
+    CHECK(probe.uploads==40);
+    for(i=0;i<40;i++)CHECK(game_render_texture_use(&memory,probe.records[i].id,&services));
+    CHECK(probe.uploads==40);
+    CHECK(game_render_texture_forget(&memory,probe.records[0].id));
+    CHECK(probe.releases==1 && !probe.records[0].address && !(probe.records[0].flags&0x80000000u));
+    probe.reject=1;CHECK(!game_render_texture_use(&memory,probe.records[0].id,&services));
+    CHECK(!(probe.records[0].flags&0x80000000u));probe.reject=0;
+    CHECK(game_render_texture_use(&memory,probe.records[0].id,&services));CHECK(probe.uploads==41);
+    streamed=game_render_texture_create(&memory,0,format,pixel,sizeof(pixel));CHECK(streamed);
+    CHECK(game_render_texture_use(&memory,streamed,&services));CHECK(probe.uploads==42);
+    CHECK(game_memory_read_u32(&memory,streamed+8)==streamed);
+    CHECK(game_render_texture_forget(&memory,streamed));
+    CHECK(game_render_texture_use(&memory,streamed,&services));CHECK(probe.uploads==43);
+    CHECK(game_render_texture_cache_frame(&memory,&services));
+    CHECK(game_render_texture_cache_end(&memory));CHECK(probe.resets==1);
+    CHECK(game_render_texture_cache_end(&memory));CHECK(probe.resets==1);
+    CHECK(game_render_texture_cache_begin(&memory,&services));
+    CHECK(game_render_texture_cache_end(&memory));CHECK(probe.resets==2 && !memory.fault);
+    free(bytes);return 0;
 }
 /* Chain ordering, retained words and mixed kind accounting were absent from
  * the prior core fixtures. No CPU or guest execution supplies these records. */
@@ -800,6 +852,7 @@ int main(void) {
         (void)game_list_detach_node(&memory,first,4u,8u);
         CHECK(!memory.fault && gameplay_spatial_end());free(legacy);
     }
+    CHECK(check_render_texture_lifetime()==0);
     CHECK(check_player_events()==0);
     CHECK(check_resource_lifetime()==0);
     CHECK(check_event_lifetime()==0);

@@ -52,7 +52,7 @@ add_executable(uprising WIN32 ${GAME_SOURCES} ${PLATFORM_SOURCES}
     third_party/libsmacker/smacker.c "${CMAKE_CURRENT_BINARY_DIR}/generated/uprising_resources.o")
 set_target_properties(uprising PROPERTIES OUTPUT_NAME "${UPRISING_EXECUTABLE_NAME}")
 target_include_directories(uprising PRIVATE core game platform)
-target_compile_definitions(uprising PRIVATE UPRISING_OPENGL1)
+
 target_compile_options(uprising PRIVATE -O2 -frounding-math -ffunction-sections -fdata-sections -Wall -Wextra)
 target_link_options(uprising PRIVATE -Wl,--gc-sections)
 target_link_libraries(uprising PRIVATE uprising_core m user32 gdi32 advapi32 winmm dinput dxguid ole32 opengl32)

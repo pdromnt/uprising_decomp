@@ -7,7 +7,7 @@
 extern int game_menu_palette_read_bytes(GameApplication *,uint8_t[1024]);
 /*4d9290: the original fixed640x480, bottom-up24-bit TGA and RGB565 channel
  *expansion. The current indexed backend supplies its actual palette/pixels;
- *Glide capture and live hardware equivalence remain unverified. */
+ *complete screenshot visual parity remains unverified. */
 int game_input_screenshot(GameApplication *a,uint32_t number){
     static const uint8_t header[18]={0,0,2,0,0,0,0,0,0,0,0,0,0x80,2,0xe0,1,24,0};
     ResourceFile *file=NULL;GameMenuPixelSpan frame={0};uint8_t palette[1024],row[640*3];

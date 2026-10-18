@@ -64,7 +64,7 @@ static float integer_coordinate(float value){
 }
 static float signed_coordinate(GameApplication *a,GameAddress p){uint32_t b=word(a,p);int32_t v;memcpy(&v,&b,4);return (float)v;}
 extern int game_level_palette_polygon(GameApplication *,const float[][3],const uint8_t *,unsigned,uint32_t);
-extern int game_application_glide_line(GameApplication *,const int32_t[4],uint8_t);
+extern int game_application_render_line(GameApplication *,const int32_t[4],uint8_t);
 extern int game_application_options_load(GameApplication *,uint32_t);
 static int32_t hud_integer(long double value){
     uint32_t low;int32_t result;
@@ -76,7 +76,7 @@ static int32_t hud_add(int32_t x,int32_t y){return hud_signed((uint32_t)x+(uint3
 static int32_t hud_sub(int32_t x,int32_t y){return hud_signed((uint32_t)x-(uint32_t)y);}
 static int32_t hud_shift(int32_t x,unsigned shift){return x>=0?x/(1<<shift):-1-(int32_t)((-(int64_t)x-1)/(1<<shift));}
 static int hud_line(GameApplication *a,int32_t x,int32_t y,int32_t xx,int32_t yy,uint8_t color){
-    int32_t line[4]={x,y,xx,yy};return game_application_glide_line(a,line,color);
+    int32_t line[4]={x,y,xx,yy};return game_application_render_line(a,line,color);
 }
 extern int game_campaign_project_point(GameApplication *,float[3]);
 extern int game_level_scene_property(GameApplication *,GameAddress,GameAddress,uint32_t *);
@@ -228,13 +228,13 @@ int game_level_frame_004aeab0(GameApplication *a){
                 {hud_sub(hud_sub(r,h),1),b,hud_sub(r,qw),b},{r,hud_sub(hud_sub(b,h),1),r,hud_sub(b,qh)},
                 {l,hud_sub(b,h),hud_add(l,h),b},{hud_add(hud_add(l,h),1),b,hud_add(l,qw),b},
                 {l,hud_sub(hud_sub(b,h),1),l,hud_sub(b,qh)}};
-            unsigned i;for(i=0;i<12;i++)if(!game_application_glide_line(a,lines[i],color))return 0;
+            unsigned i;for(i=0;i<12;i++)if(!game_application_render_line(a,lines[i],color))return 0;
         }else{
             int32_t lines[8][4]={{l,t,hud_add(l,qw),t},{l,hud_add(t,1),l,hud_add(t,qh)},
                 {r,t,hud_sub(r,qw),t},{r,hud_add(t,1),r,hud_add(t,qh)},
                 {r,b,hud_sub(r,qw),b},{r,hud_sub(b,1),r,hud_sub(b,qh)},
                 {l,b,hud_add(l,qw),b},{l,hud_sub(b,1),l,hud_sub(b,qh)}};
-            unsigned i;for(i=0;i<8;i++)if(!game_application_glide_line(a,lines[i],color))return 0;
+            unsigned i;for(i=0;i<8;i++)if(!game_application_render_line(a,lines[i],color))return 0;
         }
     }
     root=word(a,0x5f0208);count=word(a,root+0x444);cell_count=word(a,0x6020d0);
@@ -278,7 +278,7 @@ int game_level_frame_004b1ea0(GameApplication *a,float ax,float ay,float bx,floa
     /*Original outline shifts the first and second x endpoints left one pixel. */
     x[0]=hud_integer((long double)x[0]-1);x[1]=hud_integer((long double)x[1]-1);
     for(i=0;i<3;i++){unsigned j=(i+1)%3;line[0]=x[i];line[1]=y[i];line[2]=x[j];line[3]=y[j];
-        if(!game_application_glide_line(a,line,15))return 0;}
+        if(!game_application_render_line(a,line,15))return 0;}
     return !a->memory.fault;
 }
 /*4b26a0: expanding selector preview followed by the curved transition to

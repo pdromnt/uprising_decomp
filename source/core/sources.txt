@@ -91,7 +91,6 @@ scene_child_registry.c
 scene_surface.c
 material_cache.c
 asset_texture.c
-texture_residency.c
 texture_store.c
 terrain_asset.c
 level_terrain.c
@@ -155,7 +154,7 @@ spatial_sample.c
 descent_payload.c
 vehicle_presentation.c
 gameplay_property_matrix.c
-glide_texture_cache.c
+render_texture_cache.c
 asset_collision.c
 gameplay_root.c
 vehicle_update.c

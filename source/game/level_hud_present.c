@@ -15,9 +15,9 @@ static int32_t hud_integer(long double value){
     uint32_t bits=(uint32_t)(uint64_t)(!isfinite(value) || value< -0x1p63L || value>=0x1p63L?INT64_MIN:(int64_t)value);
     return hud_signed(bits);
 }
-extern int game_application_glide_line(GameApplication *,const int32_t[4],uint8_t);
+extern int game_application_render_line(GameApplication *,const int32_t[4],uint8_t);
 static int hud_line(GameApplication *a,int32_t x,int32_t y,int32_t xx,int32_t yy,uint8_t color){
-    int32_t line[4]={x,y,xx,yy};return game_application_glide_line(a,line,color);
+    int32_t line[4]={x,y,xx,yy};return game_application_render_line(a,line,color);
 }
 extern int game_level_palette_polygon(GameApplication *,const float[][3],const uint8_t *,unsigned,uint32_t);
 extern int game_application_palette_quad(GameApplication *,int32_t,int32_t,int32_t,int32_t,uint8_t);

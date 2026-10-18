@@ -38,3 +38,9 @@ content in `game/campaign_catalog_data.inc`.
 
 CMake lists all shipping translation units explicitly. CPU/generated instruction
 execution and oracle sources are absent from the build.
+
+The OpenGL device in `platform/portable_gl1.inc` is called directly, without a
+Glide SDK function table or fallback loader. `core/render_texture_cache.c` uses
+texture identities instead of simulated VRAM addresses and eviction spans.
+Texture owners release their device resources explicitly. Original pixel formats,
+depth arithmetic and bounded stream-cache records remain for visual parity.

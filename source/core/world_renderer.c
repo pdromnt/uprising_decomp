@@ -143,9 +143,8 @@ int world_renderer_submit(GameMemory *memory,GameAddress node,
         frame->depth_scale == 0.0f) {
         result=-1;goto finish;
     }
-    /* Decide whether this frame is representable before changing any Glide
-       state. This keeps the generated implementation a genuinely clean
-       fallback instead of entering it halfway through a draw list. */
+    /* Validate the command list before changing renderer state. Unsupported
+       frames leave the device untouched. */
     while (scan) {
         WorldRenderCommand *command;
         RenderArenaPacket packet;

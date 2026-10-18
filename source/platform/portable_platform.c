@@ -26,7 +26,7 @@
 #include "projection_owner_pages.h"
 #include "render_arena.h"
 #include "render_runtime_pools.h"
-#include "glide_texture_cache.h"
+#include "render_texture_cache.h"
 #include "level_load.h"
 #include "screen_primitives.h"
 #include "ui_tiled_image.h"
@@ -40,14 +40,16 @@
 #include "ui_geometry.h"
 extern void *game_menu_window_handle(GameApplication *);
 
-typedef struct NativeGlideTextureInfo {
+typedef enum RenderColorMode { RENDER_COLOR_VERTEX,RENDER_COLOR_CONSTANT,RENDER_COLOR_TEXTURE,RENDER_COLOR_INVERSE_TEXTURE } RenderColorMode;
+typedef enum RenderAlphaMode { RENDER_ALPHA_ZERO,RENDER_ALPHA_VERTEX,RENDER_ALPHA_TEXTURE,RENDER_ALPHA_CONSTANT } RenderAlphaMode;
+typedef struct RenderTextureView {
     uint32_t small_lod,large_lod,aspect,format;
     void *pixels;
-} NativeGlideTextureInfo;
+} RenderTextureView;
 
 typedef struct ArchiveFile {ResourceFile *file;GameAddress identity;struct ArchiveFile *next;} ArchiveFile;
-/*Native SDK layout stays private here; pixel pointers are never legacy words. */
-typedef struct NativeGlideLfbInfo {uint32_t size;void *pixels;uint32_t stride,write_mode,origin;} NativeGlideLfbInfo;
+/*Mapped RGB565 pixels are borrowed only until unmap; pointers stay native. */
+typedef struct RenderPixelView {void *pixels;uint32_t stride;} RenderPixelView;
 typedef int (__cdecl *StickBufferCall)(void *);
 typedef int (__cdecl *StickQueryCall)(void);
 typedef void (__cdecl *StickCommandCall)(uint32_t);
@@ -72,59 +74,18 @@ typedef struct PortablePlatform {
     char configuration_path[4128];
     int configuration_pending;
     int configuration_ready;
-    HMODULE glide;
-    void (WINAPI *glide_shutdown)(void);
-    int32_t (WINAPI *window_open)(uintptr_t,uint32_t,uint32_t,uint32_t,uint32_t,int32_t,int32_t);
-    void (WINAPI *window_close)(void);
-    void (WINAPI *fog_generate)(uint8_t *,float);
-    void (WINAPI *fog_color)(uint32_t), (WINAPI *fog_table)(const uint8_t *);
-    void (WINAPI *texture_lod_bias)(uint32_t,float);
-    void (WINAPI *texture_ncc_table)(uint32_t,uint32_t);
-    void (WINAPI *chroma_mode)(uint32_t), (WINAPI *chroma_value)(uint32_t);
-    void (WINAPI *alpha_reference)(uint32_t);
+    int renderer_initialized;
     int window_opened;
-    void (WINAPI *buffer_clear)(uint32_t,uint32_t,uint32_t);
-    void (WINAPI *buffer_swap)(int32_t);
-    int32_t (WINAPI *lfb_lock)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,NativeGlideLfbInfo *);
-    int32_t (WINAPI *lfb_unlock)(uint32_t,uint32_t);
-    void (WINAPI *lfb_depth)(uint32_t);
-    int text_glide_locked;
+    int text_pixels_locked;
     int capture_attempted;
     int screen_mask_active;
-    uint32_t (WINAPI *texture_min)(uint32_t), (WINAPI *texture_max)(uint32_t);
-    void (WINAPI *texture_upload)(uint32_t,uint32_t,uint32_t,const NativeGlideTextureInfo *);
-    uint32_t (WINAPI *texture_bytes)(uint32_t,const NativeGlideTextureInfo *);
-    void (WINAPI *texture_statistics)(uint32_t *);
-    void (WINAPI *texture_reset_statistics)(void);
-    void (WINAPI *draw_line)(const GameRenderVertex *,const GameRenderVertex *);
-    void (WINAPI *draw_triangle)(const GameRenderVertex *,const GameRenderVertex *,const GameRenderVertex *);
-    void (WINAPI *draw_point)(const GameRenderVertex *);
-    void (WINAPI *alpha_test)(uint32_t), (WINAPI *constant_color)(uint32_t);
-    void (WINAPI *depth_bias)(int32_t);
-    void (WINAPI *texture_filter)(uint32_t,uint32_t,uint32_t);
-    void (WINAPI *palette_upload)(uint32_t,uint32_t,const uint32_t *);
-    void (WINAPI *palette_range)(uint32_t,uint32_t,const uint32_t *,uint32_t,uint32_t);
-    void (WINAPI *texture_source)(uint32_t,uint32_t,uint32_t,const NativeGlideTextureInfo *);
-    void (WINAPI *texture_combine)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
-    void (WINAPI *texture_clamp)(uint32_t,uint32_t,uint32_t);
-    void (WINAPI *alpha_combine)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
-    void (WINAPI *fog_mode)(uint32_t), (WINAPI *cull_mode)(uint32_t);
-    void (WINAPI *dither)(uint32_t);
-    void (WINAPI *depth_mode)(uint32_t);
-    void (WINAPI *depth_function)(uint32_t);
-    void (WINAPI *depth_mask)(uint32_t);
-    void (WINAPI *alpha_blend)(uint32_t,uint32_t,uint32_t,uint32_t);
-    void (WINAPI *color_combine)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
-    int glide_initialized;
     ArchiveFile *archives;
     uint32_t archive_sequence;
     ForceFeedback *force_feedback;
     void *graphics_owner;
 } PortablePlatform;
 
-#ifdef UPRISING_OPENGL1
 #include "portable_gl1.inc"
-#endif
 
 /*4f9bc0/4f9ee0: the native platform owns the entire SDK binding. Legacy
  * function-table words never contain DLL handles or native function pointers. */
@@ -281,7 +242,6 @@ GameAddress game_application_archive_open(GameApplication *app,const char *name,
  * This isolates the existing backend; no graphics instructions or CPU thunks
  * execute here. Missing native SDK/hardware retains the original false result. */
 void *game_application_backend_library(GameApplication *a,const char *name){
-#ifdef UPRISING_OPENGL1
     char path[MAX_PATH];UINT length;
     if(strcmp(name,"ddraw.dll") || !GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0) ||
        !GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW",NULL,0))return NULL;
@@ -289,137 +249,17 @@ void *game_application_backend_library(GameApplication *a,const char *name){
     if(!length || length+sizeof("\\ddraw.dll")>sizeof(path))return NULL;
     memcpy(path+length,"\\ddraw.dll",sizeof("\\ddraw.dll"));
     (void)a;return LoadLibraryExA(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
-#else
-    char directory[1024],config[1080],path[1080],value[32];DWORD length;
-    int native_draw=GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW",NULL,0)!=0;
-    static const struct {const char *section,*key,*value;} required[]={
-        {"General","FullScreenMode","false"},{"General","CaptureMouse","false"},
-        {"GeneralExt","FreeMouse","true"},{"DirectX","AppControlledScreenMode","false"},
-        {"DirectX","DisableAndPassThru","false"}
-    };unsigned i;
-    if(!GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))return LoadLibraryA(name);
-    length=GetEnvironmentVariableA("UPRISING_RECOMP_BACKEND_DIRECTORY",directory,sizeof(directory));
-    if(!length || length>=sizeof(directory) || !((directory[0] && directory[1]==':' &&
-       (directory[2]=='\\' || directory[2]=='/')) || (directory[0]=='\\' && directory[1]=='\\')) ||
-       (strcmp(name,"glide2x.dll") && strcmp(name,"ddraw.dll")))goto unavailable;
-    if(snprintf(config,sizeof(config),"%s\\dgVoodoo.conf",directory)>=(int)sizeof(config))goto unavailable;
-    for(i=0;i<sizeof(required)/sizeof(required[0]);i++){
-        if(!GetPrivateProfileStringA(required[i].section,required[i].key,"",value,sizeof(value),config) ||
-           lstrcmpiA(value,required[i].value))goto unavailable;
-    }
-    /*Glide always uses the pinned windowed module. Explicit native DirectDraw
-     *uses only normal cooperative/offscreen surfaces; it is not a fallback
-     *from a failed wrapper or permission to request a display mode. */
-    for(i=0;i<2;i++){
-        if(i && native_draw)continue;
-        if(snprintf(path,sizeof(path),"%s\\%s",directory,i?"ddraw.dll":"glide2x.dll")>=(int)sizeof(path) ||
-           GetFileAttributesA(path)==INVALID_FILE_ATTRIBUTES)goto unavailable;
-    }
-    if(native_draw && !strcmp(name,"ddraw.dll")){
-        length=GetSystemDirectoryA(directory,sizeof(directory));
-        if(!length || length>=sizeof(directory) ||
-           snprintf(path,sizeof(path),"%s\\ddraw.dll",directory)>=(int)sizeof(path))goto unavailable;
-        return LoadLibraryExA(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
-    }
-    if(snprintf(path,sizeof(path),"%s\\%s",directory,name)>=(int)sizeof(path))goto unavailable;
-    return LoadLibraryExA(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
-unavailable:
-    game_application_log(a,"windowed backend rejected: %s\n","explicit local DLLs and forced windowed/free-mouse configuration required");return NULL;
-#endif
 }
 int game_application_ui_begin(GameApplication *app) {
     PortablePlatform *p=app->platform;
-#ifndef UPRISING_OPENGL1
-    void (WINAPI *initialize)(void);void (WINAPI *select)(int32_t);
-    int32_t (WINAPI *query)(void *);FARPROC entry;uint32_t hardware[37]={0};
-#endif
-    if(!p || p->glide_initialized)return 0;
-    /*The installed wrapper can change the desktop even for a hidden HWND.
-     *Headless validation must fail before entering it, never simulate success. */
+    if(!p || p->renderer_initialized)return 0;
+    /*Rendering requires an explicitly windowed native display. */
     if(GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)){
-        game_application_log(app,"%s\n","HEADLESS_GLIDE_DISABLED: external Glide presentation is unsafe for unattended tests");
+        game_application_log(app,"%s\n","HEADLESS_NATIVE_DISPLAY_DISABLED: windowed rendering required");
         return 0;
     }
-#ifdef UPRISING_OPENGL1
     if(!GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))return 0;
-    return gl1_install(app,p);
-#else
-    if(!p->glide)p->glide=game_application_backend_library(app,"glide2x.dll");
-    if(!p->glide){game_application_log(app,"native backend: %s\n","Glide SDK unavailable");return 0;}
-#define LOAD_GLIDE(function,name) do { \
-    typedef char pointer_width[sizeof(function)==sizeof(entry)?1:-1]; \
-    (void)sizeof(pointer_width);entry=GetProcAddress(p->glide,name); \
-    if(!entry)goto unavailable;memcpy(&function,&entry,sizeof(function)); \
-} while(0)
-    LOAD_GLIDE(initialize,"_grGlideInit@0");
-    LOAD_GLIDE(p->glide_shutdown,"_grGlideShutdown@0");
-    LOAD_GLIDE(p->window_open,"_grSstWinOpen@28");
-    LOAD_GLIDE(p->window_close,"_grSstWinClose@0");
-    LOAD_GLIDE(p->fog_generate,"_guFogGenerateExp2@8");
-    LOAD_GLIDE(p->fog_color,"_grFogColorValue@4");
-    LOAD_GLIDE(p->fog_table,"_grFogTable@4");
-    LOAD_GLIDE(p->texture_lod_bias,"_grTexLodBiasValue@8");
-    LOAD_GLIDE(p->texture_ncc_table,"_grTexNCCTable@8");
-    LOAD_GLIDE(p->chroma_mode,"_grChromakeyMode@4");
-    LOAD_GLIDE(p->chroma_value,"_grChromakeyValue@4");
-    LOAD_GLIDE(p->alpha_reference,"_grAlphaTestReferenceValue@4");
-    LOAD_GLIDE(p->buffer_clear,"_grBufferClear@12");
-    LOAD_GLIDE(p->buffer_swap,"_grBufferSwap@4");
-    LOAD_GLIDE(p->lfb_lock,"_grLfbLock@24");
-    LOAD_GLIDE(p->lfb_unlock,"_grLfbUnlock@8");
-    LOAD_GLIDE(p->lfb_depth,"_grLfbConstantDepth@4");
-    LOAD_GLIDE(query,"_grSstQueryHardware@4");
-    LOAD_GLIDE(select,"_grSstSelect@4");
-    LOAD_GLIDE(p->texture_min,"_grTexMinAddress@4");
-    LOAD_GLIDE(p->texture_max,"_grTexMaxAddress@4");
-    LOAD_GLIDE(p->texture_upload,"_grTexDownloadMipMap@16");
-    LOAD_GLIDE(p->texture_bytes,"_grTexTextureMemRequired@8");
-    LOAD_GLIDE(p->texture_statistics,"_grSstPerfStats@4");
-    LOAD_GLIDE(p->texture_reset_statistics,"_grSstResetPerfStats@0");
-    LOAD_GLIDE(p->draw_line,"_grDrawLine@8");
-    LOAD_GLIDE(p->draw_triangle,"_grDrawTriangle@12");
-    LOAD_GLIDE(p->draw_point,"_grDrawPoint@4");
-    LOAD_GLIDE(p->alpha_test,"_grAlphaTestFunction@4");
-    LOAD_GLIDE(p->constant_color,"_grConstantColorValue@4");
-    LOAD_GLIDE(p->depth_bias,"_grDepthBiasLevel@4");
-    LOAD_GLIDE(p->texture_filter,"_grTexFilterMode@12");
-    LOAD_GLIDE(p->palette_upload,"_grTexDownloadTable@12");
-    LOAD_GLIDE(p->palette_range,"_grTexDownloadTablePartial@20");
-    LOAD_GLIDE(p->texture_source,"_grTexSource@16");
-    LOAD_GLIDE(p->texture_combine,"_grTexCombine@28");
-    LOAD_GLIDE(p->texture_clamp,"_grTexClampMode@12");
-    LOAD_GLIDE(p->alpha_combine,"_grAlphaCombine@20");
-    LOAD_GLIDE(p->fog_mode,"_grFogMode@4");
-    LOAD_GLIDE(p->cull_mode,"_grCullMode@4");
-    LOAD_GLIDE(p->dither,"_grDitherMode@4");
-    LOAD_GLIDE(p->depth_mode,"_grDepthBufferMode@4");
-    LOAD_GLIDE(p->depth_function,"_grDepthBufferFunction@4");
-    LOAD_GLIDE(p->depth_mask,"_grDepthMask@4");
-    LOAD_GLIDE(p->alpha_blend,"_grAlphaBlendFunction@16");
-    LOAD_GLIDE(p->color_combine,"_grColorCombine@20");
-#undef LOAD_GLIDE
-    /* Retail imports keep Glide mapped for the process lifetime. Some SDK
-     * wrappers leave a queued WinMM callback after grGlideShutdown returns;
-     * unloading its code races that callback. Pin this native SDK module,
-     * while still closing contexts and releasing our LoadLibrary reference. */
-    {HMODULE pinned;
-        if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
-                (LPCSTR)(uintptr_t)initialize,&pinned))goto unavailable;
-    }
-    initialize();p->glide_initialized=1;
-    if(!query(hardware))return 0;
-    select(0);return 1;
-unavailable:
-    p->draw_point=NULL;p->alpha_test=NULL;p->constant_color=NULL;p->depth_bias=NULL;
-    p->texture_filter=NULL;p->palette_upload=NULL;p->palette_range=NULL;
-    p->draw_triangle=NULL;p->texture_source=NULL;p->texture_combine=NULL;p->texture_clamp=NULL;
-    p->alpha_combine=NULL;p->fog_mode=NULL;p->cull_mode=NULL;
-    p->draw_line=NULL;p->dither=NULL;p->depth_mode=NULL;p->depth_function=NULL;
-    p->depth_mask=NULL;p->alpha_blend=NULL;p->color_combine=NULL;
-    FreeLibrary(p->glide);p->glide=NULL;p->glide_shutdown=NULL;
-    p->texture_min=NULL;p->texture_max=NULL;p->texture_upload=NULL;
-    p->texture_statistics=NULL;p->texture_reset_statistics=NULL;p->texture_bytes=NULL;return 0;
-#endif
+    return gl1_create(app,p);
 }
 
 /*439930: actual SDK context/fog/texture setup. Locals are native SDK values;
@@ -428,42 +268,41 @@ int game_application_level_graphics_begin(GameApplication *a) {
     PortablePlatform *p=a->platform;uint8_t fog[64];uint32_t palette[256];
     float density;uint32_t bits=0x37fba882;unsigned i;char diagnostic[160];
     if(GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)){
-        game_application_log(a,"%s\n","HEADLESS_GLIDE_DISABLED: external Glide presentation is unsafe for unattended tests");
+        game_application_log(a,"%s\n","HEADLESS_NATIVE_DISPLAY_DISABLED: windowed rendering required");
         return 0;
     }
-    if(!p || !p->glide_initialized || !p->window_open || !p->fog_generate ||
-        !p->palette_upload || a->memory.fault || p->window_opened){
-        snprintf(diagnostic,sizeof(diagnostic),"native graphics initialization rejected: initialized=%d opened=%d fault=%d",p?p->glide_initialized:0,p?p->window_opened:0,a->memory.fault);
+    if(!p || !p->renderer_initialized || a->memory.fault || p->window_opened){
+        snprintf(diagnostic,sizeof(diagnostic),"native graphics initialization rejected: initialized=%d opened=%d fault=%d",p?p->renderer_initialized:0,p?p->window_opened:0,a->memory.fault);
         game_application_log(a,"%s\n",diagnostic);return 0;
     }
     /* A hidden window is never GetActiveWindow(). Give the SDK the actual
      * native owner instead of relying on its foreground-window discovery. */
-    if(!p->window_open((uintptr_t)game_menu_window_handle(a),7,0,1,0,2,1)){
-        snprintf(diagnostic,sizeof(diagnostic),"native Glide window open failed: owner=%p",game_menu_window_handle(a));game_application_log(a,"%s\n",diagnostic);return 0;
+    if(!gl1_open((HWND)game_menu_window_handle(a))){
+        snprintf(diagnostic,sizeof(diagnostic),"native OpenGL window open failed: owner=%p",game_menu_window_handle(a));game_application_log(a,"%s\n",diagnostic);return 0;
     }
     p->window_opened=1;p->capture_attempted=0;memcpy(&density,&bits,sizeof(density));
-    p->fog_generate(fog,density);
+    gl1_fog_generate(fog,density);
     if(!game_memory_write(&a->memory,0x5ad348,fog,sizeof(fog)))goto fail;
-    p->fog_color(0x83b9be);p->fog_table(fog);
-    p->texture_filter(0,1,1);p->texture_lod_bias(0,0.5f);
-    p->texture_ncc_table(0,0);p->chroma_mode(1);p->chroma_value(0xff00ff);p->alpha_reference(255);
+    gl1_fog_color(0x83b9be);gl1_fog_table(fog);
+    gl1_filter(1,1);gl1_lod_bias(0.5f);
+    gl1_chroma_mode(1);gl1_chroma_value(0xff00ff);gl1_alpha_reference(255);
     /*4176e0 immediately uploads the existing P8 palette after opening. */
     for(i=0;i<256;++i)palette[i]=game_memory_read_u32(&a->memory,0x5ad3a8+i*4);
     if(a->memory.fault)goto fail;
-    p->palette_upload(0,2,palette);return 1;
-fail:p->window_close();p->window_opened=0;return 0;
+    gl1_palette_range(palette,0,255);return 1;
+fail:gl1_close();p->window_opened=0;return 0;
 }
 /*4399b0, also used when the platform owner itself is retired. */
 int game_application_level_graphics_end(GameApplication *a) {
     PortablePlatform *p=a->platform;if(!p)return 1;
-    if(p->text_glide_locked){p->lfb_unlock(1,1);p->text_glide_locked=0;}
-    if(p->window_opened){p->window_close();p->window_opened=0;}
+    if(p->text_pixels_locked){gl1_unmap_pixels();p->text_pixels_locked=0;}
+    if(p->window_opened){gl1_close();p->window_opened=0;}
     return 1;
 }
 int game_level_screen_clear(GameApplication *a,int enabled) {
     PortablePlatform *p=a->platform;
-    if(enabled || !p || !p->window_opened || !p->buffer_clear)return 0;
-    p->buffer_clear(0x83b9be,0,0xffff);return 1;
+    if(enabled || !p || !p->window_opened )return 0;
+    gl1_clear(0x83b9be,0,0xffff);return 1;
 }
 int game_level_screen_present(GameApplication *a,uint32_t interval) {
     PortablePlatform *p=a->platform;int32_t signed_interval;
@@ -471,39 +310,36 @@ int game_level_screen_present(GameApplication *a,uint32_t interval) {
      *reload/termination. The level loop retires the existing display owner. */
     if(game_memory_read_u32(&a->memory,0x5ac970) || game_memory_read_u32(&a->memory,0x58360c) ||
        game_memory_read_u32(&a->memory,0x59d4c8))return !a->memory.fault;
-    if(!p || !p->window_opened || !p->buffer_swap)return 0;
-    memcpy(&signed_interval,&interval,4);p->buffer_swap(signed_interval);
-#ifdef UPRISING_OPENGL1
+    if(!p || !p->window_opened )return 0;
+    memcpy(&signed_interval,&interval,4);gl1_swap(signed_interval);
     if(!gl1_current || gl1_current->failed)return 0;
-#endif
     return 1;
 }
 /*4d7680 SDK state is isolated here; the portable caller owns depth geometry. */
 int game_application_frame_depth_state(GameApplication *a,int enabled){
     PortablePlatform *p=a->platform;
-    if(!p || !p->window_opened || !p->depth_mode || !p->depth_mask)return 0;
+    if(!p || !p->window_opened )return 0;
     if(!enabled){
-        if(!p->buffer_clear)return 0;
-        p->depth_mode(2);p->depth_mask(1);p->buffer_clear(0x83b9be,0,0xffff);return 1;
+
+        gl1_depth_mode(2);gl1_depth_mask(1);gl1_clear(0x83b9be,0,0xffff);return 1;
     }
-    if(!p->alpha_blend || !p->alpha_combine || !p->texture_combine || !p->fog_mode ||
-       !p->cull_mode || !p->depth_function || !p->depth_bias || !p->dither || !p->color_combine || !p->constant_color)return 0;
-    p->alpha_blend(4,0,4,0);p->alpha_combine(0,0,1,2,0);
-    p->texture_combine(0,0,0,0,0,0,0);p->fog_mode(0);p->cull_mode(0);
+
+    gl1_alpha_blend(0);gl1_alpha_mode(RENDER_ALPHA_ZERO);
+    gl1_fog_mode(0);gl1_cull(0);
     /* The SDK's compare-to-bias path stores the comparison bias as depth,
      * leaving the whole viewport at near depth. Clear the original viewport
      * quad through ordinary W writes; world_begin restores normal testing.
      * Exact preservation of preexisting zero-depth pixels remains unproved. */
-    p->depth_bias(0);p->screen_mask_active=1;
-    p->depth_mode(2);p->depth_function(7);p->dither(0);p->depth_mask(1);
-    p->color_combine(1,0,1,2,0);p->constant_color(0x83b9be);return 1;
+    gl1_depth_bias(0);p->screen_mask_active=1;
+    gl1_depth_mode(2);gl1_depth_func(7);gl1_dither(0);gl1_depth_mask(1);
+    gl1_color_mode(RENDER_COLOR_CONSTANT);gl1_constant(0x83b9be);return 1;
 }
 extern int game_menu_level_surface_flip(GameApplication *);
 /* Opt-in evidence from the actual SDK front buffer. No new presentation owner
  * or CPU capture bridge; the LFB pointer is borrowed until its matching unlock. */
 static void capture_game_frame(GameApplication *a,unsigned buffer){
     PortablePlatform *p=a->platform;char directory[MAX_PATH],path[MAX_PATH+32];DWORD length;
-    NativeGlideLfbInfo info={0};BITMAPFILEHEADER header={0};BITMAPINFOHEADER bitmap={0};
+    RenderPixelView info={0};BITMAPFILEHEADER header={0};BITMAPINFOHEADER bitmap={0};
     uint32_t width,height,row_bytes,x,y;uint8_t *row=NULL;FILE *file=NULL;int ok=0,locked=0;
     if(p->capture_attempted)return;
     p->capture_attempted=1;
@@ -511,10 +347,10 @@ static void capture_game_frame(GameApplication *a,unsigned buffer){
     if(!length || length>=sizeof(directory))return;
     width=game_memory_read_u32(&a->memory,0x627928);height=game_memory_read_u32(&a->memory,0x62792c);
     if(a->memory.fault || !width || !height || width>16384 || height>16384)goto done;
-    info.size=sizeof(info);
-    if(!p->lfb_lock(0,buffer,0,0,0,&info))goto done;
+
+    if(!gl1_map_pixels(0,buffer,&info))goto done;
     locked=1;
-    if(!info.pixels || info.stride<width*2 || info.write_mode || info.origin)goto done;
+    if(!info.pixels || info.stride<width*2)goto done;
     row_bytes=(width*3+3)&~3u;row=calloc(row_bytes,1);if(!row)goto done;
     snprintf(path,sizeof(path),"%s/native-%s-frame.bmp",directory,buffer?"before-text":"game");file=fopen(path,"wb");if(!file)goto done;
     header.bfType=0x4d42;header.bfOffBits=sizeof(header)+sizeof(bitmap);header.bfSize=header.bfOffBits+row_bytes*height;
@@ -527,7 +363,7 @@ static void capture_game_frame(GameApplication *a,unsigned buffer){
     }ok=1;
 done:
     if(file && fclose(file))ok=0;
-    free(row);if(locked && !p->lfb_unlock(0,buffer))ok=0;
+    free(row);if(locked && !gl1_unmap_pixels())ok=0;
     game_application_log(a,"native frame capture: %s\n",ok?"saved":"FAILED");
 }
 /*5189a0: actual swap then optional owned DirectDraw surface flip. The native
@@ -540,7 +376,7 @@ extern int game_menu_accelerated_text_begin(GameApplication *,GameAddress,const 
 extern int game_menu_accelerated_text_end(GameApplication *);
 /*532bf0: borrow the actual backend pixels for exactly one glyph operation. */
 int game_application_glyph_begin(GameApplication *a,GameTextTarget *target,int32_t *fallback){
-    PortablePlatform *p=a->platform;GameMemory *m=&a->memory;NativeGlideLfbInfo info={0};
+    PortablePlatform *p=a->platform;GameMemory *m=&a->memory;RenderPixelView info={0};
     uint32_t height=game_memory_read_u32(m,0x62792c);
     if(p && GetEnvironmentVariableA("UPRISING_RECOMP_CAPTURE_BEFORE_TEXT",NULL,0))capture_game_frame(a,1);
     if(!game_memory_read_u32(m,0x5840f0)){
@@ -549,49 +385,46 @@ int game_application_glyph_begin(GameApplication *a,GameTextTarget *target,int32
         for(i=0;i<4;i++){v=game_memory_read_u32(m,addresses[i]);memcpy(fields[i],&v,4);}
         return !m->fault && game_menu_accelerated_text_begin(a,0,&clip,&clip,target,fallback);
     }
-    if(m->fault || !target || !fallback || !p || !p->window_opened || p->text_glide_locked ||
-       !p->lfb_lock || !p->lfb_unlock || !p->lfb_depth || !p->depth_mode || !p->depth_mask || !p->depth_function){
-        fprintf(stderr,"native text backend unavailable: fault=%u window=%d locked=%d lfb=%d/%d/%d depth=%d/%d/%d\n",
-            m->fault,p?p->window_opened:0,p?p->text_glide_locked:0,p&&p->lfb_lock,p&&p->lfb_unlock,p&&p->lfb_depth,
-            p&&p->depth_mode,p&&p->depth_mask,p&&p->depth_function);return 0;
+    if(m->fault || !target || !fallback || !p || !p->window_opened || p->text_pixels_locked ){
+        fprintf(stderr,"native text backend unavailable: fault=%u window=%d locked=%d\n",
+            m->fault,p?p->window_opened:0,p?p->text_pixels_locked:0);return 0;
     }
-    p->depth_mode(0);p->depth_mask(0);p->lfb_depth(0xffff);info.size=sizeof(info);
-    if(!p->lfb_lock(1,1,0,0,0,&info)){fprintf(stderr,"native text backend: LFB lock rejected\n");goto fail;}
-    p->text_glide_locked=1;
+    gl1_depth_mode(0);gl1_depth_mask(0);
+    if(!gl1_map_pixels(1,1,&info)){fprintf(stderr,"native text backend: LFB lock rejected\n");goto fail;}
+    p->text_pixels_locked=1;
     if(!info.pixels || !info.stride || info.stride>INT32_MAX || (info.stride&1) || !height ||
        (uint64_t)info.stride*height>SIZE_MAX){fprintf(stderr,"native text backend: invalid LFB pixels=%p stride=%u height=%u\n",info.pixels,info.stride,height);goto fail;}
     memset(target,0,sizeof(*target));target->pixels=info.pixels;target->pixel_bytes=(size_t)info.stride*height;
     target->stride=(int32_t)(info.stride/2);target->rgb565=1;*fallback=20;return 1;
 fail:
-    if(p->text_glide_locked){p->lfb_unlock(1,1);p->text_glide_locked=0;}
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(1);return 0;
+    if(p->text_pixels_locked){gl1_unmap_pixels();p->text_pixels_locked=0;}
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);return 0;
 }
 int game_application_glyph_end(GameApplication *a){
     PortablePlatform *p=a->platform;int ok;
-    if(p && p->text_glide_locked){
-        ok=p->lfb_unlock(1,1)!=0;p->text_glide_locked=0;
-        p->depth_mode(2);p->depth_function(3);p->depth_mask(1);return ok;
+    if(p && p->text_pixels_locked){
+        ok=gl1_unmap_pixels()!=0;p->text_pixels_locked=0;
+        gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);return ok;
     }
     return !game_memory_read_u32(&a->memory,0x5840f0) && game_menu_accelerated_text_end(a);
 }
 /*439e00/439e30: the palette frame's actual colored quad and SDK state. */
 int game_application_palette_quad(GameApplication *a,int32_t left,int32_t top,int32_t right,int32_t bottom,uint8_t color){
     PortablePlatform *p=a->platform;GameRenderVertex vertices[4],inherited[4]={{0}};uint8_t colors[4][3];unsigned i,k;
-    if(!p || !p->window_opened || !p->fog_mode || !p->alpha_blend || !p->color_combine ||
-       !p->depth_mode || !p->depth_function || !p->depth_mask || !p->cull_mode || !p->draw_triangle)return 0;
+    if(!p || !p->window_opened )return 0;
     for(i=0;i<4;i++)for(k=0;k<3;k++)colors[i][k]=game_memory_read_u8(&a->memory,0x5ad3a8+(uint32_t)color*4+2-k);
     if(a->memory.fault)return 0;
-    p->fog_mode(0);p->alpha_blend(4,0,4,0);p->color_combine(3,8,1,0,0);
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(1);p->cull_mode(0);
+    gl1_fog_mode(0);gl1_alpha_blend(0);gl1_color_mode(RENDER_COLOR_VERTEX);
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);gl1_cull(0);
     game_screen_build_quad(vertices,inherited,left,top,right,bottom,colors,0x3f000000);
-    p->draw_triangle(vertices,vertices+1,vertices+2);p->draw_triangle(vertices,vertices+2,vertices+3);return 1;
+    gl1_triangle(vertices,vertices+1,vertices+2);gl1_triangle(vertices,vertices+2,vertices+3);return 1;
 }
 int game_level_screen_palette(GameApplication *a,GameAddress address) {
     PortablePlatform *p=a->platform;uint32_t colors[256];unsigned i;
-    if(!p || !p->window_opened || !p->palette_upload)return 0;
+    if(!p || !p->window_opened )return 0;
     for(i=0;i<256;++i)colors[i]=game_memory_read_u32(&a->memory,address+i*4);
     if(a->memory.fault)return 0;
-    p->palette_upload(0,2,colors);return 1;
+    gl1_palette_range(colors,0,255);return 1;
 }
 /*4d9570: the final overlay queue shares the native world renderer. Restore
  *chromakey even when a submission fails, so failure cleanup preserves SDK state. */
@@ -600,53 +433,51 @@ int game_level_frame_004d9570(GameApplication *a){
     GameAddress head=game_memory_read_u32(&a->memory,0x604f08);int ok;
     if(a->memory.fault)return 0;
     if(!head)return 1;
-    if(!p || !p->window_opened || !p->chroma_mode)return 0;
-    p->chroma_mode(0);ok=game_level_world_render(a,head);p->chroma_mode(1);
+    if(!p || !p->window_opened )return 0;
+    gl1_chroma_mode(0);ok=game_level_world_render(a,head);gl1_chroma_mode(1);
     return ok;
 }
 typedef struct LevelImageDraw {GameApplication *app;TextureRecord *texture;int started;} LevelImageDraw;
 static int level_image_begin(void *context) {(void)context;return 1;}
 static int level_image_tile(void *context,const uint8_t pixels[1024],const GameRenderVertex vertices[4]) {
-    LevelImageDraw *draw=context;GameApplication *a=draw->app;PortablePlatform *p=a->platform;
-    TextureRecord *record=draw->texture;NativeGlideTextureInfo info;
+    LevelImageDraw *draw=context;GameApplication *a=draw->app;
+    TextureRecord *record=draw->texture;RenderTextureView info;
     if(texture_store_write_indexed(record,pixels,1024,0,0,1)<0)return 0;
     if(!(record->flags&0x80000000u)) {
         if(!game_level_texture_use(a,record->id))return 0;
     } else {
         info.small_lod=info.large_lod=record->image.lod;info.aspect=record->image.aspect;
         info.format=record->image.format;info.pixels=record->image.pixels;
-        p->texture_upload(0,record->address,3,&info);
+        gl1_upload(record->address,&info);
     }
     if(!draw->started) {
-        p->texture_combine(0,1,0,1,0,0,0);p->color_combine(3,8,1,1,0);p->alpha_blend(4,0,4,0);
-        p->depth_function(7);p->depth_mode(2);p->depth_mask(1);p->texture_filter(0,0,0);
-        p->dither(0);p->fog_mode(0);draw->started=1;
+        gl1_color_mode(RENDER_COLOR_TEXTURE);gl1_alpha_blend(0);
+        gl1_depth_func(7);gl1_depth_mode(2);gl1_depth_mask(1);gl1_filter(0,0);
+        gl1_dither(0);gl1_fog_mode(0);draw->started=1;
     }
     return game_application_surface_texture(a,record) && game_application_surface_polygon(a,vertices,4);
 }
 static int level_image_finish(void *context) {
-    LevelImageDraw *draw=context;PortablePlatform *p=draw->app->platform;
-    p->texture_filter(0,1,1);return 1;
+    (void)context;
+    gl1_filter(1,1);return 1;
 }
 extern TextureRecord *game_model_ui_tile_texture(GameApplication *);
 static int frame_image_tile(void *context,const uint8_t pixels[1024],const GameRenderVertex vertices[4]){
-    LevelImageDraw *draw=context;PortablePlatform *p=draw->app->platform;TextureRecord *record=draw->texture;
-    NativeGlideTextureInfo info;
+    LevelImageDraw *draw=context;TextureRecord *record=draw->texture;
+    RenderTextureView info;
     if(texture_store_write_indexed(record,pixels,1024,0,0,1)<0 || !game_level_texture_use(draw->app,record->id))return 0;
     info.small_lod=info.large_lod=record->image.lod;info.aspect=record->image.aspect;
     info.format=record->image.format;info.pixels=record->image.pixels;
-    p->texture_upload(0,record->address,3,&info);
+    gl1_upload(record->address,&info);
     if(!game_application_surface_texture(draw->app,record))return 0;
-    p->draw_triangle(vertices,vertices+1,vertices+2);p->draw_triangle(vertices,vertices+2,vertices+3);return 1;
+    gl1_triangle(vertices,vertices+1,vertices+2);gl1_triangle(vertices,vertices+2,vertices+3);return 1;
 }
 /*4d8b50: the existing tiled-image algorithm consumes bounded owned bitmap
  * pixels directly. The source/destination may alias; neither is rewritten. */
 int game_level_frame_004d8b50(GameApplication *a,const uint32_t source[4],uint32_t destination[4],const uint32_t descriptor[2],float oow){
     PortablePlatform *p=a->platform;GameUiIndexedImage image;GameUiRect src,dst;LevelImageDraw draw;
     GameUiTileOps ops={&draw,level_image_begin,frame_image_tile,level_image_finish};int32_t c[8];unsigned i;
-    if(!source || !destination || !descriptor || !p || !p->window_opened || !p->texture_upload || !p->draw_triangle ||
-       !p->texture_combine || !p->alpha_blend || !p->color_combine || !p->depth_function || !p->depth_mode ||
-       !p->texture_filter || !p->dither || !p->fog_mode)return 0;
+    if(!source || !destination || !descriptor || !p || !p->window_opened )return 0;
     image.width=image.stride=descriptor[0]&65535;image.height=descriptor[0]>>16;
     if(!image.width || image.width>32767 || !image.height || (uint64_t)image.stride*image.height>SIZE_MAX)return 0;
     image.size=(size_t)image.stride*image.height;
@@ -657,11 +488,11 @@ int game_level_frame_004d8b50(GameApplication *a,const uint32_t source[4],uint32
     src.left=c[0];src.top=c[1];src.right=c[2];src.bottom=c[3];
     dst.left=c[4];dst.top=c[5];dst.right=c[6];dst.bottom=c[7];
     draw.app=a;draw.texture=game_model_ui_tile_texture(a);draw.started=0;if(!draw.texture)return 0;
-    p->texture_combine(0,1,0,1,0,0,0);p->alpha_blend(4,0,4,0);p->color_combine(3,8,1,1,0);
-    p->depth_function(3);p->depth_mode(2);p->texture_filter(0,0,0);p->dither(0);p->fog_mode(0);
+    gl1_alpha_blend(0);gl1_color_mode(RENDER_COLOR_TEXTURE);
+    gl1_depth_func(3);gl1_depth_mode(2);gl1_filter(0,0);gl1_dither(0);gl1_fog_mode(0);
     {uint32_t bits=game_memory_read_u32(&a->memory,0x574a18);float epsilon;int ok;memcpy(&epsilon,&bits,4);
      ok=!a->memory.fault && game_ui_draw_tiled_image(&image,&src,&dst,oow,epsilon,&ops)==GAME_UI_TILED_IMAGE_OK;
-     if(!ok)p->texture_filter(0,1,1);return ok;}
+     if(!ok)gl1_filter(1,1);return ok;}
 }
 /*43b0b0: the established native tile algorithm and existing TextureStore own
  * all working pixels. The source snapshot is transient and the scratch texture
@@ -670,7 +501,7 @@ int game_level_screen_image(GameApplication *a,GameAddress source,uint32_t strid
     PortablePlatform *p=a->platform;uint8_t *pixels;unsigned row;int ok;
     AssetTexture scratch={0};MaterialValue material={0};LevelImageDraw draw;
     GameUiIndexedImage image;GameUiTileOps ops={&draw,level_image_begin,level_image_tile,level_image_finish};
-    if(!p || !p->window_opened || !p->texture_upload || stride<640 ||
+    if(!p || !p->window_opened || stride<640 ||
         (uint64_t)source+479u*(uint64_t)stride+640u>UINT32_MAX)return 0;
     pixels=malloc(640u*480u);if(!pixels)return 0;
     for(row=0;row<480;++row)if(!game_memory_read(&a->memory,source+row*stride,pixels+row*640u,640)){free(pixels);return 0;}
@@ -689,81 +520,67 @@ void game_application_ui_shutdown(GameApplication *app) {
     PortablePlatform *p=app->platform;
     if(!p)return;
     game_application_level_graphics_end(app);
-    p->draw_line=NULL;p->dither=NULL;p->depth_mode=NULL;p->depth_function=NULL;
-    p->depth_mask=NULL;p->alpha_blend=NULL;p->color_combine=NULL;
-    if(p->glide_initialized && p->glide_shutdown)p->glide_shutdown();
-    p->graphics_owner=NULL;
-    p->glide_initialized=0;
-    if(p->glide)FreeLibrary(p->glide);
-    p->glide=NULL;p->glide_shutdown=NULL;
-    p->texture_min=NULL;p->texture_max=NULL;p->texture_upload=NULL;
-    p->texture_statistics=NULL;p->texture_reset_statistics=NULL;p->texture_bytes=NULL;
+    if(p->renderer_initialized)gl1_shutdown();
+    gl1_current=NULL;p->renderer_initialized=0;
 }
 /*439ce0: ordinary SDK vertices and actual palette bytes. Native DLL pointers
  * stay with the platform owner; no address-ID calling convention adapter. */
-int game_application_glide_line(GameApplication *a,const int32_t coordinates[4],uint8_t color){
+int game_application_render_line(GameApplication *a,const int32_t coordinates[4],uint8_t color){
     PortablePlatform *p=a->platform;GameRenderVertex inherited[2]={{0}},vertices[2];
     GameAddress palette=0x5ad3a8u+(uint32_t)color*4u;uint8_t r,g,b;
-    if(!p || !p->glide_initialized || !p->draw_line || !p->dither || !p->depth_mode ||
-       !p->depth_function || !p->depth_mask || !p->alpha_blend || !p->color_combine)return 0;
+    if(!p || !p->renderer_initialized )return 0;
     b=game_memory_read_u8(&a->memory,palette);g=game_memory_read_u8(&a->memory,palette+1);r=game_memory_read_u8(&a->memory,palette+2);
     if(a->memory.fault)return 0;
     game_screen_build_segment(vertices,inherited,coordinates,r,g,b);
-    p->dither(0);p->alpha_blend(4,0,4,0);p->color_combine(3,8,1,0,0);
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(1);
-    p->draw_line(&vertices[0],&vertices[1]);return 1;
+    gl1_dither(0);gl1_alpha_blend(0);gl1_color_mode(RENDER_COLOR_VERTEX);
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);
+    gl1_line(&vertices[0],&vertices[1]);return 1;
 }
 int game_application_palette_point(GameApplication *a,int32_t x,int32_t y,uint8_t color){
     PortablePlatform *p=a->platform;GameRenderVertex inherited={0},vertex;
     GameAddress palette=0x5ad3a8+(uint32_t)color*4;
-    if(!p || !p->glide_initialized || !p->draw_point || !p->fog_mode || !p->alpha_blend ||
-       !p->color_combine || !p->depth_mode || !p->depth_function || !p->depth_mask)return 0;
+    if(!p || !p->renderer_initialized )return 0;
     game_screen_build_point(&vertex,&inherited,x,y,game_memory_read_u8(&a->memory,palette+2),
         game_memory_read_u8(&a->memory,palette+1),game_memory_read_u8(&a->memory,palette));
     if(a->memory.fault)return 0;
-    p->fog_mode(0);p->alpha_blend(4,0,4,0);p->color_combine(3,8,1,0,0);
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(1);p->draw_point(&vertex);return 1;
+    gl1_fog_mode(0);gl1_alpha_blend(0);gl1_color_mode(RENDER_COLOR_VERTEX);
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);gl1_point(&vertex);return 1;
 }
 /*Circle's shader is established once, even when all segments are clipped. */
 int game_application_palette_lines(GameApplication *a,const int32_t lines[][4],unsigned count,uint8_t color){
     PortablePlatform *p=a->platform;GameAddress palette=0x5ad3a8+(uint32_t)color*4;
     GameRenderVertex inherited[2]={{0}},vertices[2];uint8_t r,g,b;unsigned i;
-    if(!p || !p->glide_initialized || !p->draw_line || !p->fog_mode || !p->alpha_blend ||
-       !p->color_combine || !p->depth_mode || !p->depth_function || !p->depth_mask || count>32 || (count && !lines))return 0;
+    if(!p || !p->renderer_initialized || count>32 || (count && !lines))return 0;
     r=game_memory_read_u8(&a->memory,palette+2);g=game_memory_read_u8(&a->memory,palette+1);b=game_memory_read_u8(&a->memory,palette);
     if(a->memory.fault)return 0;
-    p->fog_mode(0);p->alpha_blend(4,0,4,0);p->color_combine(3,8,1,0,0);
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(1);
-    for(i=0;i<count;i++){game_screen_build_segment(vertices,inherited,lines[i],r,g,b);p->draw_line(vertices,vertices+1);}
+    gl1_fog_mode(0);gl1_alpha_blend(0);gl1_color_mode(RENDER_COLOR_VERTEX);
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);
+    for(i=0;i<count;i++){game_screen_build_segment(vertices,inherited,lines[i],r,g,b);gl1_line(vertices,vertices+1);}
     return 1;
 }
 /*The native SDK ABI is isolated here. Device addresses are numbers; the
  *texture-info data member is a full-width native pointer, never a guest word. */
-static int texture_range(void *context,uint32_t *first,uint32_t *last){
-    PortablePlatform *p=((GameApplication *)context)->platform;
-    if(!p || !p->glide_initialized || !p->texture_min || !p->texture_max)return 0;
-    *first=p->texture_min(0);*last=p->texture_max(0);return 1;
-}
+
 static int texture_statistics(void *context,uint32_t output[5]){
     PortablePlatform *p=((GameApplication *)context)->platform;
-    if(!p || !p->glide_initialized || !p->texture_statistics || !p->texture_reset_statistics)return 0;
-    p->texture_statistics(output);p->texture_reset_statistics();return 1;
+    if(!p || !p->renderer_initialized )return 0;
+    gl1_stats(output);gl1_reset_stats();return 1;
 }
 static int texture_upload(void *context,uint32_t address,const uint8_t format[4],GameAddress data,uint32_t bytes){
-    GameApplication *a=context;PortablePlatform *p=a->platform;NativeGlideTextureInfo info;uint8_t *pixels;
-    if(!p || !p->glide_initialized || !p->texture_upload || !p->texture_bytes)return 0;
+    GameApplication *a=context;PortablePlatform *p=a->platform;RenderTextureView info;uint8_t *pixels;
+    if(!p || !p->renderer_initialized )return 0;
     pixels=scene_projection_storage_borrow_bytes(data,bytes);
     if(!pixels)return 0;
     info.small_lod=format[0];info.large_lod=format[1];info.aspect=format[2];info.format=format[3];info.pixels=pixels;
-    {uint32_t required=p->texture_bytes(3,&info);if(!required || required>bytes)return 0;}
-    p->texture_upload(0,address,3,&info);return 1;
+    {uint32_t required=gl1_texture_bytes(&info);if(!required || required>bytes)return 0;}
+    gl1_upload(address,&info);return gl1_current && !gl1_current->failed;
 }
 static TextureRecord *texture_record(void *context,uint32_t id){return game_model_texture_record(context,id);}
 static int texture_upload_owned(void *context,uint32_t address,const AssetTexture *image){
-    PortablePlatform *p=((GameApplication *)context)->platform;NativeGlideTextureInfo info;uint8_t minimum[8]={0};
-    if(!p || !p->glide_initialized || !p->texture_upload || !p->texture_bytes || !image || !image->pixels)return 0;
+    PortablePlatform *p=((GameApplication *)context)->platform;RenderTextureView info;uint8_t minimum[8]={0};
+    if(!p || !p->renderer_initialized || !image || !image->pixels)return 0;
     info.small_lod=image->lod;info.large_lod=image->lod;info.aspect=image->aspect;info.format=image->format;info.pixels=image->pixels;
-    {uint32_t required=p->texture_bytes(3,&info);
+    {uint32_t required=gl1_texture_bytes(&info);
      if(required==sizeof(minimum) && image->size<sizeof(minimum)){
         /*The synchronous SDK upload reads its minimum8-byte block. Supply
          *bounded zero padding, without changing the owned logical image. */
@@ -771,73 +588,60 @@ static int texture_upload_owned(void *context,uint32_t address,const AssetTextur
      }else if(!required || required>image->size){
         fprintf(stderr,"native texture upload size failed: width=%u height=%u lod=%u aspect=%u format=%u bytes=%u required=%u\n",
             image->width,image->height,image->lod,image->aspect,image->format,(unsigned)image->size,required);return 0;}}
-    p->texture_upload(0,address,3,&info);return 1;
+    gl1_upload(address,&info);return gl1_current && !gl1_current->failed;
 }
-static GameGlideTextureServices texture_services(GameApplication *a){
-    GameGlideTextureServices s={a,texture_range,texture_statistics,texture_upload,texture_record,texture_upload_owned};return s;
+static void texture_release(void *context,uint32_t key){(void)context;gl1_release_texture(key);}
+static void texture_reset(void *context){(void)context;gl1_release_textures();}
+static GameRenderTextureServices texture_services(GameApplication *a){
+    GameRenderTextureServices s={a,texture_statistics,texture_upload,texture_record,texture_upload_owned,texture_release,texture_reset};return s;
 }
 int game_level_interface_prepare(GameApplication *a){
-    GameGlideTextureServices s=texture_services(a);return game_glide_texture_cache_begin(&a->memory,&s);
+    GameRenderTextureServices s=texture_services(a);return game_render_texture_cache_begin(&a->memory,&s);
 }
 int game_level_interface_end(GameApplication *a){
     if(!game_level_projected_texture_release(a))return 0;
-    if(!game_glide_texture_cache_end(&a->memory))return 0;
+    if(!game_render_texture_cache_end(&a->memory))return 0;
     game_model_texture_residency_clear(a);return !a->memory.fault;
 }
 int game_level_texture_frame(GameApplication *a){
-    GameGlideTextureServices s=texture_services(a);return game_glide_texture_cache_frame(&a->memory,&s);
+    GameRenderTextureServices s=texture_services(a);return game_render_texture_cache_frame(&a->memory,&s);
 }
 int game_level_texture_use(GameApplication *a,GameAddress texture){
-    GameGlideTextureServices s=texture_services(a);return game_glide_texture_use(&a->memory,texture,&s);
+    GameRenderTextureServices s=texture_services(a);return game_render_texture_use(&a->memory,texture,&s);
 }
 /*The actual4d7bb0 shader state and triangle algorithm are exposed as native
  *platform services. SDK pointers stay inside this full-width platform owner. */
 int game_application_surface_begin(GameApplication *a){
     PortablePlatform *p=a->platform;
-    if(!p || !p->glide_initialized || !p->texture_combine || !p->color_combine || !p->alpha_blend ||
-       !p->alpha_combine || !p->depth_mode || !p->depth_function || !p->depth_mask || !p->dither || !p->fog_mode || !p->cull_mode)return 0;
-    p->texture_combine(0,1,0,1,0,0,0);p->color_combine(3,8,1,1,0);p->alpha_blend(4,0,4,0);
-    p->alpha_combine(0,0,1,2,0);p->depth_mode(2);p->depth_function(1);p->depth_mask(0);
-    p->dither(2);p->fog_mode(0);p->cull_mode(0);return 1;
+    if(!p || !p->renderer_initialized )return 0;
+    gl1_color_mode(RENDER_COLOR_TEXTURE);gl1_alpha_blend(0);
+    gl1_alpha_mode(RENDER_ALPHA_ZERO);gl1_depth_mode(2);gl1_depth_func(1);gl1_depth_mask(0);
+    gl1_dither(2);gl1_fog_mode(0);gl1_cull(0);return 1;
 }
 int game_application_sky_begin(GameApplication *a,const GameSkyFrame *frame){
-#ifdef UPRISING_OPENGL1
     if(!a || !a->platform)return 0;
     return gl1_sky_begin(frame);
-#else
-    (void)a;(void)frame;return 1;
-#endif
 }
 int game_application_sky_end(GameApplication *a){
-#ifdef UPRISING_OPENGL1
     if(!a || !a->platform)return 0;
     return gl1_sky_end();
-#else
-    (void)a;return 1;
-#endif
 }
 int game_application_remote_sky(GameApplication *a,const GameRemoteSkyFrame *frame){
-#ifdef UPRISING_OPENGL1
     if(!a || !a->platform)return 0;
     return gl1_remote_sky(frame);
-#else
-    (void)a;(void)frame;return 1;
-#endif
 }
 int game_application_surface_clamp(GameApplication *a,int enabled){
-    PortablePlatform *p=a->platform;if(!p || !p->glide_initialized || !p->texture_clamp)return 0;
-    p->texture_clamp(0,(uint32_t)enabled,(uint32_t)enabled);return 1;
+    PortablePlatform *p=a->platform;if(!p || !p->renderer_initialized )return 0;
+    gl1_clamp((uint32_t)enabled,(uint32_t)enabled);return 1;
 }
 int game_application_surface_texture(GameApplication *a,const TextureRecord *texture){
-    PortablePlatform *p=a->platform;NativeGlideTextureInfo info;
-    if(!p || !p->glide_initialized || !p->texture_source || !texture || !texture->image.pixels)return 0;
-    info.small_lod=texture->image.lod;info.large_lod=texture->image.lod;info.aspect=texture->image.aspect;
-    info.format=texture->image.format;info.pixels=texture->image.pixels;
-    p->texture_source(0,texture->address,3,&info);return 1;
+    PortablePlatform *p=a->platform;
+    if(!p || !p->renderer_initialized || !texture || !texture->image.pixels)return 0;
+    gl1_source(texture->address);return 1;
 }
 int game_application_surface_polygon(GameApplication *a,const GameRenderVertex *vertices,unsigned count){
     PortablePlatform *p=a->platform;GameRenderVertex mask[32];float y[32];uint8_t triangles[30][3];unsigned i,n;
-    if(!p || !p->glide_initialized || !p->draw_triangle || !vertices || !count || count>32)return 0;
+    if(!p || !p->renderer_initialized || !vertices || !count || count>32)return 0;
     if(p->screen_mask_active){
         memcpy(mask,vertices,count*sizeof(*vertices));
         /* 65536 wraps to zero in the original FBI W representation. */
@@ -845,109 +649,96 @@ int game_application_surface_polygon(GameApplication *a,const GameRenderVertex *
         vertices=mask;
     }
     for(i=0;i<count;++i)y[i]=vertices[i].y;n=game_screen_polygon_triangles(y,count,triangles);
-    for(i=0;i<n;++i)p->draw_triangle(vertices+triangles[i][0],vertices+triangles[i][1],vertices+triangles[i][2]);
+    for(i=0;i<n;++i)gl1_triangle(vertices+triangles[i][0],vertices+triangles[i][1],vertices+triangles[i][2]);
     return 1;
 }
 int game_application_texture_update(GameApplication *a,const TextureRecord *texture){
-    PortablePlatform *p=a->platform;NativeGlideTextureInfo info;
-    if(!p || !p->glide_initialized || !p->texture_upload || !texture ||
+    PortablePlatform *p=a->platform;RenderTextureView info;
+    if(!p || !p->renderer_initialized || !texture ||
        !texture->image.pixels || !(texture->flags&0x80000000u))return 0;
     info.small_lod=info.large_lod=texture->image.lod;info.aspect=texture->image.aspect;
     info.format=texture->image.format;info.pixels=texture->image.pixels;
-    p->texture_upload(0,texture->address,3,&info);return 1;
+    gl1_upload(texture->address,&info);return 1;
 }
 int game_application_scene_polygon_begin(GameApplication *a,int textured){
     PortablePlatform *p=a->platform;
-    if(!p || !p->glide_initialized || !p->color_combine || !p->alpha_blend ||
-       !p->depth_mode || !p->depth_function || !p->fog_mode)return 0;
+    if(!p || !p->renderer_initialized )return 0;
     if(textured){
-        if(!p->texture_combine || !p->dither)return 0;
-        p->texture_combine(0,1,0,1,0,0,0);p->color_combine(3,8,1,1,0);p->dither(0);
+
+        gl1_color_mode(RENDER_COLOR_TEXTURE);gl1_dither(0);
     }else{
-        if(!p->cull_mode || !p->constant_color || !p->alpha_combine)return 0;
-        p->constant_color(0x7f000000);p->alpha_combine(3,8,1,2,0);
-        p->color_combine(3,8,1,0,0);p->cull_mode(0);
+
+        gl1_constant(0x7f000000);gl1_alpha_mode(RENDER_ALPHA_CONSTANT);
+        gl1_color_mode(RENDER_COLOR_VERTEX);gl1_cull(0);
     }
-    p->fog_mode(0);p->alpha_blend(4,0,4,0);p->depth_mode(2);p->depth_function(3);return 1;
+    gl1_fog_mode(0);gl1_alpha_blend(0);gl1_depth_mode(2);gl1_depth_func(3);return 1;
 }
 int game_application_scene_translucency(GameApplication *a,int enabled){
     PortablePlatform *p=a->platform;
-    if(!p || !p->glide_initialized || !p->alpha_blend || !p->depth_mask)return 0;
-    p->alpha_blend(enabled?1:4,enabled?5:0,4,0);p->depth_mask(enabled?0:1);return 1;
+    if(!p || !p->renderer_initialized )return 0;
+    gl1_alpha_blend(enabled);gl1_depth_mask(enabled?0:1);return 1;
 }
 int game_application_world_begin(GameApplication *a){
     PortablePlatform *p=a->platform;
-    if(!p || !p->glide_initialized || !p->texture_combine || !p->color_combine || !p->alpha_combine ||
-       !p->alpha_blend || !p->depth_mode || !p->depth_function || !p->depth_mask || !p->dither || !p->cull_mode)return 0;
+    if(!p || !p->renderer_initialized )return 0;
     p->screen_mask_active=0;
-    p->texture_combine(0,1,0,1,0,0,0);p->color_combine(3,9,0,1,0);p->alpha_combine(3,8,1,1,0);
-    p->alpha_blend(1,5,4,0);p->depth_mode(2);p->depth_function(1);p->depth_mask(1);p->dither(2);p->cull_mode(0);
-#ifdef UPRISING_OPENGL1
+    gl1_color_mode(RENDER_COLOR_INVERSE_TEXTURE);gl1_alpha_mode(RENDER_ALPHA_TEXTURE);
+    gl1_alpha_blend(1);gl1_depth_mode(2);gl1_depth_func(1);gl1_depth_mask(1);gl1_dither(2);gl1_cull(0);
     gl1_level_fog(1);
-#endif
     return 1;
 }
 int game_application_world_state(GameApplication *a,WorldRenderState kind,int value){
-    PortablePlatform *p=a->platform;if(!p || !p->glide_initialized)return 0;
+    PortablePlatform *p=a->platform;if(!p || !p->renderer_initialized)return 0;
     switch(kind){
     case WORLD_ALPHA_FADE:
-        if(!p->alpha_combine || !p->alpha_test)return 0;
-        p->alpha_combine(3,8,1,value?0:1,0);p->alpha_test(value?2:7);return 1;
-    case WORLD_ALPHA_TEST:if(!p->alpha_test)return 0;p->alpha_test((uint32_t)value);return 1;
-    case WORLD_DEPTH_BIAS:if(!p->depth_bias)return 0;p->depth_bias(value);return 1;
-    case WORLD_TEXTURE_FILTER:if(!p->texture_filter)return 0;p->texture_filter(0,value?1:0,value?1:0);return 1;
-    case WORLD_DEPTH_WRITE:if(!p->depth_mask)return 0;p->depth_mask(value?1:0);return 1;
+
+        gl1_alpha_mode(value?RENDER_ALPHA_VERTEX:RENDER_ALPHA_TEXTURE);gl1_alpha_test(value?2:7);return 1;
+    case WORLD_ALPHA_TEST:gl1_alpha_test((uint32_t)value);return 1;
+    case WORLD_DEPTH_BIAS:gl1_depth_bias(value);return 1;
+    case WORLD_TEXTURE_FILTER:gl1_filter(value?1:0,value?1:0);return 1;
+    case WORLD_DEPTH_WRITE:gl1_depth_mask(value?1:0);return 1;
     }return 0;
 }
 int game_application_world_palette(GameApplication *a,const uint32_t *colors,unsigned first,unsigned last,int full){
     PortablePlatform *p=a->platform;
-    if(!p || !p->glide_initialized || !colors || first>last || last>255)return 0;
-    if(full){if(!p->palette_upload)return 0;p->palette_upload(0,2,colors);}
-    else{if(!p->palette_range)return 0;p->palette_range(0,2,colors,first,last);}return 1;
+    if(!p || !p->renderer_initialized || !colors || first>last || last>255)return 0;
+    if(full){gl1_palette_range(colors,0,255);}
+    else{gl1_palette_range(colors,first,last);}return 1;
 }
 int game_application_world_ncc(GameApplication *a,const uint8_t table[112]){
-    PortablePlatform *p=a->platform;uint32_t aligned[28];
-    if(!p || !p->glide_initialized || !p->palette_upload || !table)return 0;
-    /*This Windows SDK accepts its112-byte table ABI. Copy to aligned storage;
-     *portable code owns only the defined bytes and never aliases a host struct. */
-    memcpy(aligned,table,112);p->palette_upload(0,0,aligned);return 1;
+    PortablePlatform *p=a->platform;
+    if(!p || !p->renderer_initialized || !table)return 0;
+    gl1_ncc_palette(table);return 1;
 }
 int game_application_world_point(GameApplication *a,const GameRenderVertex *vertex){
-    PortablePlatform *p=a->platform;if(!p || !p->glide_initialized || !p->draw_point || !vertex)return 0;
-#ifdef UPRISING_OPENGL1
+    PortablePlatform *p=a->platform;if(!p || !p->renderer_initialized || !vertex)return 0;
     return gl1_world_point(vertex);
-#else
-    p->draw_point(vertex);return 1;
-#endif
 }
 int game_application_render_texture(GameApplication *a,GameAddress id){
     const TextureRecord *record=game_model_texture(a,id);PortablePlatform *p=a->platform;
-    NativeGlideTextureInfo info;uint8_t format[4];uint32_t size;GameAddress pixels;
+    RenderTextureView info;uint8_t format[4];uint32_t size;GameAddress pixels;
     if(record)return game_application_surface_texture(a,record);
-    if(!p || !p->glide_initialized || !p->texture_source)return 0;
+    if(!p || !p->renderer_initialized )return 0;
     if(!game_memory_read(&a->memory,id+16,format,4))return 0;
     size=game_memory_read_u32(&a->memory,id+12);pixels=game_memory_read_u32(&a->memory,id+20);
     info.small_lod=format[0];info.large_lod=format[1];info.aspect=format[2];info.format=format[3];
     info.pixels=scene_projection_storage_borrow_bytes(pixels,size);
     if(a->memory.fault || !size || !info.pixels)return 0;
-    p->texture_source(0,game_memory_read_u32(&a->memory,id+8),3,&info);return !a->memory.fault;
+    gl1_source(game_memory_read_u32(&a->memory,id+8));return !a->memory.fault;
 }
 int game_application_projected_begin(GameApplication *a,ProjectedQueueKind kind){
     PortablePlatform *p=a->platform;
-    if((unsigned)kind>=3 || !p || !p->glide_initialized || !p->fog_mode || !p->alpha_blend ||
-       !p->constant_color || !p->alpha_combine || !p->color_combine || !p->depth_mode || !p->depth_function ||
-       !p->depth_mask || !p->cull_mode || !p->depth_bias || (kind==PROJECTED_TEXTURED && !p->texture_filter))return 0;
-    p->fog_mode(0);p->alpha_blend(1,5,4,0);
-    if(kind!=PROJECTED_TEXTURED)p->constant_color(kind==PROJECTED_ALPHA?UINT32_MAX:0);
-    p->alpha_combine(3,8,1,0,0);p->color_combine(3,8,1,kind==PROJECTED_TEXTURED?1:2,0);
-    p->depth_mode(2);p->depth_function(3);p->depth_mask(0);p->cull_mode(0);
-    if(kind==PROJECTED_TEXTURED)p->texture_filter(0,0,0);p->depth_bias(-100);return 1;
+    if((unsigned)kind>=3 || !p || !p->renderer_initialized )return 0;
+    gl1_fog_mode(0);gl1_alpha_blend(1);
+    if(kind!=PROJECTED_TEXTURED)gl1_constant(kind==PROJECTED_ALPHA?UINT32_MAX:0);
+    gl1_alpha_mode(RENDER_ALPHA_VERTEX);gl1_color_mode(kind==PROJECTED_TEXTURED?RENDER_COLOR_TEXTURE:RENDER_COLOR_CONSTANT);
+    gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(0);gl1_cull(0);
+    if(kind==PROJECTED_TEXTURED)gl1_filter(0,0);gl1_depth_bias(-100);return 1;
 }
 int game_application_projected_end(GameApplication *a,ProjectedQueueKind kind){
     PortablePlatform *p=a->platform;
-    if((unsigned)kind>=3 || !p || !p->glide_initialized || !p->depth_bias ||
-       (kind==PROJECTED_TEXTURED && !p->texture_filter))return 0;
-    if(kind==PROJECTED_TEXTURED)p->texture_filter(0,1,1);p->depth_bias(0);return 1;
+    if((unsigned)kind>=3 || !p || !p->renderer_initialized )return 0;
+    if(kind==PROJECTED_TEXTURED)gl1_filter(1,1);gl1_depth_bias(0);return 1;
 }
 
 /* Actual 00506210/00506c30 callbacks and 00506640 resource/bootstrap chain.

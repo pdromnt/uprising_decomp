@@ -7,7 +7,7 @@
 #include "asset_collision.h"
 #include "gameplay_geometry.h"
 #include "level_factory.h"
-#include "glide_texture_cache.h"
+#include "render_texture_cache.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -259,7 +259,7 @@ void game_model_texture_residency_clear(GameApplication *a){
  * retain their existing application lifetime. */
 int game_model_texture_release(GameApplication *a,uint32_t id) {
     const TextureRecord *record=game_model_texture(a,id);
-    return record?(game_glide_texture_forget(&a->memory,id) && texture_store_remove(&a->model_assets->textures,record->key)):id==0;
+    return record?(game_render_texture_forget(&a->memory,id) && texture_store_remove(&a->model_assets->textures,record->key)):id==0;
 }
 extern int game_menu_palette_read_bytes(GameApplication *,uint8_t[1024]);
 int game_model_texture_take(GameApplication *a,AssetTexture *image,uint32_t flags,MaterialValue *value) {
@@ -501,7 +501,7 @@ void game_model_assets_dispose(GameApplication *a) {
     struct GameModelAssets *s=a->model_assets;TextureRecord *texture;GameMemory cleanup=a->memory;unsigned i;if(!s)return;cleanup.fault=0;
     if(!game_level_texture_profiles_release(a)){a->memory.fault=1;return;}
     for(texture=s->textures.first;texture;texture=texture->next)
-        if(!game_glide_texture_forget(&cleanup,texture->id)){a->memory.fault=1;return;}
+        if(!game_render_texture_forget(&cleanup,texture->id)){a->memory.fault=1;return;}
     scene_model_bridge_clear();
     if(!parts_release(&cleanup,s)){a->memory.fault=1;return;}
     for(i=0;i<MATERIAL_VIEW_CAPACITY;++i)if(s->views[i].id)scene_projection_storage_free(s->views[i].id);

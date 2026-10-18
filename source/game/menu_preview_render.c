@@ -9,7 +9,7 @@
 #include <string.h>
 extern int game_campaign_planet_present(GameApplication *,GameAddress);
 extern int game_model_graph_update(GameApplication *,GameAddress);
-extern int game_application_glide_line(GameApplication *,const int32_t[4],uint8_t);
+extern int game_application_render_line(GameApplication *,const int32_t[4],uint8_t);
 static uint32_t get(GameApplication *a,GameAddress p){return game_memory_read_u32(&a->memory,p);}
 static void put(GameApplication *a,GameAddress p,uint32_t v){game_memory_write_u32(&a->memory,p,v);}
 static float real(GameApplication *a,GameAddress p){uint32_t b=get(a,p);float v;memcpy(&v,&b,4);return v;}
@@ -108,7 +108,7 @@ static int wire_packet(GameApplication *a,const SoftwareRasterFrame *frame,GameA
     if(draw)for(i=0;i<p->count;++i){unsigned next=(i+1)%p->count;
         int32_t coordinates[4]={xy[i][0],xy[i][1],xy[next][0],xy[next][1]};
         if(software_raster_clip_line(coordinates,bounds) &&
-           !(hardware?game_application_glide_line(a,coordinates,(uint8_t)color):software_raster_line(frame,coordinates,(uint8_t)color)))return 0;
+           !(hardware?game_application_render_line(a,coordinates,(uint8_t)color):software_raster_line(frame,coordinates,(uint8_t)color)))return 0;
     }
     return 1;
 }

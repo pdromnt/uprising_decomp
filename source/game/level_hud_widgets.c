@@ -203,12 +203,12 @@ restore:
     return ok;
 }
 extern int game_level_selection_vertices(GameApplication *,GameAddress,const float[][2],const float[][2],unsigned,uint32_t,uint32_t);
-extern int game_application_glide_line(GameApplication *,const int32_t[4],uint8_t);
+extern int game_application_render_line(GameApplication *,const int32_t[4],uint8_t);
 extern int game_application_palette_point(GameApplication *,int32_t,int32_t,uint8_t);
 static int32_t widget_shift(int32_t value,unsigned bits){return value>=0?value/(1<<bits):-1-(int32_t)((-(int64_t)value-1)/(1<<bits));}
 static int radar_line(GameApplication *a,int32_t x,int32_t y,const int8_t offsets[4],uint8_t color){
     int32_t line[4]={widget_add(x,offsets[0]),widget_add(y,offsets[1]),widget_add(x,offsets[2]),widget_add(y,offsets[3])};
-    return game_application_glide_line(a,line,color);
+    return game_application_render_line(a,line,color);
 }
 /*Actual minimap symbols: local strokes retain original order and palette
  *alternation, including repeated strokes and the selected diamond's center. */

@@ -18,8 +18,8 @@ windowed with keyboard, mouse and audio enabled. Its title is
 **Uprising: Join or Die - RE/Decompiled**.
 
 Settings, keyboard/controller mappings and music preferences share
-`CONFIG/settings.ini`. The first run imports old `FONTS/settings.cfg`,
-`FONTS/keymap.cfg` and `uprising-recomp-settings.ini` if present. Later runs use the
+`CONFIG/settings.ini`. The first run imports old `FONTS/settings.cfg` and
+`FONTS/keymap.cfg` if present. Later runs use the
 new file. Saves and screenshots remain separate user data.
 
 The existing Windows music adapter uses `WINMM.dll`, `libogg-0.dll`,

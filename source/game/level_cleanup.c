@@ -123,7 +123,8 @@ static int perform(void *c,ApplicationShutdownStep step,unsigned index,uint32_t 
     case APPLICATION_SHUTDOWN_FINISH_CONTROLLER:
         /*41843a ignores playback availability. A missing disc/device must
          *not prevent mandatory level cleanup; memory faults still fail below. */
-        music=get(a,0x59d828);if(music)(void)game_menu_music_play(a,music,0);
+        /* The retail entry-zero restart is not a new user selection. */
+        music=get(a,0x59d828);if(music)(void)game_menu_music_play(a,music,-1);
         put(a,0x583604,0);break;
     case APPLICATION_SHUTDOWN_CLOSE_ROOT:return game_level_display_restore_menu(a);
     default:return 0;

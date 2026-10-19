@@ -61,7 +61,7 @@ int game_menu_video_state(GameApplication *a,GameAddress event,uint32_t state,ui
         GameAddress slot=i==0?movie_slot:i==1?bg_slot:region_slot;p=get(a,slot,0);
         if(p && !game_menu_widget_destroy(a,p))ok=0;else put(a,slot,0,0);
     }
-    if(music)(void)game_menu_music_play(a,music,0);
+    if(music)(void)game_menu_music_play(a,music,-1);
     return ok && !a->memory.fault;
 fail:(void)game_menu_video_state(a,event,state,1);return 0;
 }

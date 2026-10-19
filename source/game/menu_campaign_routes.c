@@ -27,7 +27,7 @@ int game_menu_campaign_route(GameApplication *a,uint32_t state,uint32_t phase) {
         /*498ffe resumes optional CD music and ignores its result. A missing
          * native CD device must not abort the ending-to-campaign transition;
          * the music owner retains its real status/error for retry and UI. */
-        if(state==30 && music)(void)game_menu_music_play(a,music,0);
+        if(state==30 && music)(void)game_menu_music_play(a,music,-1);
         return ok && !a->memory.fault;
     }
     if(phase)return !a->memory.fault;

@@ -13,6 +13,7 @@ void render_arena_release(void){
     free(arena.vertices);free(arena.indices);free(arena.uv);free(arena.packets);
     free(arena.packet_links);
     free(arena.motion_keys);
+    free(arena.motion_clips);
     free(arena.palette_maps);
     memset(&arena,0,sizeof(arena));stats.live=0;++stats.releases;
 }
@@ -21,15 +22,16 @@ int render_arena_initialize(void){
     next.uv=calloc(45000,sizeof(*next.uv));next.packets=calloc(15000,sizeof(*next.packets));
     next.packet_links=calloc(15000,sizeof(*next.packet_links));
     next.motion_keys=calloc(10000,sizeof(*next.motion_keys));
-    if(!next.vertices || !next.indices || !next.uv || !next.packets || !next.packet_links || !next.motion_keys){
+    next.motion_clips=calloc(10000,sizeof(*next.motion_clips));
+    if(!next.vertices || !next.indices || !next.uv || !next.packets || !next.packet_links || !next.motion_keys || !next.motion_clips){
         free(next.vertices);free(next.indices);free(next.uv);free(next.packets);
-        free(next.packet_links);free(next.motion_keys);return 0;}
+        free(next.packet_links);free(next.motion_keys);free(next.motion_clips);return 0;}
     render_arena_release();arena=next;stats.live=1;++stats.loads;return 1;
 }
 void render_arena_begin_frame(void){
     /* World queues can be drawn after the scene frame that produced them.
      * Palette snapshots therefore live until arena teardown or key refresh. */
-    if(stats.live){++stats.frames;memset(arena.motion_keys,0,10000*sizeof(*arena.motion_keys));}
+    if(stats.live){++stats.frames;memset(arena.motion_keys,0,10000*sizeof(*arena.motion_keys));memset(arena.motion_clips,0,10000*sizeof(*arena.motion_clips));}
 }
 int render_arena_palette_register(uint32_t key,const uint8_t entries[4]){
     size_t i;
@@ -109,6 +111,13 @@ static int span(uint32_t reference,unsigned bank,size_t count,unsigned stride,ui
 }
 RenderArenaVertex *render_arena_vertices(uint32_t reference,size_t count){uint32_t i;return span(reference,0,count,16,&i)?arena.vertices+i:NULL;}
 uint64_t render_arena_motion_key(uint32_t reference){uint32_t i;return span(reference,0,1,16,&i)?arena.motion_keys[i]:0;}
+const RenderArenaMotionClip *render_arena_motion_clip(uint32_t reference){
+    uint32_t i;return span(reference,0,1,16,&i) && arena.motion_clips[i].previous?arena.motion_clips+i:NULL;
+}
+void render_arena_record_motion_clip(uint32_t reference,uint32_t previous,uint32_t current,float fraction,int screen_space){
+    uint32_t i;if(!span(reference,0,1,16,&i))return;
+    arena.motion_keys[i]=0;arena.motion_clips[i]=(RenderArenaMotionClip){previous,current,fraction,screen_space};
+}
 uint32_t *render_arena_indices(uint32_t reference,size_t count){uint32_t i;return span(reference,1,count,4,&i)?arena.indices+i:NULL;}
 RenderArenaUv *render_arena_uv(uint32_t reference,size_t count){uint32_t i;return span(reference,2,count,8,&i)?arena.uv+i:NULL;}
 RenderArenaPacket *render_arena_packets(uint32_t reference,size_t count){uint32_t i;return span(reference,3,count,40,&i)?arena.packets+i:NULL;}

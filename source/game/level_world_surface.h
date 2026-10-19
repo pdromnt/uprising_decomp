@@ -24,5 +24,5 @@ int game_application_surface_begin(GameApplication *);
 int game_application_surface_clamp(GameApplication *,int);
 int game_application_surface_texture(GameApplication *,const TextureRecord *);
 int game_application_surface_polygon(GameApplication *,const GameRenderVertex *,unsigned);
-int game_application_surface_motion_polygon(GameApplication *,const GameRenderVertex *,unsigned,const uint64_t *);
+int game_application_surface_motion_polygon(GameApplication *,const GameRenderVertex *,unsigned,const uint32_t *);
 #endif

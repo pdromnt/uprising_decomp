@@ -16,4 +16,13 @@ int render_motion_sample(RenderMotionHistory *,uint64_t frame,uint64_t key,
 /* Pack previous screen coordinates for correct projective interpolation.
  * Output is {previous_x*q/q_previous, previous_y*q/q_previous, q/q_previous, 1}. */
 int render_motion_projective(float output[4],const float current[3],const float previous[3]);
+typedef struct RenderMotionSource {
+    uint64_t key;float current[3];
+    uint32_t parents[2];float fraction;int screen_space;
+} RenderMotionSource;
+typedef int (*RenderMotionLookup)(void *,uint32_t,RenderMotionSource *);
+/* Resolve clipped points from this frame's edge provenance. Bounds/cycle and
+ * missing-endpoint failures return invalid motion, never a scratch-address ID. */
+int render_motion_resolve(RenderMotionHistory *,uint64_t,uint32_t,
+    RenderMotionLookup,void *,float output[4]);
 #endif

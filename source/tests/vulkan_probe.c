@@ -153,6 +153,19 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
         {const float *m=motion+(8+8*64)*4;
         if(fabsf(m[0]+4)>0.00001f || fabsf(m[1]-2)>0.00001f || m[2]!=1 || m[3]!=0){
             fprintf(stderr,"Vulkan motion: translation/UI preservation failed\n");ok=0;goto done;}}
+        /* Surviving translucent fragments reject history, preserving solid
+         * vectors/validity. Occluded fragments and later UI must not alter it. */
+        draw.capture_depth=1;
+        if(!vulkan_draw_resume(&draw) ||
+           !draw_quad(&draw,0,0,24,24,0.1f,1,0,0,0.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND) ||
+           !draw_quad(&draw,32,0,48,16,0.9f,1,0,0,0.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        draw.capture_depth=0;
+        if(!draw_quad(&draw,0,0,16,16,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&draw,NULL,0) ||
+           !vulkan_draw_read_motion(&draw,motion,sizeof(motion))){ok=0;goto done;}
+        {const float *m=motion+(8+8*64)*4,*occluded=motion+(40+8*64)*4;
+        if(fabsf(m[0]+4)>0.00001f || fabsf(m[1]-2)>0.00001f || m[2]!=1 || m[3]!=1 || occluded[2]!=1 || occluded[3]!=0){
+            fprintf(stderr,"Vulkan reactive coverage: occlusion/vector preservation failed\n");ok=0;goto done;}}
+        printf("VULKAN_REACTIVE_COVERAGE_PASS translucent=checked occlusion=checked motion_preserved=checked ui_excluded=checked\n");
         /* Different previous w across the triangle must use projective division,
          * not interpolation of already divided previous pixel positions. */
         triangle[1].previous[0]*=2;triangle[1].previous[1]*=2;triangle[1].previous[2]=2;

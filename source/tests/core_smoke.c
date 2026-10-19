@@ -1,6 +1,7 @@
 #include "game_memory.h"
 #include "game_text_rasterizer.h"
 #include "render_motion.h"
+#include "gameplay_clipper.h"
 #include "host_file.h"
 #include "player_attachment.h"
 #include "game_initial_data.h"
@@ -725,6 +726,57 @@ static int check_sparse_text_lock(void){
     CHECK(memory.fault && range[0]==UINT32_MAX && range[1]==0);
     free(state);return 0;
 }
+static int motion_source_lookup(void *context,uint32_t reference,RenderMotionSource *out){
+    if(!reference || reference>3)return 0;
+    *out=((RenderMotionSource *)context)[reference-1];return 1;
+}
+static int check_motion_clipping(void){
+    RenderMotionHistory history={0};RenderMotionSource source[3]={{0}};
+    float previous_a[3]={10,4,0.25f},previous_b[3]={30,8,0.5f},unused[3],out[4];
+    GameMemory memory;uint8_t bytes[64]={0};unsigned i,pass;
+    source[0].key=100;source[0].current[0]=20;source[0].current[1]=6;source[0].current[2]=0.5f;
+    source[1].key=200;source[1].current[0]=40;source[1].current[1]=10;source[1].current[2]=0.25f;
+    source[2].parents[0]=1;source[2].parents[1]=2;source[2].fraction=0.25f;
+    CHECK(!render_motion_sample(&history,1,100,previous_a,unused));
+    CHECK(!render_motion_sample(&history,1,200,previous_b,unused));
+    source[2].screen_space=1;source[2].current[2]=0.4375f;
+    CHECK(render_motion_resolve(&history,2,3,motion_source_lookup,source,out));
+    CHECK(out[0]==18.75f && out[2]==1.625f && out[3]==1);
+    source[2].screen_space=0;source[2].current[2]=0.4f;
+    CHECK(render_motion_resolve(&history,2,3,motion_source_lookup,source,out));
+    CHECK(out[0]==18 && out[2]>1.39999f && out[2]<1.40001f);
+    source[2].parents[0]=3;
+    CHECK(!render_motion_resolve(&history,2,3,motion_source_lookup,source,out) && !out[3]);
+    source[2].parents[0]=1;source[2].parents[1]=0;
+    CHECK(!render_motion_resolve(&history,2,3,motion_source_lookup,source,out) && !out[3]);
+    render_motion_release(&history);
+    /* Exercise the real near/screen clippers, keeping their geometric stores
+     * unchanged while recording the edge and the exact rounded fraction. */
+    for(pass=0;pass<2;pass++){
+        RenderArena *arena;GameplayClipStatus status={0};GameplayClipCursors cursors;
+        uint32_t base=render_arena_view(0),packet=render_arena_view(3),tail=0,result;unsigned clips=0;
+        const float bounds[4]={0,0,4,8};
+        CHECK(render_arena_initialize());arena=render_arena_current();
+        game_memory_initialize(&memory,bytes,0x1000,sizeof(bytes));
+        for(i=0;i<3;i++){
+            arena->indices[i]=base+i*16;arena->vertices[i].position[0]=i?2:-2;
+            arena->vertices[i].position[1]=i==2?6:2;
+            arena->vertices[i].position[2]=pass?(i?6:2):0.25f;
+        }
+        arena->packets[0]=(RenderArenaPacket){3,render_arena_view(1),0,0,0,0,{0}};
+        cursors=(GameplayClipCursors){base+64,render_arena_view(1)+64,render_arena_view(2),render_arena_view(1)+4096};
+        result=pass?gameplay_clipper_near_list_state(&memory,packet,4,20,&cursors,&status):
+            gameplay_clipper_screen_chain_state(&memory,packet,&tail,bounds,&cursors,&status);
+        CHECK(result && !memory.fault);
+        for(i=64;i<cursors.vertex-base;i+=16){
+            const RenderArenaMotionClip *clip=render_arena_motion_clip(base+i);
+            CHECK(clip && clip->previous && clip->current && clip->fraction==0.5f && clip->screen_space==!pass);clips++;
+        }
+        CHECK(clips==2);render_arena_begin_frame();CHECK(!render_arena_motion_clip(base+64));
+        render_arena_release();
+    }
+    return 0;
+}
 static int check_render_motion(void){
     RenderMotionHistory history={0};float a[3]={4,8,0.125f},b[3]={12,6,0.25f},previous[3],packed[4];
     uint32_t page;uint64_t first_key,second_key;
@@ -756,6 +808,7 @@ static int check_render_motion(void){
     render_arena_release();return 0;
 }
 int main(void) {
+    CHECK(check_motion_clipping()==0);
     CHECK(check_render_motion()==0);
     CHECK(check_sparse_text_lock()==0);
     {

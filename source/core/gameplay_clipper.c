@@ -305,6 +305,7 @@ static GameAddress clip_polygon_inputs(GameMemory *memory,
                     }
                     intersection = clip_intersection(memory, vertex_cursor,
                         previous, current, near_z, &fraction);
+                    render_arena_record_motion_clip(intersection,previous_address,current_address,fraction,0);
                     output_indices[output_count] = intersection;
                     if ((flags & 1u) != 0u) {
                         if (!input && input_attributes < 0x10000u) {
@@ -546,6 +547,7 @@ static void list_clip_emit_intersection(GameMemory *memory, uint32_t vertex_arra
     list_clip_write_f32(memory, output + 4u,
         list_clip_lerp(previous_y, current_y, ratio));
     list_clip_write_f32(memory, output + 8u, near_z);
+    render_arena_record_motion_clip(output,previous,current,rounded_ratio,0);
     vertices[output_index] = output;
     *vertex_cursor = output + 16u;
 
@@ -827,6 +829,7 @@ static void screen_emit_intersection(GameMemory *memory, uint32_t vertex_array,
                 screen_lerp(screen_read_f32(memory, previous + component * 4u),
                     screen_read_f32(memory, current + component * 4u), ratio));
     }
+    render_arena_record_motion_clip(output,previous,current,rounded_ratio,1);
     vertices[output_index] = output;
     *vertex_cursor = output + 16u;
 

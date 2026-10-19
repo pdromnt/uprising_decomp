@@ -585,17 +585,17 @@ int game_application_surface_polygon(GameApplication *a,const GameRenderVertex *
     for(i=0;i<n;++i)gl1_triangle(vertices+triangles[i][0],vertices+triangles[i][1],vertices+triangles[i][2]);
     return 1;
 }
-int game_application_surface_motion_polygon(GameApplication *a,const GameRenderVertex *v,unsigned count,const uint64_t *keys){
+int game_application_surface_motion_polygon(GameApplication *a,const GameRenderVertex *v,unsigned count,const uint32_t *references){
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     int result;
     if(gl1_current && gl1_current->vulkan && gl1_current->world_depth_capture){
-        gl1_current->motion_vertices=v;gl1_current->motion_keys=keys;gl1_current->motion_count=count;
+        gl1_current->motion_vertices=v;gl1_current->motion_references=references;gl1_current->motion_count=count;
         result=game_application_surface_polygon(a,v,count);
-        gl1_current->motion_vertices=NULL;gl1_current->motion_keys=NULL;gl1_current->motion_count=0;
+        gl1_current->motion_vertices=NULL;gl1_current->motion_references=NULL;gl1_current->motion_count=0;
         return result;
     }
 #endif
-    (void)keys;return game_application_surface_polygon(a,v,count);
+    (void)references;return game_application_surface_polygon(a,v,count);
 }
 int game_application_texture_update(GameApplication *a,const TextureRecord *texture){
     PortablePlatform *p=a->platform;RenderTextureView info;

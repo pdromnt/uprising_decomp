@@ -31,7 +31,7 @@ typedef struct WorldRendererOps {
     /* External palette maps remain an explicit capture-only compatibility edge. */
     int (*palette_map)(void *,GameAddress,uint8_t entries[4]);
     int (*ncc)(void *,const uint8_t table[112]);
-    int (*motion_polygon)(void *,const GameRenderVertex *,unsigned,const uint64_t *keys);
+    int (*motion_polygon)(void *,const GameRenderVertex *,unsigned,const uint32_t *references);
 } WorldRendererOps;
 /* Captured draw state is independent of guest memory. palette_key is an
  * opaque identity for consecutive palette reuse. The producer owns point
@@ -41,7 +41,7 @@ typedef struct WorldRenderCommand {
     MaterialValue material;
     uint8_t palette_map[4];
     GameWorldVertexInput input[32];
-    uint64_t motion_keys[32];
+    uint32_t motion_references[32];
     GameplayPointList points;
 } WorldRenderCommand;
 int world_renderer_draw_commands(const WorldRenderCommand *,size_t,

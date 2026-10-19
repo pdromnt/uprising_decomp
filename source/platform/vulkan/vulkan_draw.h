@@ -27,7 +27,7 @@ typedef struct VulkanDraw {
     VulkanDevice *device;uint32_t width,height;
     VulkanImage color,depth,reciprocal_depth,motion;VulkanBuffer vertices,readback;
     VkRenderPass pass,resume_pass;VkFramebuffer framebuffer;VkDescriptorPool descriptors;
-    VkDescriptorSetLayout texture_layout;VkPipelineLayout layout;VkPipeline pipelines[448];VkShaderModule shaders[2];
+    VkDescriptorSetLayout texture_layout;VkPipelineLayout layout;VkPipeline pipelines[704];VkShaderModule shaders[2];
     VulkanDrawMaterial material;
     VkSampler samplers[8];int texture_sampler;
     VulkanDrawTexture *mask_texture;
@@ -61,7 +61,8 @@ int vulkan_draw_lines(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,Vulka
 int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);
-/* RGBA32F: previous-minus-current pixels, correspondence validity, invalidity.
- * Unknown geometry is explicitly invalid; this is not a finished reactive mask. */
+/* RGBA32F: previous-minus-current pixels, validity, conservative history rejection.
+ * Unknown geometry rejects history. Translucent scene coverage raises rejection
+ * without replacing the underlying solid motion. Composition work remains. */
 int vulkan_draw_read_motion(VulkanDraw *,float *,size_t bytes);
 #endif

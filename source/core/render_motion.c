@@ -42,3 +42,32 @@ int render_motion_projective(float output[4],const float current[3],const float 
     if(!isfinite(ratio) || ratio<=0 || !isfinite(previous[0]*ratio) || !isfinite(previous[1]*ratio))return 0;
     output[0]=previous[0]*ratio;output[1]=previous[1]*ratio;output[2]=ratio;output[3]=1;return 1;
 }
+static int resolve(RenderMotionHistory *h,uint64_t frame,uint32_t reference,
+        RenderMotionLookup lookup,void *context,float output[4],float *q,unsigned *budget,unsigned depth){
+    RenderMotionSource source={0};float previous[3],a[4],b[4],qa,qb;unsigned i;
+    memset(output,0,4*sizeof(*output));
+    if(!reference || !*budget || depth>12)return 0;
+    --*budget;
+    if(!lookup(context,reference,&source) || !isfinite(source.current[2]) || source.current[2]<=0)return 0;
+    *q=source.current[2];
+    if(source.key)return render_motion_sample(h,frame,source.key,source.current,previous) &&
+        render_motion_projective(output,source.current,previous);
+    if(!isfinite(source.fraction) || source.fraction<0 || source.fraction>1 ||
+       !resolve(h,frame,source.parents[0],lookup,context,a,&qa,budget,depth+1) ||
+       !resolve(h,frame,source.parents[1],lookup,context,b,&qb,budget,depth+1))return 0;
+    for(i=0;i<3;i++){
+        /* Camera-space t is affine in world space; screen t is affine in the
+         * q-weighted previous projection. They must not share the same lerp. */
+        float x=source.screen_space?a[i]:a[i]/qa;
+        float y=source.screen_space?b[i]:b[i]/qb;
+        output[i]=(x+(y-x)*source.fraction)*(source.screen_space?1:*q);
+        if(!isfinite(output[i])){memset(output,0,4*sizeof(*output));return 0;}
+    }
+    if(output[2]<=0){memset(output,0,4*sizeof(*output));return 0;}
+    output[3]=1;return 1;
+}
+int render_motion_resolve(RenderMotionHistory *h,uint64_t frame,uint32_t reference,
+        RenderMotionLookup lookup,void *context,float output[4]){
+    unsigned budget=64;float q;
+    return resolve(h,frame,reference,lookup,context,output,&q,&budget,0);
+}

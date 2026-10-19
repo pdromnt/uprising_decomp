@@ -65,4 +65,5 @@ void main() {
     output_motion=vec4(0,0,0,1);
     if(previous_coordinate.w>=0.99999 && previous_coordinate.z>0.0)
         output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-gl_FragCoord.xy,1,0);
+    if(material.padding.x!=0u)output_motion.w=1.0;
 }

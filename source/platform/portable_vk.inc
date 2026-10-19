@@ -14,6 +14,7 @@ typedef struct Vk1Device {
     uint32_t history_camera,history_mode;
     float history_projection[4];
     uint64_t motion_samples,motion_valid;
+    uint64_t motion_clipped;
 } Vk1Device;
 static VulkanDraw *vk1_back(void){return &gl1_current->vulkan->frame[gl1_current->back];}
 static int vk1_flush(VulkanDraw *d,int resume){
@@ -115,6 +116,19 @@ current:
     texture->ncc_table=g->ncc_selected;texture->ncc_generation=g->ncc_generation[g->ncc_selected];
     texture->gpu_width=texture->width;texture->gpu_height=texture->height;
 }
+static int vk1_motion_source(void *context,uint32_t reference,RenderMotionSource *source){
+    RenderArenaVertex *v=render_arena_vertices(reference,1);const RenderArenaMotionClip *clip;
+    (void)context;
+    if(v){
+        source->key=render_arena_motion_key(reference);clip=render_arena_motion_clip(reference);
+        if(clip){source->parents[0]=clip->previous;source->parents[1]=clip->current;source->fraction=clip->fraction;source->screen_space=clip->screen_space;}
+    }else{
+        v=scene_projection_storage_transformed(reference,1);
+        source->key=scene_projection_storage_vertex_key(reference);
+    }
+    if(!v)return 0;
+    memcpy(source->current,v->position,sizeof(source->current));return 1;
+}
 static VulkanDrawVertex vk1_vertex(const GameRenderVertex *v){
     Gl1Device *g=gl1_current;VulkanDrawVertex out={0};float depth,q=v->oow,divisor=g->color_mode==RENDER_COLOR_INVERSE_TEXTURE?256.0f:255.0f;
     if(g->depth_mode==2 || g->depth_mode==4){
@@ -132,13 +146,14 @@ static VulkanDrawVertex vk1_vertex(const GameRenderVertex *v){
         if(g->bound->ui_tile){unsigned slot=g->bound->native_tile-1;out.uv[0]=(out.uv[0]*32+(slot%32)*32*q)/1024;out.uv[1]=(out.uv[1]*32+(slot/32)*32*q)/1024;}
     }
     {float lateral=(v->x-g->projection_center)/g->projection_scale;out.fog=q>0 && q<0.5f?sqrtf(1+lateral*lateral)/q:0;}
-    if(g->world_depth_capture && g->motion_keys){
+    if(g->world_depth_capture && g->motion_references){
         unsigned i;
         for(i=0;i<g->motion_count;i++)if(v==g->motion_vertices+i){
-            float current[3]={v->x,v->y,q},previous[3];Vk1Device *n=g->vulkan;
+            Vk1Device *n=g->vulkan;uint32_t reference=g->motion_references[i];
             n->motion_samples++;
-            if(render_motion_sample(&n->history,n->frames+1,g->motion_keys[i],current,previous) &&
-               render_motion_projective(out.previous,current,previous))n->motion_valid++;
+            if(render_motion_resolve(&n->history,n->frames+1,reference,vk1_motion_source,NULL,out.previous)){
+                n->motion_valid++;if(render_arena_motion_clip(reference))n->motion_clipped++;
+            }
             break;
         }
     }

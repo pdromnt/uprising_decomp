@@ -73,7 +73,7 @@ typedef struct Gl1Device {
     int native_blend,native_fog;
     int world_depth_capture;
     const GameRenderVertex *motion_vertices;
-    const uint64_t *motion_keys;
+    const uint32_t *motion_references;
     unsigned motion_count;
     float native_fog_start,native_fog_end;
 } Gl1Device;

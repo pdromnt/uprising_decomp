@@ -34,7 +34,7 @@ static int palette(void *context,const uint32_t *colors,unsigned first,unsigned 
     return game_application_world_palette(context,colors,first,last,full);
 }
 static int polygon(void *context,const GameRenderVertex *vertices,unsigned count){return game_application_surface_polygon(context,vertices,count);}
-static int motion_polygon(void *context,const GameRenderVertex *v,unsigned count,const uint64_t *keys){return game_application_surface_motion_polygon(context,v,count,keys);}
+static int motion_polygon(void *context,const GameRenderVertex *v,unsigned count,const uint32_t *references){return game_application_surface_motion_polygon(context,v,count,references);}
 static int point(void *context,const GameRenderVertex *vertex){return game_application_world_point(context,vertex);}
 static int ncc(void *context,const uint8_t table[112]){return game_application_world_ncc(context,table);}
 static int material(void *context,uint32_t reference,MaterialValue *value){

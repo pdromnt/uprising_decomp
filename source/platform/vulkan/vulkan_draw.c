@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 _Static_assert(sizeof(VulkanDrawMaterial)==104,"Vulkan push block layout");
-enum {CAPTURE_RECIPROCAL_DEPTH=256};
+enum {CAPTURE_RECIPROCAL_DEPTH=256,CAPTURE_REACTIVE=512};
 
 #define VK(call) do {VkResult status=(call);if(status!=VK_SUCCESS){fprintf(stderr,"Vulkan draw %s: %d\n",#call,(int)status);goto fail;}}while(0)
 #define TRY(call) do {if(!(call))goto fail;}while(0)
@@ -119,6 +119,11 @@ static int draw_pipeline(VulkanDraw *d,uint32_t flags){
     blend[0].colorBlendOp=blend[0].alphaBlendOp=VK_BLEND_OP_ADD;
     blend[1].colorWriteMask=flags&CAPTURE_RECIPROCAL_DEPTH?VK_COLOR_COMPONENT_R_BIT:0;
     blend[2].colorWriteMask=flags&CAPTURE_RECIPROCAL_DEPTH?blend[0].colorWriteMask:0;
+    if(flags&CAPTURE_REACTIVE){
+        blend[2].colorWriteMask=VK_COLOR_COMPONENT_A_BIT;blend[2].blendEnable=VK_TRUE;
+        blend[2].alphaBlendOp=VK_BLEND_OP_MAX;
+        blend[2].srcAlphaBlendFactor=blend[2].dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE;
+    }
     blending.attachmentCount=3;blending.pAttachments=blend;
     pipeline.stageCount=2;pipeline.pStages=stages;pipeline.pVertexInputState=&input;pipeline.pInputAssemblyState=&assembly;
     pipeline.pViewportState=&viewport;pipeline.pRasterizationState=&raster;pipeline.pMultisampleState=&samples;
@@ -189,7 +194,7 @@ fail:
 void vulkan_draw_close(VulkanDraw *d){
     VulkanDevice *v=d->device;unsigned i;if(!v)return;
     v->DeviceWaitIdle(v->device);vulkan_draw_texture_destroy(d,&d->white);
-    for(i=0;i<448;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);
+    for(i=0;i<704;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);
     for(i=0;i<2;i++)if(d->shaders[i])v->DestroyShaderModule(v->device,d->shaders[i],NULL);
     for(i=0;i<8;i++)if(d->samplers[i])v->DestroySampler(v->device,d->samplers[i],NULL);
     if(d->layout)v->DestroyPipelineLayout(v->device,d->layout,NULL);
@@ -214,7 +219,7 @@ int vulkan_draw_resume(VulkanDraw *d){
 }
 int vulkan_draw_reset_reciprocal_depth(VulkanDraw *d){
     size_t i;if(!d->recording)return 0;
-    for(i=0;i<d->batch_count;i++)if(d->batches[i].flags&CAPTURE_RECIPROCAL_DEPTH)return 0;
+    for(i=0;i<d->batch_count;i++)if(d->batches[i].flags&(CAPTURE_RECIPROCAL_DEPTH|CAPTURE_REACTIVE))return 0;
     d->clear_reciprocal=1;return 1;
 }
 static void *grow(void *data,size_t *capacity,size_t needed,size_t element){
@@ -225,16 +230,19 @@ static void *grow(void *data,size_t *capacity,size_t needed,size_t element){
 }
 static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32_t count,VulkanDrawTexture *texture,uint32_t flags){
     VkDescriptorSet descriptor;VulkanDrawBatch *last,*batches;VulkanDrawVertex *staging;
+    VulkanDrawMaterial material=d->material;
     if(!d->recording || flags>=192 || !vertices || !count || count>UINT32_MAX-d->vertex_count)return 0;
     if(d->capture_depth && (flags&3)==3)flags|=CAPTURE_RECIPROCAL_DEPTH;
+    else if(d->capture_depth && (flags&VULKAN_DRAW_DEPTH_TEST))flags|=CAPTURE_REACTIVE;
+    material.padding[0]=(flags&CAPTURE_REACTIVE)!=0;
     descriptor=texture?texture_binding(d,texture):d->white.descriptor;if(!descriptor)return 0;
     staging=grow(d->staging,&d->vertex_capacity,d->vertex_count+count,sizeof(*vertices));if(!staging)return 0;d->staging=staging;
     batches=grow(d->batches,&d->batch_capacity,d->batch_count+1,sizeof(*last));if(!batches)return 0;d->batches=batches;
     memcpy(d->staging+d->vertex_count,vertices,count*sizeof(*vertices));
     last=d->batch_count?d->batches+d->batch_count-1:NULL;
     {VkDescriptorSet mask=d->mask_texture?d->mask_texture->descriptor:d->white.descriptor;
-    if(last && last->texture==descriptor && last->mask==mask && last->flags==flags && !memcmp(&last->material,&d->material,sizeof(d->material)))last->count+=count;
-    else d->batches[d->batch_count++]=(VulkanDrawBatch){(uint32_t)d->vertex_count,count,flags,descriptor,mask,d->material};}
+    if(last && last->texture==descriptor && last->mask==mask && last->flags==flags && !memcmp(&last->material,&material,sizeof(material)))last->count+=count;
+    else d->batches[d->batch_count++]=(VulkanDrawBatch){(uint32_t)d->vertex_count,count,flags,descriptor,mask,material};}
     d->vertex_count+=count;return 1;
 }
 int vulkan_draw_triangles(VulkanDraw *d,const VulkanDrawVertex *v,uint32_t count,VulkanDrawTexture *t,uint32_t flags){

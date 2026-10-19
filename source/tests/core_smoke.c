@@ -1,5 +1,6 @@
 #include "game_memory.h"
 #include "game_text_rasterizer.h"
+#include "render_motion.h"
 #include "host_file.h"
 #include "player_attachment.h"
 #include "game_initial_data.h"
@@ -724,7 +725,38 @@ static int check_sparse_text_lock(void){
     CHECK(memory.fault && range[0]==UINT32_MAX && range[1]==0);
     free(state);return 0;
 }
+static int check_render_motion(void){
+    RenderMotionHistory history={0};float a[3]={4,8,0.125f},b[3]={12,6,0.25f},previous[3],packed[4];
+    uint32_t page;uint64_t first_key,second_key;
+    CHECK(!render_motion_sample(&history,1,42,a,previous));
+    CHECK(render_motion_sample(&history,2,42,b,previous) && !memcmp(previous,a,sizeof(a)));
+    CHECK(render_motion_sample(&history,2,42,b,previous) && !memcmp(previous,a,sizeof(a)));
+    CHECK(!render_motion_sample(&history,2,42,a,previous)); /* conflicting same-frame view */
+    CHECK(!render_motion_sample(&history,3,42,a,previous));
+    CHECK(render_motion_sample(&history,4,42,b,previous) && !memcmp(previous,a,sizeof(a)));
+    CHECK(!render_motion_sample(&history,6,42,b,previous)); /* visibility gap */
+    render_motion_reset(&history);
+    CHECK(!render_motion_sample(&history,7,42,b,previous));
+    CHECK(!render_motion_sample(&history,8,0,b,previous));
+    CHECK(render_motion_projective(packed,b,a) && packed[0]==8 && packed[1]==16 && packed[2]==2 && packed[3]==1);
+    a[2]=0;CHECK(!render_motion_projective(packed,b,a) && packed[3]==0);
+    render_motion_release(&history);CHECK(!history.entries);
+    page=scene_projection_storage_allocate(32,"mesh transformed");CHECK(page);
+    first_key=scene_projection_storage_vertex_key(page);CHECK(first_key);
+    CHECK(scene_projection_storage_vertex_key(page+16)!=first_key && !scene_projection_storage_vertex_key(page+1));
+    CHECK(scene_projection_storage_free(page) && !scene_projection_storage_vertex_key(page));
+    page=scene_projection_storage_allocate(32,"mesh transformed");CHECK(page);
+    second_key=scene_projection_storage_vertex_key(page);CHECK(second_key && second_key!=first_key);
+    CHECK(scene_projection_storage_free(page));
+    CHECK(render_arena_initialize());
+    render_arena_current()->motion_keys[0]=UINT64_C(0x800000000000002a);
+    CHECK(render_arena_motion_key(render_arena_view(0))==UINT64_C(0x800000000000002a));
+    CHECK(!render_arena_motion_key(render_arena_view(0)+1));
+    render_arena_begin_frame();CHECK(!render_arena_motion_key(render_arena_view(0)));
+    render_arena_release();return 0;
+}
 int main(void) {
+    CHECK(check_render_motion()==0);
     CHECK(check_sparse_text_lock()==0);
     {
         PlayerAttachmentState state={0};PlayerAttachmentFrame frame={0};GameMemory memory={0};

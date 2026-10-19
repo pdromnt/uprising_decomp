@@ -16,10 +16,11 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
    chroma/alpha, legacy W-depth, fog, layered skies, menus, videos and HUD order.
    Keep pixel-readback/glyph/mask consumers working before optimizing transfers.
    Accept menu -> level -> movement/fire -> reload -> shutdown and matched captures.
-3. **Temporal inputs (started: world reciprocal depth).** Carry previous camera/object transforms alongside current
-   submissions. Current vertices are already projected and contain no motion
-   history. Add consistent depth, jitter and motion vectors for terrain, actors,
-   sprites and debris. Isolate HUD/cockpit/minimap. Reset history on camera cuts,
+3. **Temporal inputs (in progress).** World reciprocal depth and previous rendered
+   positions now produce vectors for terrain and stable owned-model vertices,
+   including camera/object motion. Complete correspondence through clipping,
+   sprites/particles and discontinuities; add perspective depth and jitter.
+   Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
 4. **Temporal upscaling.** Integrate the full source-backed upscaler, native AA
@@ -80,8 +81,21 @@ also works on resumed double-buffer targets without erasing color or legacy dept
 The live check compares all 1,228,800 depth bytes before/after HUD draws, including
 world geometry underneath the cockpit. The GPU probe checks interpolation,
 occlusion, alpha cutouts, preserved depth through UI/resume and removal of stale
-depth on reset. This is **not yet FSR perspective depth or motion history**:
-conversion, previous camera/object transforms, jitter and history resets remain.
+depth on reset. This is **not yet FSR perspective depth**; conversion remains.
+
+An RGBA32F target now receives previous-minus-current motion in pixel units,
+correspondence validity and invalidity. Terrain identities follow world-lattice
+coordinates (including animated water); model identities include the transformed
+allocation generation and vertex offset. A bounded renderer-owned cache retains
+previous rendered positions, rejecting gaps, missing IDs and conflicting samples.
+Previous projection is interpolated projectively, retaining changes in depth.
+Camera identity, mode and projection changes clear history; level teardown frees it.
+The live HUD check also preserves every motion byte, and the movement check reads
+nonzero GPU vectors while driving. Cache/generation checks pass x86/x64; GPU tests
+cover translation, projective previous depth, UI preservation, reset and invalidity.
+Clipped/transient geometry remains explicitly invalid; particles, transparency
+masks, same-owner camera discontinuities and complete UI/color separation still
+need coverage. No temporal upscaler is enabled yet.
 
 Local Windows x64: the existing Graphics drawer regression passed three cycles.
 Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
@@ -91,7 +105,7 @@ passed with exact saved position/ammo restored. Erudara's 320-frame O-view check
 passed remote sky/mask, camera rotation, return to tank, pause and window restore.
 These establish exercised routes, not complete visual equivalence or performance
 acceptance. Matched 15-second stationary Training1 samples without GDB now measure
-about 142 FPS Vulkan versus 136 FPS stable OpenGL with the new depth target on
+about 145 FPS Vulkan versus 140 FPS stable OpenGL with depth and motion capture on
 RTX4060Ti (640x480, windowed/muted/isolated). CPU texture comparison caches and
 sparse glyph spans removed the earlier ~53 FPS regression; uploads remain unchanged.
 The lower HUD capture is pixel-identical before/after; animated scene/sky pixels
@@ -102,12 +116,12 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with the performance fixes. CI for the new
-primitive/depth changes and validation-layer coverage of level rendering remain pending, as do native Apple
+Six-platform application CI passed with the primitive/depth changes. CI for motion
+and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
 Windows/Linux use the installed Vulkan driver/loader. The new separate world
-target explicitly requires independent blending and an R32F color/sampled image;
+targets explicitly require independent blending and R32F/RGBA32F color/sampled images;
 unsupported devices fail with a diagnostic. macOS explicitly requires
 KosmicKrisp, Apple Silicon and macOS 26+, with a developer Vulkan SDK for now:
 

@@ -1527,6 +1527,10 @@ static uint32_t world_emit_vertex(GameMemory *memory, GameplayTerrainFrame *fram
         RenderArena *arena=render_arena_current();uint32_t offset=cursor-render_arena_view(0);
         if(arena && offset<160000u && offset%16u==0){RenderArenaVertex *vertex=&arena->vertices[offset/16u];
             vertex->position[0]=x;vertex->position[1]=(float)height;vertex->position[2]=z;vertex->light=(float)material;
+            /* Identity follows the world lattice, never this frame's scratch
+             * cursor. Animated water at the same lattice point retains motion. */
+            arena->motion_keys[offset/16u]=column>=INT16_MIN && column<=INT16_MAX?
+                (UINT64_C(0x8000000000000000)|((uint64_t)(uint16_t)column<<32)|(uint32_t)row):0;
         }else {
     game_memory_write_u32(memory, cursor, world_float_bits(x));
     game_memory_write_u32(memory, cursor + 4u, world_float_bits((float)height));

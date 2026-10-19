@@ -34,6 +34,7 @@ static int palette(void *context,const uint32_t *colors,unsigned first,unsigned 
     return game_application_world_palette(context,colors,first,last,full);
 }
 static int polygon(void *context,const GameRenderVertex *vertices,unsigned count){return game_application_surface_polygon(context,vertices,count);}
+static int motion_polygon(void *context,const GameRenderVertex *v,unsigned count,const uint64_t *keys){return game_application_surface_motion_polygon(context,v,count,keys);}
 static int point(void *context,const GameRenderVertex *vertex){return game_application_world_point(context,vertex);}
 static int ncc(void *context,const uint8_t table[112]){return game_application_world_ncc(context,table);}
 static int material(void *context,uint32_t reference,MaterialValue *value){
@@ -51,7 +52,7 @@ static int palette_map(void *context,GameAddress reference,uint8_t entries[4]){
  *values are short-lived snapshots of their existing owners, not new state. */
 int game_level_world_render(GameApplication *a,GameAddress head){
     WorldRenderFrame frame={0};int result;unsigned i;
-    WorldRendererOps ops={a,begin,texture,state,palette,polygon,point,material,texture_owned,palette_map,ncc};
+    WorldRendererOps ops={a,begin,texture,state,palette,polygon,point,material,texture_owned,palette_map,ncc,motion_polygon};
     frame.projection_magic=real(a,0x572d70);frame.depth_scale=real(a,0x572d7c);
     frame.fog_max=real(a,0x572d88);frame.near_offset=real(a,0x572d8c);frame.fog_scale=real(a,0x572d90);
     frame.depth_limit=(int32_t)get(a,0x597f7c);frame.texture_frame=get(a,0x63a154);

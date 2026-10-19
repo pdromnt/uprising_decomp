@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 static WorldRendererStats world_stats;
+static uint64_t world_vertex_motion_key(uint32_t reference){
+    uint64_t key=render_arena_motion_key(reference);
+    return key?key:scene_projection_storage_vertex_key(reference);
+}
 static float read_f32(GameMemory *,uint32_t);
 static int world_owned_read(GameAddress address,void *output,size_t size){
     return render_arena_read(address,output,size) ||
@@ -61,7 +65,7 @@ static void world_packet_capture(GameMemory *memory,GameAddress address,
     memcpy(output,words,sizeof(*output));
 }
 static void world_packet_capture_vertices(GameMemory *memory,
-    const RenderArenaPacket *packet,GameWorldVertexInput input[32]){
+    const RenderArenaPacket *packet,GameWorldVertexInput input[32],uint64_t keys[32]){
     uint32_t *indices=render_arena_indices(packet->vertices,packet->count);
     RenderArenaUv *uv=render_arena_uv(packet->attributes,packet->count);
     uint32_t index;
@@ -88,6 +92,7 @@ static void world_packet_capture_vertices(GameMemory *memory,
         else if(scene_attribute)++world_stats.scene_uv;
         else ++world_stats.guest_uv;
         vertex_input->x=vertex?vertex->position[0]:read_f32(memory,reference);
+        keys[index]=world_vertex_motion_key(reference);
         vertex_input->y=vertex?vertex->position[1]:read_f32(memory,reference+4u);
         vertex_input->depth=vertex?vertex->position[2]:read_f32(memory,reference+8u);
         vertex_input->light=vertex?vertex->light:read_f32(memory,reference+12u);
@@ -195,7 +200,7 @@ int world_renderer_submit(GameMemory *memory,GameAddress node,
                         memory,palette+palette_index);
                 if(memory->fault)goto finish;
             }
-            world_packet_capture_vertices(memory,&packet,command->input);
+            world_packet_capture_vertices(memory,&packet,command->input,command->motion_keys);
         }
         if (memory->fault) goto finish;
         scan = scan_next;
@@ -303,6 +308,7 @@ int world_renderer_submit_owned(GameAddress head,struct TerrainAsset *terrain,
                 ++captured.scene_vertices;
             }
             input->x=vertex->position[0];input->y=vertex->position[1];
+            command->motion_keys[index]=world_vertex_motion_key(reference);
             input->depth=vertex->position[2];input->light=vertex->light;
             if(arena_uv){input->u=arena_uv[index].u;
                 input->v=arena_uv[index].v;++captured.native_uv;}
@@ -436,7 +442,9 @@ int world_renderer_draw_commands(const WorldRenderCommand *commands,
             GameWorldPolygonParams params={flags,width,height,fog_scale,fog_max,fog_start,fog_factor,projection_magic};
             if(!game_screen_build_world_polygon(native_vertices,
                 command->input,count,&params))goto finish;
-            if(!ops->polygon(ops->context,native_vertices,count))goto finish;
+            if(ops->motion_polygon){
+                if(!ops->motion_polygon(ops->context,native_vertices,count,command->motion_keys))goto finish;
+            }else if(!ops->polygon(ops->context,native_vertices,count))goto finish;
         }
 
         if (!(texture_flags & 0x10u) && (flags & 0x100u))

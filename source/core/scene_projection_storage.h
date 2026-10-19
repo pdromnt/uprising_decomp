@@ -137,6 +137,8 @@ int scene_projection_storage_set_packet_flags(uint32_t address,uint32_t flags);
 float *scene_projection_storage_positions(uint32_t address,size_t count);
 RenderArenaVertex *scene_projection_storage_transformed(uint32_t address,
     size_t count);
+/* Stable only for this live transformed allocation; reuse changes generation. */
+uint64_t scene_projection_storage_vertex_key(uint32_t address);
 const uint32_t *scene_projection_storage_links(uint32_t address,size_t count);
 const RenderArenaUv *scene_projection_storage_work_uv(uint32_t address,
     size_t count);

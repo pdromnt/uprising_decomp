@@ -1,0 +1,19 @@
+#ifndef UPRISING_RENDER_MOTION_H
+#define UPRISING_RENDER_MOTION_H
+#include <stdint.h>
+typedef struct RenderMotionEntry {
+    uint64_t key,frame;
+    float current[3],previous[3];
+    int valid,ambiguous;
+} RenderMotionEntry;
+/* Bounded four-way cache, owned by the renderer. These are previous rendered
+ * positions, never another authoritative simulation/object state. */
+typedef struct RenderMotionHistory {RenderMotionEntry *entries;} RenderMotionHistory;
+void render_motion_release(RenderMotionHistory *);
+void render_motion_reset(RenderMotionHistory *);
+int render_motion_sample(RenderMotionHistory *,uint64_t frame,uint64_t key,
+    const float current[3],float previous[3]);
+/* Pack previous screen coordinates for correct projective interpolation.
+ * Output is {previous_x*q/q_previous, previous_y*q/q_previous, q/q_previous, 1}. */
+int render_motion_projective(float output[4],const float current[3],const float previous[3]);
+#endif

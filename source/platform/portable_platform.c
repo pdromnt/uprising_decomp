@@ -39,6 +39,7 @@
 #include "render_texture_cache.h"
 #include "level_load.h"
 #include "screen_primitives.h"
+#include "render_motion.h"
 #include "ui_tiled_image.h"
 #include "radar_compositor.h"
 #include "model_assets.h"
@@ -584,6 +585,18 @@ int game_application_surface_polygon(GameApplication *a,const GameRenderVertex *
     for(i=0;i<n;++i)gl1_triangle(vertices+triangles[i][0],vertices+triangles[i][1],vertices+triangles[i][2]);
     return 1;
 }
+int game_application_surface_motion_polygon(GameApplication *a,const GameRenderVertex *v,unsigned count,const uint64_t *keys){
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    int result;
+    if(gl1_current && gl1_current->vulkan && gl1_current->world_depth_capture){
+        gl1_current->motion_vertices=v;gl1_current->motion_keys=keys;gl1_current->motion_count=count;
+        result=game_application_surface_polygon(a,v,count);
+        gl1_current->motion_vertices=NULL;gl1_current->motion_keys=NULL;gl1_current->motion_count=0;
+        return result;
+    }
+#endif
+    (void)keys;return game_application_surface_polygon(a,v,count);
+}
 int game_application_texture_update(GameApplication *a,const TextureRecord *texture){
     PortablePlatform *p=a->platform;RenderTextureView info;
     if(!p || !p->renderer_initialized || !texture ||
@@ -613,7 +626,16 @@ int game_application_scene_translucency(GameApplication *a,int enabled){
 int game_application_scene_depth(GameApplication *a,int enabled){
     if(!gl1_current || gl1_current->application!=a || !gl1_ready())return 0;
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(enabled && gl1_current->vulkan && (!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back())))return 0;
+    if(enabled && gl1_current->vulkan){
+        Vk1Device *n=gl1_current->vulkan;float projection[4];unsigned i;
+        static const GameAddress fields[4]={0x6290c8,0x6290cc,0x6290f0,0x6290f4};
+        uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
+        for(i=0;i<4;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
+        if(a->memory.fault)return 0;
+        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)))render_motion_reset(&n->history);
+        n->history_camera=camera;n->history_mode=mode;memcpy(n->history_projection,projection,sizeof(projection));
+        if(!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back()))return 0;
+    }
 #endif
     gl1_current->world_depth_capture=enabled!=0;return 1;
 }

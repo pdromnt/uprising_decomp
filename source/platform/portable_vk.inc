@@ -10,6 +10,10 @@ typedef struct Vk1Device {
     Uint64 frame_start;
     uint32_t written_range[2];
     int track_text,scratch_clean;
+    RenderMotionHistory history;
+    uint32_t history_camera,history_mode;
+    float history_projection[4];
+    uint64_t motion_samples,motion_valid;
 } Vk1Device;
 static VulkanDraw *vk1_back(void){return &gl1_current->vulkan->frame[gl1_current->back];}
 static int vk1_flush(VulkanDraw *d,int resume){
@@ -55,6 +59,7 @@ static void vk1_close(void){
     for(i=0;i<4096;i++)vk1_texture_release(g->textures+i);
     vk1_sky_release();vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->remote_mask);vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->tiles);
     for(i=0;i<2;i++)vulkan_draw_close(g->vulkan->frame+i);
+    render_motion_release(&g->vulkan->history);
     free(g->vulkan);g->vulkan=NULL;
 }
 static void vk1_refresh(Gl1Texture *texture){
@@ -127,7 +132,21 @@ static VulkanDrawVertex vk1_vertex(const GameRenderVertex *v){
         if(g->bound->ui_tile){unsigned slot=g->bound->native_tile-1;out.uv[0]=(out.uv[0]*32+(slot%32)*32*q)/1024;out.uv[1]=(out.uv[1]*32+(slot/32)*32*q)/1024;}
     }
     {float lateral=(v->x-g->projection_center)/g->projection_scale;out.fog=q>0 && q<0.5f?sqrtf(1+lateral*lateral)/q:0;}
+    if(g->world_depth_capture && g->motion_keys){
+        unsigned i;
+        for(i=0;i<g->motion_count;i++)if(v==g->motion_vertices+i){
+            float current[3]={v->x,v->y,q},previous[3];Vk1Device *n=g->vulkan;
+            n->motion_samples++;
+            if(render_motion_sample(&n->history,n->frames+1,g->motion_keys[i],current,previous) &&
+               render_motion_projective(out.previous,current,previous))n->motion_valid++;
+            break;
+        }
+    }
     return out;
+}
+static void vk1_motion_triangle(VulkanDrawVertex v[3]){
+    if(!v[0].previous[3] || !v[1].previous[3] || !v[2].previous[3])
+        memset(v[0].previous,0,sizeof(v[0].previous)),memset(v[1].previous,0,sizeof(v[1].previous)),memset(v[2].previous,0,sizeof(v[2].previous));
 }
 static uint32_t vk1_material(VulkanDraw *d){
     Gl1Device *g=gl1_current;VulkanDrawMaterial *m=&d->material;
@@ -151,6 +170,7 @@ static void vk1_triangle(const GameRenderVertex *a,const GameRenderVertex *b,con
     area=(b->x-a->x)*(c->y-a->y)-(b->y-a->y)*(c->x-a->x);
     if((g->native_cull==1 && area>=0) || (g->native_cull==2 && area<=0))return;
     vertex[0]=vk1_vertex(a);vertex[1]=vk1_vertex(b);vertex[2]=vk1_vertex(c);
+    vk1_motion_triangle(vertex);
     if(!vulkan_draw_triangles(d,vertex,3,g->textured && g->bound?(g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan triangle batch");
     ++g->triangles;
 }

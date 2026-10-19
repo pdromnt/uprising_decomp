@@ -11,6 +11,7 @@ typedef struct SceneProjectionBlock {
     struct SceneProjectionBlock *next;
     uint8_t *data;
     uint32_t base, size, capacity;
+    uint32_t generation;
     uint32_t references,shared_source;
     uint32_t model_owner_id;
     const char *purpose;
@@ -42,6 +43,7 @@ static SceneProjectionBlock **blocks_by_address;
 static size_t block_count,block_capacity;
 static size_t free_block_count;
 static uint32_t next_base = SCENE_PROJECTION_BASE;
+static uint32_t next_generation;
 static SceneProjectionStorageStats stats;
 static void *object_write_context;
 static SceneProjectionObjectWrite object_write_callback;
@@ -74,6 +76,7 @@ uint32_t scene_projection_storage_allocate(size_t size, const char *purpose) {
     uint32_t capacity, base;
     if (!size) return 0u;
     if (size > UINT32_MAX - 15u) return 0u;
+    if(next_generation==0x7fffffffu)return 0; /* High-bit namespace is terrain. */
     capacity = ((uint32_t)size + 15u) & ~15u;
     /* Most new pages arrive while every existing page is live. Avoid a
      * fruitless full scan in that case; retain the original reuse order. */
@@ -86,6 +89,7 @@ uint32_t scene_projection_storage_allocate(size_t size, const char *purpose) {
                 if(!block->packet_links){free(block->data);block->data=NULL;return 0u;}
             }
             block->size = (uint32_t)size;
+            block->generation=++next_generation;
             block->references = 1u;
             block->shared_source = 0u;
             block->model_owner_id = 0u;
@@ -116,6 +120,7 @@ uint32_t scene_projection_storage_allocate(size_t size, const char *purpose) {
     base = next_base;
     next_base += capacity;
     block->base = base;
+    block->generation=++next_generation;
     block->size = (uint32_t)size;
     block->references = 1u;
     block->capacity = capacity;
@@ -595,6 +600,12 @@ RenderArenaVertex *scene_projection_storage_transformed(uint32_t address,
     return (RenderArenaVertex *)(void *)(block->data+offset);
 }
 
+uint64_t scene_projection_storage_vertex_key(uint32_t address){
+    SceneProjectionBlock *block;
+    if(!scene_projection_storage_transformed(address,1))return 0;
+    block=block_at_address(address);
+    return ((uint64_t)block->generation<<32)|(address-block->base);
+}
 const uint32_t *scene_projection_storage_links(uint32_t address,size_t count){
     SceneProjectionBlock *block=block_at_address(address);
     uint32_t offset;

@@ -4,7 +4,7 @@
 
 /* Buffered projected geometry. Depth is normalized by the material adapter;
  * texture coordinates retain s/w,t/w,1/w. No guest addresses or GL state. */
-typedef struct VulkanDrawVertex {float position[3],color[4],uv[3],fog;} VulkanDrawVertex;
+typedef struct VulkanDrawVertex {float position[3],color[4],uv[3],fog,previous[4];} VulkanDrawVertex;
 /* Mirrors the shader push block with explicit fixed-width members. */
 typedef struct VulkanDrawMaterial {
     float extent[2];uint32_t color_mode,alpha_mode;
@@ -25,7 +25,7 @@ typedef struct VulkanDrawBatch {
 } VulkanDrawBatch;
 typedef struct VulkanDraw {
     VulkanDevice *device;uint32_t width,height;
-    VulkanImage color,depth,reciprocal_depth;VulkanBuffer vertices,readback;
+    VulkanImage color,depth,reciprocal_depth,motion;VulkanBuffer vertices,readback;
     VkRenderPass pass,resume_pass;VkFramebuffer framebuffer;VkDescriptorPool descriptors;
     VkDescriptorSetLayout texture_layout;VkPipelineLayout layout;VkPipeline pipelines[448];VkShaderModule shaders[2];
     VulkanDrawMaterial material;
@@ -61,4 +61,7 @@ int vulkan_draw_lines(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,Vulka
 int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);
+/* RGBA32F: previous-minus-current pixels, correspondence validity, invalidity.
+ * Unknown geometry is explicitly invalid; this is not a finished reactive mask. */
+int vulkan_draw_read_motion(VulkanDraw *,float *,size_t bytes);
 #endif

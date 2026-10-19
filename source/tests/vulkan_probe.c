@@ -134,6 +134,45 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
         for(i=0;i<64*64;i++)if(depths[i]!=0){fprintf(stderr,"Vulkan reciprocal depth: stale resumed world pixel\n");ok=0;goto done;}
         printf("VULKAN_WORLD_DEPTH_PASS interpolation=checked occlusion=checked hud_preserved=checked alpha_cutout=checked reset=checked\n");
     }
+    {
+        VulkanDrawVertex triangle[3]={0};float motion[64*64*4];unsigned i;
+        const float black[4]={0,0,0,1};
+        if(!vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        for(i=0;i<3;i++){
+            triangle[i].position[0]=i==1?64:0;triangle[i].position[1]=i==2?64:0;
+            triangle[i].position[2]=0.4f;triangle[i].uv[2]=1;triangle[i].color[0]=triangle[i].color[3]=1;
+            triangle[i].previous[0]=triangle[i].position[0]-4;triangle[i].previous[1]=triangle[i].position[1]+2;
+            triangle[i].previous[2]=triangle[i].previous[3]=1;
+        }
+        if(!vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL) || !vulkan_draw_finish(&draw,NULL,0) ||
+           !vulkan_draw_resume(&draw)){ok=0;goto done;}
+        draw.capture_depth=0;
+        if(!draw_quad(&draw,0,0,32,32,0.1f,0,0,1,1,NULL,0) || !vulkan_draw_finish(&draw,NULL,0) ||
+           !vulkan_draw_read_motion(&draw,motion,sizeof(motion))){ok=0;goto done;}
+        {const float *m=motion+(8+8*64)*4;
+        if(fabsf(m[0]+4)>0.00001f || fabsf(m[1]-2)>0.00001f || m[2]!=1 || m[3]!=0){
+            fprintf(stderr,"Vulkan motion: translation/UI preservation failed\n");ok=0;goto done;}}
+        /* Different previous w across the triangle must use projective division,
+         * not interpolation of already divided previous pixel positions. */
+        triangle[1].previous[0]*=2;triangle[1].previous[1]*=2;triangle[1].previous[2]=2;
+        draw.capture_depth=1;
+        if(!vulkan_draw_begin(&draw,black) || !vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_motion(&draw,motion,sizeof(motion))){ok=0;goto done;}
+        {const float *m=motion+(8+8*64)*4;
+        if(fabsf(m[0]-(12.46875f/1.1328125f-8.5f))>0.00001f ||
+           fabsf(m[1]-(10.765625f/1.1328125f-8.5f))>0.00001f || m[2]!=1){ok=0;goto done;}}
+        if(!vulkan_draw_resume(&draw) || !vulkan_draw_reset_reciprocal_depth(&draw) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_motion(&draw,motion,sizeof(motion))){ok=0;goto done;}
+        if(motion[(8+8*64)*4+2]!=0 || motion[(8+8*64)*4+3]!=1){ok=0;goto done;}
+        for(i=0;i<3;i++)memset(triangle[i].previous,0,sizeof(triangle[i].previous));
+        if(!vulkan_draw_begin(&draw,black) || !vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_motion(&draw,motion,sizeof(motion))){ok=0;goto done;}
+        {const float *m=motion+(8+8*64)*4;
+        if(m[0]!=0 || m[1]!=0 || m[2]!=0 || m[3]!=1){ok=0;goto done;}}
+        draw.capture_depth=0;
+        printf("VULKAN_MOTION_PASS translation=checked projective_previous=checked hud_preserved=checked invalidity=checked\n");
+    }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
 }

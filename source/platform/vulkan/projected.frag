@@ -10,8 +10,10 @@ layout(push_constant) uniform Material {
 layout(location=0) in vec4 vertex_color;
 layout(location=1) in vec3 texture_coordinate;
 layout(location=2) in float distance_to_camera;
+layout(location=3) in vec4 previous_coordinate;
 layout(location=0) out vec4 output_color;
 layout(location=1) out float output_reciprocal_depth;
+layout(location=2) out vec4 output_motion;
 vec4 keyed_texel(ivec2 p) {
     ivec2 size=textureSize(image,0);
     p.x=(material.texture_sampling&2u)!=0u?(p.x%size.x+size.x)%size.x:clamp(p.x,0,size.x-1);
@@ -60,4 +62,7 @@ void main() {
     }
     output_color=vec4(rgb,alpha);
     output_reciprocal_depth=texture_coordinate.z;
+    output_motion=vec4(0,0,0,1);
+    if(previous_coordinate.w>=0.99999 && previous_coordinate.z>0.0)
+        output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-gl_FragCoord.xy,1,0);
 }

@@ -3,6 +3,7 @@ layout(location=0) in vec3 position;
 layout(location=1) in vec4 color;
 layout(location=2) in vec3 projective_uv;
 layout(location=3) in float fog_distance;
+layout(location=4) in vec4 previous_projection;
 layout(push_constant) uniform Material {
     vec2 extent;uint color_mode;uint alpha_mode;
     vec4 constant_color;vec4 fog_color;vec2 fog_range;
@@ -12,6 +13,7 @@ layout(push_constant) uniform Material {
 layout(location=0) out vec4 vertex_color;
 layout(location=1) out vec3 texture_coordinate;
 layout(location=2) out float distance_to_camera;
+layout(location=3) out vec4 previous_coordinate;
 void main() {
     // Game vertices are already projected, with a top-left pixel origin.
     // Vulkan's positive-height viewport maps NDC -1 to the top edge.
@@ -20,4 +22,5 @@ void main() {
     vertex_color=color;
     texture_coordinate=projective_uv;
     distance_to_camera=fog_distance;
+    previous_coordinate=previous_projection;
 }

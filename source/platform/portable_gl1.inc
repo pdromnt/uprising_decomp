@@ -72,6 +72,9 @@ typedef struct Gl1Device {
     uint32_t native_depth_write,native_depth_func,native_cull;
     int native_blend,native_fog;
     int world_depth_capture;
+    const GameRenderVertex *motion_vertices;
+    const uint64_t *motion_keys;
+    unsigned motion_count;
     float native_fog_start,native_fog_end;
 } Gl1Device;
 /* Callbacks borrow the single window-thread device; PortablePlatform owns it. */

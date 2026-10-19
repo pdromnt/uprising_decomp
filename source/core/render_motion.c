@@ -1,0 +1,44 @@
+#include "render_motion.h"
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+enum {BUCKETS=8192,WAYS=4};
+void render_motion_release(RenderMotionHistory *h){free(h->entries);h->entries=NULL;}
+void render_motion_reset(RenderMotionHistory *h){if(h->entries)memset(h->entries,0,BUCKETS*WAYS*sizeof(*h->entries));}
+int render_motion_sample(RenderMotionHistory *h,uint64_t frame,uint64_t key,
+        const float current[3],float previous[3]){
+    uint64_t hash=key;RenderMotionEntry *slot=NULL,*replacement=NULL;unsigned i;
+    if(!key || !frame || !isfinite(current[0]) || !isfinite(current[1]) ||
+       !isfinite(current[2]) || current[2]<=0)return 0;
+    if(!h->entries){h->entries=calloc(BUCKETS*WAYS,sizeof(*h->entries));if(!h->entries)return 0;}
+    hash^=hash>>30;hash*=UINT64_C(0xbf58476d1ce4e5b9);hash^=hash>>27;
+    hash*=UINT64_C(0x94d049bb133111eb);hash^=hash>>31;
+    for(i=0;i<WAYS;i++){
+        RenderMotionEntry *e=h->entries+(hash&(BUCKETS-1))*WAYS+i;
+        if(e->key==key){slot=e;break;}
+        if(!e->key || (e->frame<frame && frame-e->frame>1))replacement=e;
+    }
+    if(!slot){
+        if(!replacement)return 0; /* Saturation rejects correspondence. */
+        slot=replacement;memset(slot,0,sizeof(*slot));slot->key=key;
+    }
+    if(slot->frame==frame){
+        if(memcmp(slot->current,current,sizeof(slot->current)))slot->ambiguous=1;
+        if(slot->ambiguous)slot->valid=0;
+    }else{
+        slot->valid=!slot->ambiguous && slot->frame && slot->frame<frame && frame-slot->frame==1;
+        slot->ambiguous=0;
+        memcpy(slot->previous,slot->current,sizeof(slot->previous));
+        memcpy(slot->current,current,sizeof(slot->current));slot->frame=frame;
+    }
+    if(slot->valid)memcpy(previous,slot->previous,sizeof(slot->previous));
+    return slot->valid;
+}
+int render_motion_projective(float output[4],const float current[3],const float previous[3]){
+    float ratio;unsigned i;memset(output,0,4*sizeof(*output));
+    for(i=0;i<3;i++)if(!isfinite(current[i]) || !isfinite(previous[i]))return 0;
+    if(current[2]<=0 || previous[2]<=0)return 0;
+    ratio=current[2]/previous[2];
+    if(!isfinite(ratio) || ratio<=0 || !isfinite(previous[0]*ratio) || !isfinite(previous[1]*ratio))return 0;
+    output[0]=previous[0]*ratio;output[1]=previous[1]*ratio;output[2]=ratio;output[3]=1;return 1;
+}

@@ -1,0 +1,4 @@
+static const char *const fsr_portability[]={
+@FSR_PORTABILITY@NULL};
+static const char *const fsr_algorithm[]={
+@FSR_ALGORITHM@NULL};

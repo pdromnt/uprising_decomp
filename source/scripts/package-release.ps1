@@ -29,8 +29,10 @@ $vorbisLicense=Join-Path $staging 'stb-LICENSE.txt'
 Copy-Item -LiteralPath (Join-Path $project 'third_party/stb-LICENSE.txt') -Destination $vorbisLicense -Force
 $networkLicense=Join-Path $staging 'enet-LICENSE.txt'
 Copy-Item -LiteralPath (Join-Path $project 'third_party/enet-LICENSE.txt') -Destination $networkLicense -Force
+$fsrLicense=Join-Path $staging 'FSR-LICENSE.txt'
+Copy-Item -LiteralPath (Join-Path $project 'third_party/fsr/LICENSE.txt') -Destination $fsrLicense -Force
 $archive=Join-Path $OutputDirectory "uprising-$Version-windows-$Bits.zip"
-$files=@(Join-Path $staging 'uprising.exe')+@($documents | ForEach-Object {Join-Path $staging $_})+@($license,$sdlLicense,$fontLicense,$vorbisLicense,$networkLicense)
+$files=@(Join-Path $staging 'uprising.exe')+@($documents | ForEach-Object {Join-Path $staging $_})+@($license,$sdlLicense,$fontLicense,$vorbisLicense,$networkLicense,$fsrLicense)
 $files+=@('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','hints.txt') | ForEach-Object {Join-Path $repository $_}
 Compress-Archive -LiteralPath $files -DestinationPath $archive -Force
 Write-Host "Created $archive (executable, notices and game data; no source/user settings/saves)."

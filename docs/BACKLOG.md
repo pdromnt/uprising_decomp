@@ -9,7 +9,10 @@
 - SDL3 legacy cleanup is integrated. Remove further dead code when concrete
   dependencies establish it is unused; broad cleanup is deferred. Small Windows
   file-attribute and CRT cwd/durability adapters remain deliberate.
-- Once the SDL3 build is stable, add FSR upscaling.
+- Manually accept advanced display settings: fullscreen mode changes, confirmation/
+  timeout, restart persistence and FSR1 appearance at larger resolutions. Local
+  x86/x64 windowed UI, scaling, FSR toggling and cleanup checks pass. Older-GPU
+  fallback and fullscreen desktop restoration still need hardware acceptance.
 - Select a license for project-authored code.
 - Later: better module boundaries, descriptive fields and layout cleanup.
 

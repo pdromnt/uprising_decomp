@@ -378,11 +378,6 @@ static void gl1_screen_rect(unsigned left,unsigned top,unsigned right,unsigned b
     glTexCoord2f(l,t);glVertex2f((float)left,(float)top);glTexCoord2f(r,t);glVertex2f((float)right,(float)top);
     glTexCoord2f(r,b);glVertex2f((float)right,(float)bottom);glTexCoord2f(l,b);glVertex2f((float)left,(float)bottom);glEnd();
 }
-static void gl1_quad(GLuint texture){
-    glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_ALPHA_TEST);glDisable(GL_BLEND);glDisable(GL_FOG);glDisable(GL_CULL_FACE);
-    glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,texture);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_REPLACE);
-    gl1_screen_rect(0,0,gl1_current->width,gl1_current->height);
-}
 static void gl1_swap(int32_t interval){
     Gl1Device *g=gl1_current;int width,height;unsigned old;(void)interval;
     if(!gl1_ready())return;
@@ -391,7 +386,7 @@ static void gl1_swap(int32_t interval){
     old=g->front;g->front=g->back;g->back=old;
     glPushAttrib(GL_ALL_ATTRIB_BITS);g->bind_framebuffer(GL_FRAMEBUFFER,0);
     if(!SDL_GetWindowSizeInPixels(g->window,&width,&height)){gl1_fail("present client extent");glPopAttrib();return;}
-    glViewport(0,0,width,height);gl1_quad(g->colors[g->front]);
+    if(!game_display_present(g->application,g->colors[g->front],g->width,g->height,0,0))gl1_fail("display presentation");
     if(!SDL_GL_SwapWindow(g->window))gl1_fail("swap buffers");
     g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);glPopAttrib();glViewport(0,0,g->width,g->height);
 }

@@ -18,7 +18,7 @@ Place the reconstructed `uprising.exe` (x86) or `uprising64.exe` (x64) beside `u
 `Music/` and `VIDEO/`. Preserve your original executable elsewhere first.
 Use the complete `FONTS/` from this project/release, including Liberation Sans.
 Double-click your chosen executable; no command-line flags are required. The game starts
-windowed with keyboard, mouse and audio enabled. Its title is
+windowed on first launch, with keyboard, mouse and audio enabled. Its title is
 **Uprising: Join or Die - RE/Decompiled**.
 Assets are resolved beside the executable, including when a shortcut starts it
 from another working directory.
@@ -27,6 +27,15 @@ Settings, keyboard/controller mappings and music preferences share
 `CONFIG/settings.ini`. The first run imports old `FONTS/settings.cfg` and
 `FONTS/keymap.cfg` if present. Later runs use the
 new file. Saves and screenshots remain separate user data.
+
+Options → Graphics → **ADVANCED** selects windowed/fullscreen output, resolution
+and optional FSR1 upscaling. Apply previews the mode; **KEEP** confirms it within
+20 seconds, otherwise the previous mode returns. Display preferences use the
+same settings file and load without flags. The original game frame keeps its
+aspect ratio; widescreen output has side bars. FSR1 upscales the existing game
+frame, including its HUD; front-end menus retain their original scaling. FSR
+requires an OpenGL 4.3 compatibility context; the existing rendering path remains
+available without it. Fullscreen switching still needs manual acceptance.
 
 SDL3 plays effects/movie audio and streams the OGG tracks in `Music/` on both
 architectures. The old music DLLs and `winmm.ini` are no longer required.

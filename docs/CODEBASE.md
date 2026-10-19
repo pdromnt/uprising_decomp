@@ -100,3 +100,18 @@ initial host uses UDP 2302; migrated hosts/other peers use their bound UDP ports
 The optional `UPRISING_NETWORK_LOBBY=host:name` launch intent hosts a native session;
 the old external DirectPlay lobby ABI is retired. Neither is required for menu play.
 Next: stabilization and manual acceptance. Other platforms remain unvalidated.
+
+`platform/portable_display.c` owns the advanced graphics modal and display options
+in the shared CONFIG file. It previews mode changes with a monotonic rollback
+deadline; rejected modes never become persisted preferences. Window output and
+mouse mapping use the same aspect-preserved viewport. Front-end graphics controls
+retain their existing native consumers. The button reuses the original metal art
+and the overlay uses existing fonts. SDL owns exclusive fullscreen transitions.
+Isolated automation rejects fullscreen and ignores saved display modes.
+
+`portable_fsr.inc` wraps AMD's unmodified FSR1 EASU/RCAS GLSL in an optional OpenGL
+4.3 compatibility context. CMake embeds the shader headers; no runtime shader
+files or compiler DLLs are shipped. The original 640x480 render/depth/readback
+buffers remain unchanged; FSR scales the complete gameplay frame (including HUD)
+at presentation. Front-end menus bypass it. Programs and the reusable intermediate
+target belong to the display owner and retire before context destruction.

@@ -9,6 +9,12 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 
 - Start without flags; check icon/title, music and sound. Change a setting and
   binding, exit and restart. Confirm one CONFIG file restores them.
+- In Options → Graphics → ADVANCED, change output resolution and fullscreen mode.
+  Check pointer alignment, KEEP, CANCEL, timeout and minimizing before confirmation;
+  exit to confirm desktop restoration, then restart to check saved preferences.
+  Compare FSR1 on/off during gameplay at the same output size; include HUD text,
+  menus, view changes and repeated missions. FSR is inactive when no upscale is
+  needed. Fullscreen and older-GPU fallback remain manual checks.
 - When audio changes or a new report warrants it, listen for effect/voice pitch and looping,
   movie synchronization, music track changes/shuffle and separate music/effects
   sliders. Check both builds; mute, change missions and exit during busy audio.

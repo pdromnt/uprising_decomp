@@ -17,6 +17,7 @@ typedef struct GameApplication {
     struct MenuWindow *menu_window;
     struct MenuSplash *menu_splash;
     struct GameInputDevices *input_devices;
+    struct GameDisplay *display;
     struct GameMenuMovie *menu_movies;
     struct GameLevelRoutes *level_routes;
     struct GameModelAssets *model_assets;

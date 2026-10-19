@@ -40,3 +40,8 @@ also included in binary packages.
 
 Original game data and historical TXT documentation retain their separate
 ownership and licenses.
+
+AMD FidelityFX Super Resolution 1 shader headers are bundled unmodified from
+GPUOpen-Effects/FidelityFX-FSR revision `a21ffb8f6c13233ba336352bdff293894c706575`.
+Copyright (c) 2021 Advanced Micro Devices, Inc. Used under the MIT license in
+`source/third_party/fsr/LICENSE.txt`, included as `FSR-LICENSE.txt` in packages.

@@ -5,6 +5,7 @@
 
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
+#include "portable_display.h"
 #include <SDL3/SDL_opengl.h>
 #include "game_initial_data.h"
 #include "application_config.h"

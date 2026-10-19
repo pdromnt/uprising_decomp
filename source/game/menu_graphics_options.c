@@ -1,6 +1,7 @@
 #include "menu_widgets.h"
 #include "menu_settings.h"
 #include "menu_sound.h"
+#include "portable_display.h"
 
 static uint32_t get(GameApplication *a,GameAddress p,unsigned o) {return game_memory_read_u32(&a->memory,p+o);}
 static void put(GameApplication *a,GameAddress p,unsigned o,uint32_t v) {game_memory_write_u32(&a->memory,p+o,v);}
@@ -41,6 +42,7 @@ static int layout(GameApplication *a,GameAddress e,uint32_t x,uint32_t y,uint32_
     if(!game_menu_widget_position(a,get(a,e,0x9c),x,y,z,0))return 0;
     x=get(a,get(a,e,0x9c),0x20);y=get(a,get(a,e,0x9c),0x24);
     for(i=0;i<5;++i)if(!game_menu_widget_position(a,get(a,e,slots[i]),x+dx[i],y+dy[i],z+1,0))return 0;
+    game_display_graphics_drawer(a,(int32_t)x,(int32_t)y,1,-1);
     return !a->memory.fault;
 }
 /* 00528110: values remain in the authoritative settings allocation. */
@@ -70,6 +72,7 @@ fail:
 static int controls_enable(GameApplication *a,GameAddress e,int enable) {
     static const unsigned slots[]={0xa0,0xa4,0xa8,0xac,0xb0};unsigned i;
     for(i=0;i<5;++i)if(!game_menu_widget_enable(a,get(a,e,slots[i]),enable))return 0;
+    game_display_graphics_drawer(a,(int32_t)get(a,get(a,e,0x9c),0x20),236,1,enable);
     return !a->memory.fault;
 }
 static int retire(GameApplication *a,GameAddress e,int apply) {
@@ -77,6 +80,7 @@ static int retire(GameApplication *a,GameAddress e,int apply) {
     static const unsigned offsets[]={8,0xc,0x10,0x14,0x18,0x1c,0x20,0x24,0x28,0x2c,0x30,0x34};
     static const unsigned keys[]={0,2,3,4,5,6,7,8,9,10,11,1};
     GameAddress p=get(a,0x58b0dc,0),settings=get(a,0x5943c8,0);unsigned i;
+    game_display_graphics_drawer(a,0,0,0,0);
     if(!game_menu_widget_visible(a,get(a,e,0x60),0))return 0;
     if(p && !game_menu_widget_destroy(a,p))return 0;
     put(a,0x58b0dc,0,0);

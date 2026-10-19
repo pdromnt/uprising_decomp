@@ -1,6 +1,7 @@
 #include "app_identity.h"
 #include "portable_sdl.h"
 #include "portable_font.h"
+#include "portable_display.h"
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_opengl.h>
 #include "../resources/icon_rgba.inc"
@@ -24,6 +25,7 @@ typedef struct MenuTextSurface {
 /* SDL pixels are authoritative. The RGBA surface is only a device-upload
  * staging buffer; gameplay and widgets never read or synchronize from it. */
 typedef struct MenuWindow {
+    GameApplication *application;
     GameAddress identity;
     SDL_Window *window;SDL_GLContext context;int sdl_initialized;
     SDL_Surface *front,*back,*upload;SDL_Palette *palette;SDL_Color colors[256];
@@ -135,7 +137,9 @@ static void acquire_input(GameApplication *a) {
 int game_menu_pump_events(GameApplication *a,int deliver_input){
     SDL_Event event;MenuWindow *w=a->menu_window;unsigned drained=0;
     if(!w || !w->window)return 0;
+    game_display_tick(a);
     while(drained++<64 && SDL_PollEvent(&event)){
+        if(game_display_event(a,&event))continue;
         game_input_devices_event(a,&event);
         switch(event.type){
         case SDL_EVENT_QUIT:case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
@@ -218,10 +222,12 @@ int game_level_display_begin(GameApplication *a){
     return !a->memory.fault && game_application_level_graphics_begin(a);
 }
 static int pointer_scale(MenuWindow *w,int32_t point[2],int to_client){
-    int wide,high;int64_t x,y;
+    int wide,high,r[4];int64_t x,y;
     if(!w || !point || !SDL_GetWindowSize(w->window,&wide,&high) || wide<=0 || high<=0 || !w->width || !w->height)return 0;
-    x=to_client?(int64_t)point[0]*wide/w->width:(int64_t)point[0]*w->width/wide;
-    y=to_client?(int64_t)point[1]*high/w->height:(int64_t)point[1]*w->height/high;
+    game_display_viewport(wide,high,w->width,w->height,r);
+    if(r[2]<=0 || r[3]<=0)return 0;
+    x=to_client?(int64_t)point[0]*r[2]/w->width+r[0]:((int64_t)point[0]-r[0])*w->width/r[2];
+    y=to_client?(int64_t)point[1]*r[3]/w->height+r[1]:((int64_t)point[1]-r[1])*w->height/r[3];
     if(x<INT32_MIN || x>INT32_MAX || y<INT32_MIN || y>INT32_MAX)return 0;
     point[0]=(int32_t)x;point[1]=(int32_t)y;return 1;
 }
@@ -272,6 +278,7 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
     MenuWindow *w=a->menu_window;if(!w || identity!=w->identity)return;
     (void)pointer_clip_release(w);(void)game_application_level_graphics_end(a);
     game_input_devices_end(a);
+    game_display_end(a);
     while(w->text_surfaces)game_menu_text_surface_release(a,w->text_surfaces->identity);
     window_surfaces_release(w);SDL_DestroySurface(w->upload);game_menu_window_resources_end(a);
     if(w->context){
@@ -294,7 +301,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     w=calloc(1,sizeof(*w));if(!w)return 0;
     p=scene_projection_storage_allocate(0x140u,"portable menu window");
     if(!p){free(w);return 0;}
-    w->identity=p;w->width=width;w->height=height;a->menu_window=w;
+    w->application=a;w->identity=p;w->width=width;w->height=height;a->menu_window=w;
     w->isolated_pointer[0]=(int32_t)(width/2);w->isolated_pointer[1]=(int32_t)(height/2);
     w->hidden=SDL_getenv("UPRISING_RECOMP_HEADLESS")!=NULL;
 
@@ -318,8 +325,21 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
      if(!icon)goto fail;
      int ok=SDL_SetWindowIcon(w->window,icon);SDL_DestroySurface(icon);if(!ok)goto fail;}
-    w->context=SDL_GL_CreateContext(w->window);if(!w->context)goto fail;
+    /* Optional FSR uses modern shaders in a compatibility context. The game
+     * retains its existing fixed-function path when that context is unavailable. */
+    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
+    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,3);
+    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    w->context=SDL_GL_CreateContext(w->window);
+    if(!w->context){
+        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,0);
+        w->context=SDL_GL_CreateContext(w->window);
+    }
+    if(!w->context)goto fail;
     SDL_GL_SetSwapInterval(0);
+    if(!game_display_begin(a,w->window,w->fonts))goto fail;
     game_application_splash_end(a);
     if(!create_surfaces(w))goto fail;
     /* Stable owner/member IDs replace the original handle publications. */
@@ -350,7 +370,7 @@ int game_menu_surface_prepare(GameApplication *a,int *restored){
     *restored=0;return 1;
 }
 static int present_windowed_front(MenuWindow *w){
-    int width,height,mode;GLenum error;
+    int width,height;GLenum error;int drawn;
     if(!w || !w->front)return 0;
     if(w->hidden || (SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED))return 1;
     if(SDL_GL_GetCurrentContext()!=w->context && !SDL_GL_MakeCurrent(w->window,w->context))return 0;
@@ -362,7 +382,8 @@ static int present_windowed_front(MenuWindow *w){
     }
     if(!w->upload)w->upload=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);
     if(!w->upload || !SDL_BlitSurface(w->front,NULL,w->upload,NULL))return 0;
-    glGetIntegerv(GL_MATRIX_MODE,&mode);glPushAttrib(GL_ALL_ATTRIB_BITS);glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
+    if(!game_display_overlay(w->application,w->upload))return 0;
+    glPushAttrib(GL_ALL_ATTRIB_BITS);glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
     glDrawBuffer(GL_BACK);glViewport(0,0,width,height);
     glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_STENCIL_TEST);glDisable(GL_SCISSOR_TEST);
     glDisable(GL_ALPHA_TEST);glDisable(GL_BLEND);glDisable(GL_FOG);glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);
@@ -376,14 +397,9 @@ static int present_windowed_front(MenuWindow *w){
         glBindTexture(GL_TEXTURE_2D,w->menu_texture);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,(int)w->width,(int)w->height,GL_RGBA,GL_UNSIGNED_BYTE,w->upload->pixels);
     }
-    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,1,1,0,-1,1);
-    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
-    glBegin(GL_QUADS);
-    glTexCoord2f(0,0);glVertex2f(0,0);glTexCoord2f(1,0);glVertex2f(1,0);
-    glTexCoord2f(1,1);glVertex2f(1,1);glTexCoord2f(0,1);glVertex2f(0,1);glEnd();
-    glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(mode);
+    drawn=game_display_present(w->application,w->menu_texture,w->width,w->height,1,1);
     glPopClientAttrib();glPopAttrib();error=glGetError();
-    return error==GL_NO_ERROR && SDL_GL_SwapWindow(w->window);
+    return drawn && error==GL_NO_ERROR && SDL_GL_SwapWindow(w->window);
 }
 static int copy_surface(SDL_Surface *to,SDL_Surface *from,const GameUiRect *src,const GameUiRect *dst,int keyed,uint32_t key,int mirror){
     GameMenuPixelSpan a,b;int result;

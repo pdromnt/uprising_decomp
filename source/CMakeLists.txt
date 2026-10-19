@@ -13,6 +13,7 @@ include(cmake/sources.cmake)
 include(cmake/sdl.cmake)
 include(cmake/enet.cmake)
 include(cmake/freetype.cmake)
+include(cmake/fsr.cmake)
 
 foreach(path IN LISTS CORE_SOURCES GAME_SOURCES PLATFORM_SOURCES)
     if(path MATCHES "(^|/)(cpu|generated|overlay)/")
@@ -57,6 +58,7 @@ set_target_properties(uprising PROPERTIES OUTPUT_NAME "${UPRISING_EXECUTABLE_NAM
 target_include_directories(uprising PRIVATE core game platform)
 
 target_compile_options(uprising PRIVATE -O2 -frounding-math -ffunction-sections -fdata-sections -Wall -Wextra)
+target_include_directories(uprising PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_options(uprising PRIVATE -Wl,--gc-sections)
 target_link_libraries(uprising PRIVATE uprising_core SDL3::SDL3-static enet freetype m opengl32)
 set_target_properties(uprising PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${UPRISING_ASSET_DIRECTORY}")

@@ -105,8 +105,10 @@ Next: stabilization and manual acceptance. Other platforms remain unvalidated.
 in the shared CONFIG file. It previews mode changes with a monotonic rollback
 deadline; rejected modes never become persisted preferences. Window output and
 mouse mapping use the same aspect-preserved viewport. Front-end graphics controls
-retain their existing native consumers. The button reuses the original metal art
-and the overlay uses existing fonts. SDL owns exclusive fullscreen transitions.
+retain their existing native consumers. The modal uses native-size beveled metal
+trim, a recessed terminal interior and existing fonts. Separate arrow hit areas
+cycle values backward/forward; confirmation has a draining rollback bar.
+SDL owns exclusive fullscreen transitions.
 Isolated automation rejects fullscreen and ignores saved display modes.
 
 `portable_fsr.inc` wraps AMD's unmodified FSR1 EASU/RCAS GLSL in an optional OpenGL

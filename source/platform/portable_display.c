@@ -1,6 +1,5 @@
 #include "portable_display.h"
 #include "application_config.h"
-#include "asset_bitmap.h"
 #include "menu_widgets.h"
 #include "portable_input_devices.h"
 #include <SDL3/SDL_opengl.h>
@@ -20,7 +19,6 @@ struct GameDisplay {
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
     int open,focus,armed,mouse_x,mouse_y;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
-    ResourceBlob button_blob;AssetBitmap button;
     DisplayFsr fsr;
 };
 typedef struct GameDisplay GameDisplay;
@@ -103,16 +101,15 @@ static int display_persist(GameDisplay *d){
     (void)display_configure(d,d->previous);return 0;
 }
 int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *fonts){
-    GameConfig *c=game_application_config(a);GameDisplay *d=calloc(1,sizeof(*d));SDL_Color green[2]={{0,0,0,0},{88,255,38,255}};
+    GameConfig *c=game_application_config(a);GameDisplay *d=calloc(1,sizeof(*d));
+    SDL_Color colors[4]={{0,0,0,0},{148,255,72,255},{148,157,129,255},{68,103,60,255}};
     if(!d)return 0;
     a->display=d;d->application=a;d->window=window;d->fonts=fonts;d->armed=-1;
     d->active=(DisplayOptions){640,480,0,0};display_fsr_begin(&d->fsr,a);
     d->canvas=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_RGBA32);
-    d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(2);
-    if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,green,0,2) ||
+    d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(4);
+    if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,colors,0,4) ||
        !SDL_SetSurfacePalette(d->labels,d->label_palette) || !SDL_SetSurfaceColorKey(d->labels,true,0))return 0;
-    if(game_application_load_blob(a,"media\\dibs\\opts\\grx\\okoff.bmp",&d->button_blob))
-        (void)asset_bitmap_menu_parse(&d->button_blob,&d->button);
     if(!game_application_isolated_input(a) && !SDL_getenv("UPRISING_RECOMP_HEADLESS")){
         DisplayOptions saved={(int)game_config_number(c,"display","width",640),
             (int)game_config_number(c,"display","height",480),
@@ -127,7 +124,7 @@ void game_display_end(GameApplication *a){
     /* Restore the desktop before destroying the window/context. */
     (void)SDL_SetWindowFullscreen(d->window,false);
     display_fsr_end(&d->fsr);SDL_DestroySurface(d->labels);SDL_DestroySurface(d->canvas);SDL_DestroyPalette(d->label_palette);
-    resource_blob_release(&d->button_blob);SDL_free(d->fullscreen_modes);free(d);
+    SDL_free(d->fullscreen_modes);free(d);
 }
 void game_display_graphics_drawer(GameApplication *a,int x,int y,int visible,int enabled){
     GameDisplay *d=a->display;if(!d)return;
@@ -138,15 +135,16 @@ static int inside(int x,int y,int left,int top,int width,int height){return x>=l
 static int display_hit(GameDisplay *d,int x,int y){
     if(!d->open)return d->drawer_visible && d->drawer_enabled && inside(x,y,d->drawer_x,d->drawer_y,112,26)?7:-1;
     if(d->deadline){if(inside(x,y,170,333,140,30))return 5;if(inside(x,y,330,333,140,30))return 6;return -1;}
-    if(inside(x,y,322,176,180,30))return 0;
-    if(inside(x,y,322,222,180,30))return 1;
-    if(inside(x,y,322,268,180,30))return 2;
+    {int row;for(row=0;row<3;++row)if(inside(x,y,322,176+row*46,180,30))
+        return x<348?8+row:row;}
     if(inside(x,y,170,333,140,30))return 3;
     if(inside(x,y,330,333,140,30))return 4;
     return -1;
 }
 static void display_action(GameDisplay *d,int action,int direction){
     int index;
+    if(action>=8 && action<=10){action-=8;direction=-1;}
+    if(action>=0 && action<=2)d->focus=action;
     switch(action){
     case 7:
         d->open=1;d->draft=d->active;d->status[0]=0;d->focus=0;display_modes(d);
@@ -207,65 +205,107 @@ int game_display_event(GameApplication *a,const SDL_Event *event){
 }
 static Uint32 display_color(SDL_Surface *s,int r,int g,int b){return SDL_MapSurfaceRGB(s,(Uint8)r,(Uint8)g,(Uint8)b);}
 static void display_fill(SDL_Surface *s,int x,int y,int w,int h,Uint32 color){SDL_Rect r={x,y,w,h};(void)SDL_FillSurfaceRect(s,&r,color);}
-static void display_text(GameDisplay *d,const char *text,int x,int y,int right,unsigned font){
+static void display_label(GameDisplay *d,const char *text,int x,int y,int right,unsigned font,uint8_t color){
     (void)game_menu_font_paint(d->fonts,font,text,d->labels->pixels,(size_t)d->labels->pitch*d->labels->h,
-        640,480,d->labels->pitch,x,y,right,1,0,0);
+        640,480,d->labels->pitch,x,y,right,color,0,0);
 }
-static void display_button(GameDisplay *d,SDL_Surface *s,int x,int y,int w,int h,const char *text,int focused){
-    int i,j;Uint32 *row;AssetBitmap *b=&d->button;
-    display_fill(s,x,y,w,h,display_color(s,58,52,37));
-    /* Reuse the original recessed metal border; replace only its label area. */
-    if(b->pixels)for(j=0;j<h;++j){
-        row=(Uint32 *)((Uint8 *)s->pixels+(y+j)*s->pitch);
+static void display_center(GameDisplay *d,const char *text,int x,int y,int w,int h,unsigned font,uint8_t color){
+    int32_t tw,th;
+    if(game_menu_font_measure(d->fonts,font,text,&tw,&th))
+        display_label(d,text,x+(w-tw)/2,y+(h-th)/2,x+w,font,color);
+}
+/* Quiet bronze trim, drawn at native pixel size rather than stretching a
+ * labelled bitmap. A fixed hash supplies fine grain without a tiled pattern. */
+static void display_metal(SDL_Surface *s,int x,int y,int w,int h){
+    int i,j;
+    for(j=0;j<h;++j){
+        Uint32 *row=(Uint32 *)((Uint8 *)s->pixels+(y+j)*s->pitch);
         for(i=0;i<w;++i){
-            unsigned bx=(unsigned)i*b->width/w,by=(unsigned)j*b->height/h;uint32_t c;
-            if(bx>b->width/4 && bx<b->width*3/4 && by>b->height/3 && by<b->height*2/3)
-                bx=b->width/4; /* Erase the baked-in OK label using its own background. */
-            c=asset_bitmap_pixel(b,bx,by);
-            if(!b->rgb24){const uint8_t *p=b->palette_bgra+(c&255)*4;c=(uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16;}
-            if(x+i>=0 && x+i<s->w)row[x+i]=display_color(s,(c>>16)&255,(c>>8)&255,c&255);
+            uint32_t noise=(uint32_t)(x+i)*374761393u+(uint32_t)(y+j)*668265263u;
+            int shade;noise=(noise^(noise>>13))*1274126177u;
+            shade=55+(h-j)*15/h+(int)((noise>>24)%5u);
+            row[x+i]=display_color(s,shade+8,shade+3,shade-11);
         }
     }
-    if(focused){Uint32 green=display_color(s,65,150,28);
-        display_fill(s,x,y,w,1,green);display_fill(s,x,y+h-1,w,1,green);}
-    {int32_t tw,th;if(game_menu_font_measure(d->fonts,2,text,&tw,&th))display_text(d,text,x+(w-tw)/2,y+(h-th)/2,x+w,2);}
+    display_fill(s,x,y,w,1,display_color(s,124,119,95));
+    display_fill(s,x,y,1,h,display_color(s,103,99,78));
+    display_fill(s,x,y+h-1,w,1,display_color(s,16,16,12));
+    display_fill(s,x+w-1,y,1,h,display_color(s,16,16,12));
+}
+static void display_button(GameDisplay *d,SDL_Surface *s,int x,int y,int w,int h,const char *text,int focused,int pressed){
+    display_metal(s,x,y,w,h);
+    display_fill(s,x+3,y+3,w-6,h-6,display_color(s,pressed?12:27,pressed?19:30,pressed?13:23));
+    display_fill(s,x+4,y+4,w-8,1,display_color(s,12,15,10));
+    display_fill(s,x+4,y+h-5,w-8,1,display_color(s,focused?77:48,focused?111:54,focused?48:36));
+    if(focused)display_fill(s,x+7,y+h-3,w-14,1,display_color(s,99,164,57));
+    display_center(d,text,x,y+pressed,w,h,2,focused?1:2);
+}
+static void display_selector(GameDisplay *d,SDL_Surface *s,int row,const char *text,int enabled){
+    int x=322,y=176+46*row,i,hover=display_hit(d,d->mouse_x,d->mouse_y);
+    int focused=enabled && (d->focus==row || hover==row || hover==row+8);
+    Uint32 arrow=display_color(s,focused?148:83,focused?255:116,focused?72:63);
+    display_fill(s,x,y,180,30,display_color(s,6,9,6));
+    display_fill(s,x+1,y+1,178,1,display_color(s,2,4,2));
+    display_fill(s,x+1,y+29,178,1,display_color(s,focused?61:39,focused?89:49,focused?43:31));
+    display_metal(s,x+2,y+2,22,26);display_metal(s,x+156,y+2,22,26);
+    display_fill(s,x+5,y+5,16,20,display_color(s,23,27,19));
+    display_fill(s,x+159,y+5,16,20,display_color(s,23,27,19));
+    if(enabled)for(i=0;i<5;++i){
+        display_fill(s,x+10+i,y+14-i,1,1+i*2,arrow);
+        display_fill(s,x+169-i,y+14-i,1,1+i*2,arrow);
+    }
+    display_center(d,text,x+25,y,130,30,2,focused?1:enabled?2:3);
+}
+static void display_rivet(SDL_Surface *s,int x,int y){
+    display_fill(s,x-2,y-2,5,5,display_color(s,12,14,9));
+    display_fill(s,x-1,y-1,3,3,display_color(s,106,102,79));
+    display_fill(s,x-1,y,3,1,display_color(s,32,34,24));
 }
 int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
-    GameDisplay *d=a->display;SDL_Surface *s;SDL_Rect target;char text[160];int x,y,hover;
+    GameDisplay *d=a->display;SDL_Surface *s;SDL_Rect target;char text[160];int x,hover;
     if(!d || !rgba || !d->drawer_visible)return 1;
     if(d->deadline && SDL_GetTicks()>=d->deadline)display_restore(d);
     s=d->canvas;if(!s)return 0;
     (void)SDL_SetSurfaceBlendMode(s,SDL_BLENDMODE_BLEND);(void)SDL_FillSurfaceRect(s,NULL,0);
     (void)SDL_FillSurfaceRect(d->labels,NULL,0);
     if(!d->open && d->drawer_enabled && d->drawer_x>=0 && d->drawer_x+112<=640 && d->drawer_y>=0 && d->drawer_y+26<=480)
-        display_button(d,s,d->drawer_x,d->drawer_y,112,26,"ADVANCED",inside(d->mouse_x,d->mouse_y,d->drawer_x,d->drawer_y,112,26));
+        display_button(d,s,d->drawer_x,d->drawer_y,112,26,"ADVANCED",inside(d->mouse_x,d->mouse_y,d->drawer_x,d->drawer_y,112,26),d->armed==7);
     if(d->open){
-        display_fill(s,0,0,640,480,SDL_MapSurfaceRGBA(s,0,0,0,160));
-        display_fill(s,115,108,410,280,display_color(s,18,16,12));
-        /* Deterministic weathered metal, with recessed black control wells. */
-        for(y=112;y<384;++y)for(x=119;x<521;++x){
-            int grain=(int)(((unsigned)x*17u+(unsigned)y*29u+((unsigned)x*(unsigned)y)%31u)%11u);
-            Uint32 *p=(Uint32 *)((Uint8 *)s->pixels+y*s->pitch);p[x]=display_color(s,61+grain,56+grain,41+grain);
-        }
-        display_fill(s,128,152,384,2,display_color(s,18,17,11));
-        display_text(d,"ADVANCED GRAPHICS",138,123,510,4);
+        display_fill(s,0,0,640,480,SDL_MapSurfaceRGBA(s,0,0,0,176));
+        display_fill(s,119,113,410,280,SDL_MapSurfaceRGBA(s,0,0,0,150));
+        display_metal(s,115,108,410,280);
+        display_fill(s,123,116,394,264,display_color(s,9,14,11));
+        display_fill(s,126,119,388,258,display_color(s,15,22,17));
+        display_fill(s,128,121,384,33,display_color(s,30,34,24));
+        display_fill(s,128,154,384,1,display_color(s,66,83,47));
+        display_label(d,"ADVANCED GRAPHICS",140,130,485,3,2);
+        display_fill(s,493,131,7,7,display_color(s,27,49,16));
+        display_fill(s,495,133,3,3,display_color(s,148,255,72));
+        display_rivet(s,119,112);display_rivet(s,520,112);
+        display_rivet(s,119,383);display_rivet(s,520,383);
+        hover=display_hit(d,d->mouse_x,d->mouse_y);
         if(d->deadline){
-            display_text(d,"KEEP THESE DISPLAY SETTINGS?",152,195,510,3);
-            snprintf(text,sizeof(text),"Reverting in %u seconds",(unsigned)((d->deadline-SDL_GetTicks()+999)/1000));
-            display_text(d,text,175,239,510,2);
-            display_button(d,s,170,333,140,30,"KEEP",d->focus==5);
-            display_button(d,s,330,333,140,30,"REVERT",d->focus==6);
+            Uint64 now=SDL_GetTicks(),remaining=now<d->deadline?d->deadline-now:0;
+            if(remaining>20000)remaining=20000;
+            display_center(d,"KEEP THESE DISPLAY SETTINGS?",128,187,384,24,3,1);
+            snprintf(text,sizeof(text),"Reverting in %u seconds",(unsigned)((remaining+999)/1000));
+            display_center(d,text,128,233,384,20,2,2);
+            display_fill(s,167,269,306,9,display_color(s,4,8,5));
+            display_fill(s,170,272,(int)(300*remaining/20000),3,display_color(s,104,192,52));
+            display_button(d,s,170,333,140,30,"KEEP",d->focus==5 || hover==5,d->armed==5);
+            display_button(d,s,330,333,140,30,"REVERT",d->focus==6 || hover==6,d->armed==6);
         }else{
-            display_text(d,"DISPLAY MODE",138,185,315,2);display_text(d,"RESOLUTION",138,231,315,2);
-            display_text(d,"FSR 1 UPSCALING",138,277,315,2);
-            hover=display_hit(d,d->mouse_x,d->mouse_y);
-            display_button(d,s,322,176,180,30,d->draft.fullscreen?"< FULLSCREEN >":"< WINDOWED >",d->focus==0 || hover==0);
-            snprintf(text,sizeof(text),"< %d x %d >",d->draft.width,d->draft.height);
-            display_button(d,s,322,222,180,30,text,d->focus==1 || hover==1);
-            display_button(d,s,322,268,180,30,!d->fsr.available?"UNAVAILABLE":d->draft.fsr?"< ON >":"< OFF >",d->focus==2 || hover==2);
-            display_button(d,s,170,333,140,30,"APPLY",d->focus==3 || hover==3);
-            display_button(d,s,330,333,140,30,"CANCEL",d->focus==4 || hover==4);
-            display_text(d,d->status[0]?d->status:"Original aspect ratio preserved. FSR affects gameplay.",138,310,505,0);
+            display_label(d,"DISPLAY MODE",138,185,315,2,2);display_label(d,"RESOLUTION",138,231,315,2,2);
+            display_label(d,"FSR 1 UPSCALING",138,277,315,2,2);
+            display_fill(s,138,215,364,1,display_color(s,29,42,29));
+            display_fill(s,138,261,364,1,display_color(s,29,42,29));
+            display_selector(d,s,0,d->draft.fullscreen?"FULLSCREEN":"WINDOWED",1);
+            snprintf(text,sizeof(text),"%d x %d",d->draft.width,d->draft.height);
+            display_selector(d,s,1,text,1);
+            display_selector(d,s,2,!d->fsr.available?"UNAVAILABLE":d->draft.fsr?"ON":"OFF",d->fsr.available);
+            display_button(d,s,170,333,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
+            display_button(d,s,330,333,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
+            display_label(d,d->status[0]?d->status:"Original aspect ratio preserved. FSR affects gameplay.",138,310,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};

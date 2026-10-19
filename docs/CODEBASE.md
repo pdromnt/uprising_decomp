@@ -124,3 +124,12 @@ The non-FSR path uses TOU's integer-prescale coordinate filter with linear
 sampling, preserving pixel interiors at integer scales without uneven nearest
 pixel widths at fractional scales. Its shader uses GLSL 1.20 independently of
 FSR availability; shader failure retains linear fractional/nearest integer scaling.
+
+The display owner persists `display.msaa_samples` and bounds selectable values
+to device support. On level opening, the GL owner optionally allocates two
+multisample color targets and a shared multisample depth/stencil target. The
+world submission scope enables sample coverage, excluding the final 2D overlay
+queue; UI and CPU glyph writes retain center-sample coverage. Color resolves into
+the original single-sample textures for presentation/readback, preserving their
+640x480 dimensions. Level teardown releases all multisample targets. AA changes
+apply at the next level opening, independently of FSR's all-screen scaling.

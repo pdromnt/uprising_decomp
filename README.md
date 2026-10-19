@@ -40,6 +40,9 @@ presentation filter smooths fractional scaling while preserving integer-scale
 pixel interiors. FSR
 requires an OpenGL 4.3 compatibility context; the existing rendering path remains
 available without it. Fullscreen switching still needs manual acceptance.
+The **3D ANTI-ALIASING** control offers Off and supported MSAA 2×/4×/8× modes.
+It takes effect on the next mission load and applies to world geometry, keeping
+HUD, text, menus and 2D overlay draws outside the AA pass.
 
 SDL3 plays effects/movie audio and streams the OGG tracks in `Music/` on both
 architectures. The old music DLLs and `winmm.ini` are no longer required.

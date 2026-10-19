@@ -14,6 +14,9 @@
   x86/x64 windowed UI, FSR toggling and cleanup checks passed before the latest
   all-screen filtering/4:3-only/desktop-fullscreen changes, now awaiting the
   user's manual check. Older-GPU fallback still needs hardware acceptance.
+- Manually accept geometry-only MSAA (Off/2×/4×/8× where supported), including
+  unchanged 2D coverage and repeated mission cleanup. Then attempt Linux/macOS
+  source/build portability; neither platform is validated yet.
 - Select a license for project-authored code.
 - Later: better module boundaries, descriptive fields and layout cleanup.
 

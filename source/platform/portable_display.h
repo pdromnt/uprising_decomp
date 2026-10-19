@@ -11,4 +11,6 @@ void game_display_tick(GameApplication *);
 int game_display_overlay(GameApplication *,SDL_Surface *rgba);
 int game_display_present(GameApplication *,unsigned texture,int width,int height,int top_down);
 void game_display_viewport(int width,int height,int source_width,int source_height,int rect[4]);
+int game_display_antialias_samples(GameApplication *);
+void game_display_antialias_unavailable(GameApplication *);
 #endif

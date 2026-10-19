@@ -15,6 +15,10 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
   Compare FSR1 on/off during gameplay at the same output size; include HUD text,
   menus, view changes and repeated missions. FSR is inactive when no upscale is
   needed. Fullscreen and older-GPU fallback remain manual checks.
+- Change 3D ANTI-ALIASING between Off and supported MSAA levels, then load a
+  mission. Check model/terrain edges, HUD/text/sprites, readback/screenshots and
+  repeated mission transitions with FSR both on and off. AA does not apply to
+  front-end menus or the final 2D overlay queue.
 - When audio changes or a new report warrants it, listen for effect/voice pitch and looping,
   movie synchronization, music track changes/shuffle and separate music/effects
   sliders. Check both builds; mute, change missions and exit during busy audio.

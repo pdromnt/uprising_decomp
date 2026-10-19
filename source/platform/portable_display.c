@@ -9,19 +9,25 @@
 #include <string.h>
 #include "portable_fsr.inc"
 
-typedef struct DisplayOptions {int width,height,fullscreen,fsr;} DisplayOptions;
+typedef struct DisplayOptions {int width,height,fullscreen,fsr,aa;} DisplayOptions;
 typedef struct DisplayMode {int width,height;} DisplayMode;
 struct GameDisplay {
     GameApplication *application;SDL_Window *window;GameMenuFonts *fonts;
     DisplayOptions active,draft,previous;
     DisplayMode modes[96];int mode_count;
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
-    int open,focus,armed,mouse_x,mouse_y,countdown_pixels;Uint64 deadline;
+    int open,focus,armed,mouse_x,mouse_y,countdown_pixels,aa_limit;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
     DisplayFsr fsr;
 };
 typedef struct GameDisplay GameDisplay;
 static void display_redraw(GameDisplay *d){game_memory_write_u32(&d->application->memory,0x58fd3cu,1);}
+int game_display_antialias_samples(GameApplication *a){return a->display?a->display->active.aa:0;}
+void game_display_antialias_unavailable(GameApplication *a){
+    GameDisplay *d=a->display;if(!d)return;
+    d->active.aa=d->draft.aa=d->aa_limit=0;
+    snprintf(d->status,sizeof(d->status),"MSAA unavailable; disabled for this session.");display_redraw(d);
+}
 
 void game_display_viewport(int width,int height,int sw,int sh,int r[4]){
     r[0]=r[1]=0;r[2]=width;r[3]=height;
@@ -63,7 +69,7 @@ static int display_set(GameDisplay *d,DisplayOptions options){
 }
 static void display_restore(GameDisplay *d){
     if(!display_set(d,d->previous)){
-        DisplayOptions recovery={640,480,0,0};(void)display_set(d,recovery);
+        DisplayOptions recovery={640,480,0,0,0};(void)display_set(d,recovery);
     }
     d->deadline=0;d->draft=d->active;display_modes(d);
     display_redraw(d);
@@ -90,7 +96,8 @@ static int display_configure(GameDisplay *d,DisplayOptions options){
     return c && game_config_set_number(c,"display","width",options.width) &&
         game_config_set_number(c,"display","height",options.height) &&
         game_config_set_number(c,"display","fullscreen",options.fullscreen) &&
-        game_config_set_number(c,"display","fsr1",options.fsr);
+        game_config_set_number(c,"display","fsr1",options.fsr) &&
+        game_config_set_number(c,"display","msaa_samples",options.aa);
 }
 static int display_persist(GameDisplay *d){
     if(display_configure(d,d->active) && game_application_config_flush(d->application))return 1;
@@ -102,7 +109,13 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
     SDL_Color colors[4]={{0,0,0,0},{148,255,72,255},{148,157,129,255},{68,103,60,255}};
     if(!d)return 0;
     a->display=d;d->application=a;d->window=window;d->fonts=fonts;d->armed=-1;
-    d->active=(DisplayOptions){640,480,0,0};display_fsr_begin(&d->fsr,a);
+    d->active=(DisplayOptions){640,480,0,0,0};display_fsr_begin(&d->fsr,a);
+    if((SDL_GL_ExtensionSupported("GL_ARB_framebuffer_object") ||
+        (SDL_GL_ExtensionSupported("GL_EXT_framebuffer_multisample") && SDL_GL_ExtensionSupported("GL_EXT_framebuffer_blit"))) &&
+       (SDL_GL_GetProcAddress("glRenderbufferStorageMultisample") || SDL_GL_GetProcAddress("glRenderbufferStorageMultisampleEXT")) &&
+       (SDL_GL_GetProcAddress("glBlitFramebuffer") || SDL_GL_GetProcAddress("glBlitFramebufferEXT")))
+        glGetIntegerv(GL_MAX_SAMPLES,&d->aa_limit);
+    if(d->aa_limit>8)d->aa_limit=8;
     d->canvas=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_RGBA32);
     d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(4);
     if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,colors,0,4) ||
@@ -111,7 +124,9 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
         DisplayOptions saved={(int)game_config_number(c,"display","width",640),
             (int)game_config_number(c,"display","height",480),
             game_config_number(c,"display","fullscreen",0)==1,
-            game_config_number(c,"display","fsr1",0)==1 && d->fsr.available};
+            game_config_number(c,"display","fsr1",0)==1 && d->fsr.available,
+            (int)game_config_number(c,"display","msaa_samples",0)};
+        if((saved.aa!=2 && saved.aa!=4 && saved.aa!=8) || saved.aa>d->aa_limit)saved.aa=0;
         if(!display_set(d,saved)){(void)display_set(d,d->active);SDL_ClearError();}
     }
     d->draft=d->active;display_modes(d);return 1;
@@ -131,17 +146,18 @@ void game_display_graphics_drawer(GameApplication *a,int x,int y,int visible,int
 static int inside(int x,int y,int left,int top,int width,int height){return x>=left && y>=top && x<left+width && y<top+height;}
 static int display_hit(GameDisplay *d,int x,int y){
     if(!d->open)return d->drawer_visible && d->drawer_enabled && inside(x,y,d->drawer_x,d->drawer_y,112,26)?7:-1;
-    if(d->deadline){if(inside(x,y,170,333,140,30))return 5;if(inside(x,y,330,333,140,30))return 6;return -1;}
-    {int row;for(row=0;row<3;++row)if(inside(x,y,322,176+row*46,180,30))
-        return x<348?8+row:row;}
-    if(inside(x,y,170,333,140,30))return 3;
-    if(inside(x,y,330,333,140,30))return 4;
+    if(d->deadline){if(inside(x,y,170,357,140,30))return 5;if(inside(x,y,330,357,140,30))return 6;return -1;}
+    {int row;for(row=0;row<4;++row)if(inside(x,y,322,176+row*38,180,30))
+        return row==3?(x<348?12:11):(x<348?8+row:row);}
+    if(inside(x,y,170,357,140,30))return 3;
+    if(inside(x,y,330,357,140,30))return 4;
     return -1;
 }
 static void display_action(GameDisplay *d,int action,int direction){
     int index;
     display_redraw(d);
     if(action>=8 && action<=10){action-=8;direction=-1;}
+    if(action==12){action=11;direction=-1;}
     if(action>=0 && action<=2)d->focus=action;
     switch(action){
     case 7:
@@ -156,6 +172,12 @@ static void display_action(GameDisplay *d,int action,int direction){
         index=display_mode_index(d);index=(index+direction+d->mode_count)%d->mode_count;
         d->draft.width=d->modes[index].width;d->draft.height=d->modes[index].height;break;
     case 2:if(d->fsr.available)d->draft.fsr=!d->draft.fsr;break;
+    case 11:{
+        static const int samples[]={0,2,4,8};int count=1;
+        while(count<4 && samples[count]<=d->aa_limit)++count;
+        for(index=0;index<count;++index)if(samples[index]==d->draft.aa)break;
+        index=(index+direction+count)%count;d->draft.aa=samples[index];d->focus=11;break;
+    }
     case 3:
         d->previous=d->active;
         if(display_set(d,d->draft)){d->deadline=SDL_GetTicks()+20000;d->focus=5;d->status[0]=0;}
@@ -195,8 +217,12 @@ int game_display_event(GameApplication *a,const SDL_Event *event){
         display_redraw(d);
         if(key==SDL_SCANCODE_ESCAPE)display_action(d,d->deadline?6:4,1);
         else if(key==SDL_SCANCODE_TAB || key==SDL_SCANCODE_DOWN || key==SDL_SCANCODE_UP){
-            int first=d->deadline?5:0,count=d->deadline?2:5;
-            d->focus=first+(d->focus-first+count+(key==SDL_SCANCODE_UP?-1:1))%count;
+            static const int controls[]={0,1,2,11,3,4};int i;
+            if(d->deadline)d->focus=d->focus==5?6:5;
+            else {
+                for(i=0;i<6;++i)if(controls[i]==d->focus)break;
+                d->focus=controls[(i+6+(key==SDL_SCANCODE_UP?-1:1))%6];
+            }
         }else if(key==SDL_SCANCODE_RETURN || key==SDL_SCANCODE_KP_ENTER || key==SDL_SCANCODE_SPACE ||
                  key==SDL_SCANCODE_LEFT || key==SDL_SCANCODE_RIGHT)
             display_action(d,d->focus,key==SDL_SCANCODE_LEFT?-1:1);
@@ -242,8 +268,9 @@ static void display_button(GameDisplay *d,SDL_Surface *s,int x,int y,int w,int h
     display_center(d,text,x,y+pressed,w,h,2,focused?1:2);
 }
 static void display_selector(GameDisplay *d,SDL_Surface *s,int row,const char *text,int enabled){
-    int x=322,y=176+46*row,i,hover=display_hit(d,d->mouse_x,d->mouse_y);
-    int focused=enabled && (d->focus==row || hover==row || hover==row+8);
+    int x=322,y=176+38*row,i,hover=display_hit(d,d->mouse_x,d->mouse_y);
+    int action=row==3?11:row,previous=row==3?12:row+8;
+    int focused=enabled && (d->focus==action || hover==action || hover==previous);
     Uint32 arrow=display_color(s,focused?148:83,focused?255:116,focused?72:63);
     display_fill(s,x,y,180,30,display_color(s,6,9,6));
     display_fill(s,x+1,y+1,178,1,display_color(s,2,4,2));
@@ -273,17 +300,17 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
         display_button(d,s,d->drawer_x,d->drawer_y,112,26,"ADVANCED",inside(d->mouse_x,d->mouse_y,d->drawer_x,d->drawer_y,112,26),d->armed==7);
     if(d->open){
         display_fill(s,0,0,640,480,SDL_MapSurfaceRGBA(s,0,0,0,176));
-        display_fill(s,119,113,410,280,SDL_MapSurfaceRGBA(s,0,0,0,150));
-        display_metal(s,115,108,410,280);
-        display_fill(s,123,116,394,264,display_color(s,9,14,11));
-        display_fill(s,126,119,388,258,display_color(s,15,22,17));
+        display_fill(s,119,113,410,296,SDL_MapSurfaceRGBA(s,0,0,0,150));
+        display_metal(s,115,108,410,296);
+        display_fill(s,123,116,394,280,display_color(s,9,14,11));
+        display_fill(s,126,119,388,274,display_color(s,15,22,17));
         display_fill(s,128,121,384,33,display_color(s,30,34,24));
         display_fill(s,128,154,384,1,display_color(s,66,83,47));
         display_label(d,"ADVANCED GRAPHICS",140,130,485,3,2);
         display_fill(s,493,131,7,7,display_color(s,27,49,16));
         display_fill(s,495,133,3,3,display_color(s,148,255,72));
         display_rivet(s,119,112);display_rivet(s,520,112);
-        display_rivet(s,119,383);display_rivet(s,520,383);
+        display_rivet(s,119,399);display_rivet(s,520,399);
         hover=display_hit(d,d->mouse_x,d->mouse_y);
         if(d->deadline){
             Uint64 now=SDL_GetTicks(),remaining=now<d->deadline?d->deadline-now:0;
@@ -293,14 +320,16 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
             display_center(d,text,128,233,384,20,2,2);
             display_fill(s,167,269,306,9,display_color(s,4,8,5));
             display_fill(s,170,272,(int)(300*remaining/20000),3,display_color(s,104,192,52));
-            display_button(d,s,170,333,140,30,"KEEP",d->focus==5 || hover==5,d->armed==5);
-            display_button(d,s,330,333,140,30,"REVERT",d->focus==6 || hover==6,d->armed==6);
+            display_button(d,s,170,357,140,30,"KEEP",d->focus==5 || hover==5,d->armed==5);
+            display_button(d,s,330,357,140,30,"REVERT",d->focus==6 || hover==6,d->armed==6);
         }else{
             display_label(d,"DISPLAY MODE",138,185,315,2,2);
-            display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,231,315,2,2);
-            display_label(d,"FSR 1 UPSCALING",138,277,315,2,2);
-            display_fill(s,138,215,364,1,display_color(s,29,42,29));
-            display_fill(s,138,261,364,1,display_color(s,29,42,29));
+            display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,223,315,2,2);
+            display_label(d,"FSR 1 UPSCALING",138,261,315,2,2);
+            display_label(d,"3D ANTI-ALIASING",138,299,315,2,2);
+            display_fill(s,138,210,364,1,display_color(s,29,42,29));
+            display_fill(s,138,248,364,1,display_color(s,29,42,29));
+            display_fill(s,138,286,364,1,display_color(s,29,42,29));
             display_selector(d,s,0,d->draft.fullscreen?"FULLSCREEN":"WINDOWED",1);
             snprintf(text,sizeof(text),"%d x %d",d->draft.width,d->draft.height);
             if(d->draft.fullscreen){
@@ -312,9 +341,11 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
             }
             display_selector(d,s,1,text,!d->draft.fullscreen);
             display_selector(d,s,2,!d->fsr.available?"UNAVAILABLE":d->draft.fsr?"ON":"OFF",d->fsr.available);
-            display_button(d,s,170,333,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
-            display_button(d,s,330,333,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
-            display_label(d,d->status[0]?d->status:"Original aspect ratio preserved. FSR scales all screens.",138,310,505,0,2);
+            if(d->draft.aa)snprintf(text,sizeof(text),"MSAA %dx",d->draft.aa);else snprintf(text,sizeof(text),"OFF");
+            display_selector(d,s,3,d->aa_limit>=2?text:"UNAVAILABLE",d->aa_limit>=2);
+            display_button(d,s,170,357,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
+            display_button(d,s,330,357,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
+            display_label(d,d->status[0]?d->status:"3D AA: next mission load. FSR scales all screens.",138,334,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};

@@ -592,6 +592,11 @@ int game_application_world_begin(GameApplication *a){
     gl1_level_fog(1);
     return 1;
 }
+void game_application_world_antialias(GameApplication *a,int enabled){
+    Gl1Device *g=gl1_current;
+    if(!g || g->application!=a || !gl1_ready())return;
+    if(enabled && g->aa_samples)glEnable(GL_MULTISAMPLE);else glDisable(GL_MULTISAMPLE);
+}
 int game_application_world_state(GameApplication *a,WorldRenderState kind,int value){
     PortablePlatform *p=a->platform;if(!p || !p->renderer_initialized)return 0;
     switch(kind){

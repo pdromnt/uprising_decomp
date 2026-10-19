@@ -32,7 +32,10 @@ typedef struct Gl1Device {
     PFNGLFRAMEBUFFERRENDERBUFFERPROC framebuffer_renderbuffer;
     PFNGLDELETERENDERBUFFERSPROC delete_renderbuffers;
     PFNGLFOGCOORDFPROC fog_coordinate;
+    PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC multisample_storage;
+    PFNGLBLITFRAMEBUFFERPROC blit_framebuffer;
     GLuint framebuffers[2],colors[2],depth,lfb_texture;
+    GLuint aa_framebuffers[2],aa_colors[2],aa_depth;int aa_samples;
     unsigned front,back,width,height;
     Gl1Texture textures[4096],*texture_index[2048],*bound;
     uint32_t palette[256],palette_generation,chroma;
@@ -78,6 +81,48 @@ static SDL_FunctionPointer gl1_extension(const char *core,const char *extension)
     SDL_FunctionPointer p=SDL_GL_GetProcAddress(core);
     if(!p)p=SDL_GL_GetProcAddress(extension);
     return p;
+}
+static GLuint gl1_render_target(Gl1Device *g,unsigned buffer){return g->aa_samples?g->aa_framebuffers[buffer]:g->framebuffers[buffer];}
+static void gl1_resolve(Gl1Device *g,unsigned buffer){
+    if(!g->aa_samples)return;
+    g->bind_framebuffer(GL_READ_FRAMEBUFFER,g->aa_framebuffers[buffer]);glReadBuffer(GL_COLOR_ATTACHMENT0);
+    g->bind_framebuffer(GL_DRAW_FRAMEBUFFER,g->framebuffers[buffer]);glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    g->blit_framebuffer(0,0,g->width,g->height,0,0,g->width,g->height,GL_COLOR_BUFFER_BIT,GL_NEAREST);
+    g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));
+}
+static void gl1_msaa_release(Gl1Device *g){
+    if(g->delete_framebuffers)g->delete_framebuffers(2,g->aa_framebuffers);
+    if(g->delete_renderbuffers){g->delete_renderbuffers(2,g->aa_colors);if(g->aa_depth)g->delete_renderbuffers(1,&g->aa_depth);}
+    memset(g->aa_framebuffers,0,sizeof(g->aa_framebuffers));memset(g->aa_colors,0,sizeof(g->aa_colors));
+    g->aa_depth=0;g->aa_samples=0;
+}
+static void gl1_msaa_open(Gl1Device *g){
+    int samples=game_display_antialias_samples(g->application);unsigned i;SDL_FunctionPointer entry;
+    if(!samples)return;
+    entry=gl1_extension("glRenderbufferStorageMultisample","glRenderbufferStorageMultisampleEXT");
+    if(!entry){game_display_antialias_unavailable(g->application);return;}
+    memcpy(&g->multisample_storage,&entry,sizeof(entry));
+    entry=gl1_extension("glBlitFramebuffer","glBlitFramebufferEXT");
+    if(!entry){game_display_antialias_unavailable(g->application);return;}
+    memcpy(&g->blit_framebuffer,&entry,sizeof(entry));
+    g->gen_framebuffers(2,g->aa_framebuffers);g->gen_renderbuffers(2,g->aa_colors);g->gen_renderbuffers(1,&g->aa_depth);
+    g->bind_renderbuffer(GL_RENDERBUFFER,g->aa_depth);
+    g->multisample_storage(GL_RENDERBUFFER,samples,GL_DEPTH24_STENCIL8,g->width,g->height);
+    for(i=0;i<2;++i){
+        g->bind_framebuffer(GL_FRAMEBUFFER,g->aa_framebuffers[i]);g->bind_renderbuffer(GL_RENDERBUFFER,g->aa_colors[i]);
+        g->multisample_storage(GL_RENDERBUFFER,samples,GL_RGBA8,g->width,g->height);
+        g->framebuffer_renderbuffer(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_RENDERBUFFER,g->aa_colors[i]);
+        g->framebuffer_renderbuffer(GL_FRAMEBUFFER,GL_DEPTH_STENCIL_ATTACHMENT,GL_RENDERBUFFER,g->aa_depth);
+        if(g->check_framebuffer(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE || glGetError()!=GL_NO_ERROR){
+            gl1_msaa_release(g);game_application_log(g->application,"%s\n","MSAA target allocation failed; using single-sample rendering");
+            game_display_antialias_unavailable(g->application);
+            for(i=0;i<8 && glGetError()!=GL_NO_ERROR;++i){}
+            return;
+        }
+        glClearColor(0,0,0,0);glClearDepth(1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    }
+    g->aa_samples=samples;
+    game_application_log(g->application,"3D MSAA samples: %s\n",samples==8?"8":samples==4?"4":"2");
 }
 static void gl1_dimensions(int lod,int aspect,unsigned *width,unsigned *height){
     unsigned largest=256u>>(unsigned)lod;
@@ -383,12 +428,12 @@ static void gl1_swap(int32_t interval){
     if(!gl1_ready())return;
     if(SDL_GL_GetCurrentContext()!=g->context){gl1_fail("lost current context");return;}
     if(glGetError()!=GL_NO_ERROR){gl1_fail("OpenGL draw/state error");return;}
-    old=g->front;g->front=g->back;g->back=old;
+    gl1_resolve(g,g->back);old=g->front;g->front=g->back;g->back=old;
     glPushAttrib(GL_ALL_ATTRIB_BITS);g->bind_framebuffer(GL_FRAMEBUFFER,0);
     if(!SDL_GetWindowSizeInPixels(g->window,&width,&height)){gl1_fail("present client extent");glPopAttrib();return;}
     if(!game_display_present(g->application,g->colors[g->front],g->width,g->height,0))gl1_fail("display presentation");
     if(!SDL_GL_SwapWindow(g->window))gl1_fail("swap buffers");
-    g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);glPopAttrib();glViewport(0,0,g->width,g->height);
+    g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));glPopAttrib();glViewport(0,0,g->width,g->height);
 }
 static int32_t gl1_map_pixels(int write,unsigned buffer,RenderPixelView *info){
     Gl1Device *g=gl1_current;unsigned x,y;
@@ -396,13 +441,14 @@ static int32_t gl1_map_pixels(int write,unsigned buffer,RenderPixelView *info){
     g->locked=1;g->write_lock=write!=0;g->lock_buffer=buffer;
     if(g->write_lock){for(x=0;x<g->width*g->height;x++)g->lfb[x]=0xf81f;}
     else{
+        gl1_resolve(g,buffer==0?g->front:g->back);
         g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[buffer==0?g->front:g->back]);
         glReadBuffer(GL_COLOR_ATTACHMENT0);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,g->width,g->height,GL_RGBA,GL_UNSIGNED_BYTE,g->rgba);
         for(y=0;y<g->height;y++)for(x=0;x<g->width;x++){
             const uint8_t *p=g->rgba+((size_t)(g->height-y-1)*g->width+x)*4;
             g->lfb[(size_t)y*g->width+x]=(uint16_t)((p[0]>>3)<<11|(p[1]>>2)<<5|(p[2]>>3));
         }
-        g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);
+        g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));
     }
     info->pixels=g->lfb;info->stride=g->width*2;return 1;
 }
@@ -423,7 +469,8 @@ static int gl1_unmap_pixels(void){
             uint16_t v=g->lfb[(size_t)y*g->width+x];uint8_t *p=g->rgba+((size_t)(bottom-y-1)*width+x-left)*4;
             p[0]=(uint8_t)(((v>>11)&31)*255/31);p[1]=(uint8_t)(((v>>5)&63)*255/63);p[2]=(uint8_t)((v&31)*255/31);p[3]=v==0xf81f?0:255;
         }
-        glPushAttrib(GL_ALL_ATTRIB_BITS);g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[buffer==0?g->front:g->back]);
+        glPushAttrib(GL_ALL_ATTRIB_BITS);g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,buffer==0?g->front:g->back));
+        glDisable(GL_MULTISAMPLE);
         /* One device-owned overlay replaces the driver-specific glDrawPixels
          * path. The existing bounded LFB owner and magenta transparency stay
          * authoritative; only this write's bounded rectangle is uploaded. */
@@ -431,7 +478,7 @@ static int gl1_unmap_pixels(void){
         glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,g->lfb_texture);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_REPLACE);
         glPixelStorei(GL_UNPACK_ALIGNMENT,1);glTexSubImage2D(GL_TEXTURE_2D,0,left,g->height-bottom,width,bottom-top,GL_RGBA,GL_UNSIGNED_BYTE,g->rgba);
         glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);gl1_screen_rect(left,top,right,bottom);
-        glPopAttrib();g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);
+        glPopAttrib();g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));
     }
     g->locked=0;return 1;
 }
@@ -440,6 +487,7 @@ static void gl1_close(void){
     if(g->context){
         if(SDL_GL_GetCurrentContext()==g->context || SDL_GL_MakeCurrent(g->window,g->context)){
             for(i=0;i<4096;i++)if(g->textures[i].name)glDeleteTextures(1,&g->textures[i].name);
+            gl1_msaa_release(g);
             if(g->delete_framebuffers)g->delete_framebuffers(2,g->framebuffers);
             if(g->delete_renderbuffers && g->depth)g->delete_renderbuffers(1,&g->depth);
             glDeleteTextures(2,g->colors);glDeleteTextures(3,g->sky_layers);
@@ -518,7 +566,9 @@ static int32_t gl1_open(SDL_Window *window){
         if(g->check_framebuffer(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE)goto failed;
         glClearColor(0,0,0,0);glClearDepth(1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     }
-    g->bind_framebuffer(GL_FRAMEBUFFER,g->framebuffers[g->back]);glViewport(0,0,g->width,g->height);
+    gl1_msaa_open(g);
+    g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));glViewport(0,0,g->width,g->height);
+    glDisable(GL_MULTISAMPLE);
     glMatrixMode(GL_PROJECTION);glLoadIdentity();glOrtho(0,g->width,g->height,0,-1,1);
     glMatrixMode(GL_MODELVIEW);glLoadIdentity();glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);glDisable(GL_DEPTH_TEST);glShadeModel(GL_SMOOTH);
     g->palette_generation=1;g->min_filter=g->mag_filter=GL_LINEAR;g->wrap_s=g->wrap_t=GL_REPEAT;

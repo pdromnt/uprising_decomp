@@ -65,8 +65,12 @@ int game_level_world_render(GameApplication *a,GameAddress head){
     frame.points.x_max=(float)(int32_t)get(a,0x6290ec);frame.points.y_max=(float)(int32_t)get(a,0x6290e8);
     frame.points.rounding_magic=frame.projection_magic;frame.points.palette=frame.palette;
     if(a->memory.fault)return 0;
+    /* The final overlay queue uses the same polygon consumer as the world.
+     * Its 2D HUD art must keep center-sample coverage. */
+    game_application_world_antialias(a,head!=get(a,0x604f08));
     result=world_renderer_submit_owned(head,a->memory.terrain,&frame,&ops);
     if(result<0)result=world_renderer_submit(&a->memory,head,&frame,&ops);
+    game_application_world_antialias(a,0);
     if(result!=1){WorldRendererStats stats;world_renderer_stats(&stats);
         fprintf(stderr,"native world submission failed: head=%08x result=%d packet_reason=%u address=%08x\n",
             head,result,stats.owned_reject_kind,stats.owned_reject_address);return 0;}

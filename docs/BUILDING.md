@@ -12,8 +12,8 @@ CI calls the PowerShell script directly.
 The first configure downloads checksum-pinned SDL 3.4.16 and FreeType 2.14.3;
 subsequent builds reuse their shared source caches. Both are linked statically,
 with no additional DLL installation or launch flags. Windows, menu surfaces,
-font rendering and OpenGL contexts now use portable services. Physical input,
-audio and networking still have Windows backends until their migration stages.
+font rendering, physical input and OpenGL contexts now use portable services.
+Audio, optional legacy I-FORCE effects and networking still have Windows backends.
 The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
 to the original fonts; keep the complete FONTS directory with the executable.
 

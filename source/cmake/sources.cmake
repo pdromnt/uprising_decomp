@@ -351,7 +351,6 @@ set(GAME_SOURCES
 set(PLATFORM_SOURCES
     platform/portable_font.c
     platform/portable_audio_devices.c
-    platform/portable_hooks.c
     platform/portable_input_devices.c
     platform/portable_input_poll.c
     platform/portable_level_files.c

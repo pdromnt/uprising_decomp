@@ -5,9 +5,11 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 
 - Start without flags; check icon/title, music and sound. Change a setting and
   binding, exit and restart. Confirm one CONFIG file restores them.
-- Check menu pointer alignment, confinement in gameplay and release on pause or
-  focus loss. Inspect campaign/list/debrief text and wrapping after the font
-  backend change; layout metrics are retained, while glyph ink may differ.
+- Font/pointer visuals were accepted before the SDL input change. Recheck
+  aiming, weapon/building lists, bindings, pause/focus release and resume with
+  the new input backend. If available, check joystick axes, hats, buttons,
+  reconnect and periodic force feedback; virtual-device checks cannot prove
+  physical hardware feel or haptic output.
 - Play natural training and campaign progression, including mission completion,
   debriefing, save/reload and repeated mission transitions.
 - Exercise movement, aiming and all available weapons, infantry, pickups, debris,

@@ -57,7 +57,7 @@ target_include_directories(uprising PRIVATE core game platform)
 
 target_compile_options(uprising PRIVATE -O2 -frounding-math -ffunction-sections -fdata-sections -Wall -Wextra)
 target_link_options(uprising PRIVATE -Wl,--gc-sections)
-target_link_libraries(uprising PRIVATE uprising_core SDL3::SDL3-static freetype m user32 gdi32 advapi32 winmm dinput dxguid ole32 opengl32)
+target_link_libraries(uprising PRIVATE uprising_core SDL3::SDL3-static freetype m user32 gdi32 advapi32 winmm dxguid ole32 opengl32)
 set_target_properties(uprising PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${UPRISING_ASSET_DIRECTORY}")
 foreach(configuration DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     set_target_properties(uprising PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${configuration} "${UPRISING_ASSET_DIRECTORY}")

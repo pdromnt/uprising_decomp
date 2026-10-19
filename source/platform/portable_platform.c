@@ -1,6 +1,5 @@
 #include "recyclable_records.h"
 #define WIN32_LEAN_AND_MEAN
-#include "portable_hooks.h"
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
 #include <windows.h>
@@ -69,7 +68,6 @@ typedef struct PortablePlatform {
     HINSTANCE instance;
     char *command;
     FILE *log;
-    HHOOK message_hook, keyboard_hook;
     char *user_directory;
     GameConfig *configuration;
     char configuration_path[4128];
@@ -994,9 +992,6 @@ int game_application_platform_stop(GameApplication *app) {
         if(!game_application_config_flush(app))ok=0;
         game_config_free(platform->configuration);
         while(platform->archives)(void)game_application_archive_close(app,platform->archives->identity);
-        if (platform->message_hook) UnhookWindowsHookEx(platform->message_hook);
-        if (platform->keyboard_hook) UnhookWindowsHookEx(platform->keyboard_hook);
-        game_application_hooks_bind(NULL);
         if (platform->log) fclose(platform->log);
         free(platform->command);
         free(platform->user_directory);
@@ -1046,11 +1041,6 @@ int game_application_startup(GameApplication *app, int show) {
      *records, images and models already allocate through their existing owned
      *stores. Shipping has no guest allocator or arena consumers; reserving a
      *second15MiB heap would create an unused competing allocation owner. */
-    game_application_hooks_bind(app);
-    platform->message_hook = SetWindowsHookExA(WH_CBT,
-        game_application_message_hook, NULL, GetCurrentThreadId());
-    platform->keyboard_hook = SetWindowsHookExA(WH_GETMESSAGE,
-        game_application_keyboard_hook, NULL, GetCurrentThreadId());
     return !m->fault;
 }
 void *game_application_instance(GameApplication *app) {

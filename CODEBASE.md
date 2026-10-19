@@ -53,6 +53,12 @@ FreeType with the two original fonts and Liberation Sans in place of Arial;
 verified advances/line metrics retain existing layout. Glyph rasterization may
 differ. `core/ui_geometry.c` owns bounded keyed/mirrored indexed copies.
 
-DirectInput, MCI/DirectSound and DirectPlay still use Windows services. The native
-message hook remains for MCI notification and input reacquisition. Physical
-input/controllers are next, followed by audio/music and network transport.
+`platform/portable_input_devices.c` owns SDL keyboard/mouse queues, saved scan-ID
+translation, fractional relative motion, joystick sampling and periodic haptics.
+Saved bindings and joystick ranges remain stable. Focus loss publishes releases;
+the game loop consumes input and advances simulation in the same iteration.
+The former DirectInput service and Windows keyboard/focus hooks are removed.
+
+MCI/DirectSound, optional legacy I-FORCE effects and DirectPlay still use Windows
+services. The native SDL message hook remains only for MCI notification. Next:
+audio/music, remaining legacy hardware services and network transport.

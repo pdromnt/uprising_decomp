@@ -1,9 +1,6 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include "portable_input_devices.h"
 #include "gameplay_input.h"
 
-extern void *game_menu_window_handle(GameApplication *);
 extern int game_application_options_load(GameApplication *,uint32_t);
 extern int game_menu_request(GameApplication *,GameAddress,uint32_t,uint32_t,uint32_t);
 /* These are real gameplay dependencies, not success placeholders. Their
@@ -24,18 +21,15 @@ static int mouse(GameApplication *a,const GameInputEvent *event) {
     if(mode!=1 && mode!=2 && mode!=5 && mode!=7)return !m->fault;
     return game_input_game_mouse(a,mode,event);
 }
-/* 004d0220: bounded buffered reads, lost-input reacquisition, and sequence
- * merge. Equal sequence numbers consume mouse first. Window identity selects
- * its full-width platform owner; neither the HWND nor events use guest ABI. */
+/* 004d0220: bounded buffered reads and sequence merge. Equal sequence numbers
+ * consume mouse first. Window identity selects the owned SDL window. */
 int game_menu_input_poll(GameApplication *a,GameAddress window) {
     GameInputEvent keys[64],moves[32];unsigned nk=64,nm=32,k=0,p=0;int32_t status;
-    GameMemory *m=&a->memory;HWND hwnd=game_menu_window_handle(a);
-    if(window!=game_memory_read_u32(m,0x627904) || !hwnd)return 0;
+    GameMemory *m=&a->memory;
+    if(window!=game_memory_read_u32(m,0x627904) || !game_menu_sdl_window(a))return 0;
     status=game_input_device_events(a,0,keys,&nk);
-    if((uint32_t)status==0x8007001eu)PostMessageA(hwnd,WM_USER+8,0,0);
     if(status<0)nk=0;
     status=game_input_device_events(a,1,moves,&nm);
-    if((uint32_t)status==0x8007001eu)PostMessageA(hwnd,WM_USER+8,1,0);
     if(status<0)nm=0;
     if(game_memory_read_u32(m,0x604760)!=8 &&
        (!game_memory_read_u32(m,0x583604) || (int32_t)game_memory_read_u32(m,0x5ac6ac)<=1))return !m->fault;

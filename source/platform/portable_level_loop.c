@@ -11,14 +11,13 @@ extern int game_level_force_feedback_update(GameApplication *); /*4d05e0/4fa190*
 extern int game_level_joystick_update(GameApplication *); /*4d0f80*/
 extern int game_menu_pointer_capture(GameApplication *,int);
 
-/*417590: the playable loop waits on the input owner's full-width events,
- * drains SDL events, advances the world on timeout and retains
+/*417590: the playable loop drains SDL input, advances the world and retains
  * the original pause/focus, termination, force-feedback and joystick routes. */
 int game_level_game_loop(GameApplication *a) {
-    GameMemory *m=&a->memory;int waiting,captured=1;
+    GameMemory *m=&a->memory;int captured=1;
     unsigned frames=0;DWORD sample_start=(uint32_t)SDL_GetTicks();
     int observe=GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_OBSERVE",NULL,0)!=0;
-    const char *stage="input wait";
+    const char *stage="pointer confinement";
     if(!game_menu_pointer_capture(a,1)){(void)game_menu_pointer_capture(a,0);return 0;}
     while(!m->fault) {
         stage="SDL events";
@@ -36,14 +35,11 @@ int game_level_game_loop(GameApplication *a) {
            game_memory_read_u32(m,0x59d4c8)) {
             goto done;
         }
-        stage="input wait";
-        waiting=game_input_device_wait(a,0);
-        if(waiting<0)goto fail;
-        if(waiting<2) {
-            stage="input poll";if(!game_menu_input_poll(a,game_memory_read_u32(m,0x627904)))goto fail;
-        }else if(waiting==2) {
-            /* SDL drains host messages at the start of the next iteration. */
-        }else {
+        stage="input poll";
+        if(!game_menu_input_poll(a,game_memory_read_u32(m,0x627904)))goto fail;
+        /* Buffered input and simulation share each iteration; sustained input
+         * cannot starve frames as it could with separate HANDLE wakeups. */
+        {
             /*A background peer still advances the shared clock/world. Its
              *physical input devices remain unacquired until focus returns. */
             if((game_memory_read_u32(m,0x6270f4) || game_memory_read_u32(m,0x5eff04)) &&

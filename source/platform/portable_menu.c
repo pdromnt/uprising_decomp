@@ -134,7 +134,9 @@ int game_menu_event_forward(GameApplication *app,const SDL_Event *event){
         game_menu_controller_pointer(app,controller,code,point[0],point[1],buttons);
 }
 /* State changes discard pending physical input, while servicing close/focus. */
-int game_menu_transition_notify(GameApplication *app){return game_menu_pump_events(app,0);}
+int game_menu_transition_notify(GameApplication *app){
+    int ok=game_menu_pump_events(app,0);game_input_devices_discard(app);return ok;
+}
 /* 00538b40: pump SDL events and drive the existing menu/game owners. */
 int game_application_menu_loop(GameApplication *app, void *instance, const char *level) {
     GameMemory *m = &app->memory;

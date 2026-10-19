@@ -96,7 +96,8 @@ static void game_menu_window_resources_end(GameApplication *a){
     game_memory_write_u32(&a->memory,0x58fd34,0);game_memory_write_u32(&a->memory,0x58fd38,0);
 }
 static int pointer_clip_release(MenuWindow *w){
-    return !w || !w->window || SDL_SetWindowMouseGrab(w->window,false);
+    return !w || !w->window || (SDL_SetWindowRelativeMouseMode(w->window,false) &&
+        SDL_SetWindowMouseGrab(w->window,false));
 }
 /* SDL owns confinement and releases it on focus loss. Physical capture is
  * never requested by isolated automation, pause or option screens. */
@@ -109,7 +110,7 @@ int game_menu_pointer_capture(GameApplication *a,int enabled){
     flags=SDL_GetWindowFlags(w->window);
     if(!enabled || w->hidden || !(flags&SDL_WINDOW_INPUT_FOCUS) || (flags&SDL_WINDOW_MINIMIZED))
         return pointer_clip_release(w);
-    return SDL_SetWindowMouseGrab(w->window,true);
+    return SDL_SetWindowMouseGrab(w->window,true) && SDL_SetWindowRelativeMouseMode(w->window,true);
 }
 
 /*418f20: publish the loop's owned termination flag once. */
@@ -124,15 +125,13 @@ static void acquire_input(GameApplication *a) {
     if(!game_menu_input_acquire(a,0) || !game_menu_input_acquire(a,1) ||
        (game_memory_read_u32(&a->memory,0x604768u) && !game_menu_input_acquire(a,2)))a->memory.fault=1;
 }
-/* Only the not-yet-migrated MCI and input services consume native messages.
+/* Only the not-yet-migrated MCI service consumes native messages.
  * SDL owns dispatch, focus, exposure, close and the lifetime of its HWND. */
 static bool SDLCALL window_message_hook(void *userdata,MSG *message){
     GameApplication *a=userdata;
     if(!a->menu_window || message->hwnd!=a->menu_window->handle)return true;
     if(message->message==MM_MCINOTIFY && game_memory_read_u32(&a->memory,0x59d828u)){
         if(!game_menu_music_notify(a,(uint32_t)message->wParam,(uintptr_t)message->lParam))a->memory.fault=1;
-    }else if(message->message==WM_USER+8){
-        if(!game_menu_input_acquire(a,(unsigned)message->wParam))a->memory.fault=1;
     }
     return true;
 }
@@ -140,6 +139,7 @@ int game_menu_pump_events(GameApplication *a,int deliver_input){
     SDL_Event event;MenuWindow *w=a->menu_window;unsigned drained=0;
     if(!w || !w->window)return 0;
     while(drained++<64 && SDL_PollEvent(&event)){
+        game_input_devices_event(a,&event);
         switch(event.type){
         case SDL_EVENT_QUIT:case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             if(!pointer_clip_release(w))return 0;

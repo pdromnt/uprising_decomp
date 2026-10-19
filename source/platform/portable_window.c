@@ -219,6 +219,13 @@ int game_level_display_end(GameApplication *a) {
     return ok && !a->memory.fault;
 }
 SDL_GLContext game_menu_gl_context(GameApplication *a){return a->menu_window?a->menu_window->context:NULL;}
+struct VulkanMenu *game_menu_vulkan(GameApplication *a){
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    return a->menu_window?a->menu_window->vulkan:NULL;
+#else
+    (void)a;return NULL;
+#endif
+}
 int game_level_display_restore_menu(GameApplication *a){
     MenuWindow *w=a->menu_window;if(!w || !game_level_display_end(a))return 0;
     game_memory_write_u32(&a->memory,0x627068,w->identity+0x124);
@@ -226,12 +233,7 @@ int game_level_display_restore_menu(GameApplication *a){
 }
 int game_level_display_begin(GameApplication *a){
     MenuWindow *w=a->menu_window;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(w && w->vulkan){
-        game_application_log(a,"%s\n","VULKAN_GAMEPLAY_PENDING: level renderer is not connected; no OpenGL fallback");return 0;
-    }
-#endif
-    if(!w || !w->context || w->front || w->back || w->text_surfaces){
+    if(!w || (!w->context && !game_menu_vulkan(a)) || w->front || w->back || w->text_surfaces){
         game_application_log(a,"%s\n","SDL display initialization has live menu surfaces or no context");return 0;
     }
     game_memory_write_u32(&a->memory,0x627068,w->identity+0x124);
@@ -354,7 +356,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
         stage="Vulkan device creation";
         w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL);
         if(!w->vulkan)goto fail;
-        game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics; gameplay backend pending");
+        game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics and shared level device");
     }else
 #endif
     {

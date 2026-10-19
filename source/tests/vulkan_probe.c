@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 static int draw_quad(VulkanDraw *d,float left,float top,float right,float bottom,float depth,
-        float r,float g,float b,float a,const VulkanDrawTexture *texture,uint32_t flags){
+        float r,float g,float b,float a,VulkanDrawTexture *texture,uint32_t flags){
     VulkanDrawVertex quad[4]={0},triangles[6];unsigned i;const unsigned index[6]={0,1,2,0,2,3};
     for(i=0;i<4;i++){
         int on_right=i==1 || i==2;float q=texture && on_right?2.0f:1.0f;
@@ -17,7 +17,7 @@ static int draw_quad(VulkanDraw *d,float left,float top,float right,float bottom
         quad[i].uv[0]=on_right?q:0;quad[i].uv[1]=0.5f*q;quad[i].uv[2]=q;
     }
     for(i=0;i<6;i++)triangles[i]=quad[index[i]];
-    return vulkan_draw_triangles(d,triangles,6,texture,flags);
+    return vulkan_draw_triangles(d,triangles,6,texture,flags|VULKAN_DRAW_LEQUAL);
 }
 static int pixel(const uint8_t *rgba,unsigned x,unsigned y,unsigned r,unsigned g,unsigned b){
     const uint8_t *p=rgba+(y*64+x)*4;
@@ -34,6 +34,8 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
            !draw_quad(&draw,0,0,64,64,0.6f,1,0,0,1,NULL,3) ||
            !draw_quad(&draw,8,8,32,32,0.3f,0,1,0,1,NULL,3) ||
            !draw_quad(&draw,0,0,64,64,0.8f,0,0,1,1,NULL,3) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) || !vulkan_draw_resume(&draw) ||
+           !draw_quad(&draw,0,0,64,64,0.8f,1,1,1,1,NULL,3) ||
            !draw_quad(&draw,32,0,64,32,0.2f,0,1,1,1,&texture,3) ||
            !draw_quad(&draw,0,32,32,64,0.9f,0,0,1,0.5f,NULL,VULKAN_DRAW_BLEND) ||
            !draw_quad(&draw,48,48,64,64,0.9f,1,1,0,1,NULL,0) ||
@@ -44,8 +46,26 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
         if(frame==1)present.recreate=1;
         if(!vulkan_present_image(&present,draw.color.image,64,64))goto done;
     }
-    printf("VULKAN_GRAPHICS_PASS frames=3 depth=checked alpha=checked projective_uv=checked hud_order=checked\n");ok=1;
+    printf("VULKAN_GRAPHICS_PASS frames=3 depth=checked alpha=checked projective_uv=checked hud_order=checked resume=checked\n");ok=1;
     printf("VULKAN_PRESENT_PASS frames=3 swapchain_rebuild=checked aspect=preserved\n");
+    {
+        const uint8_t keyed[8]={255,0,255,255,0,255,0,255};const float black[4]={0,0,0,1};
+        if(!vulkan_draw_texture_update(&draw,&texture,keyed,sizeof(keyed)) || !vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.material.color_mode=2;draw.material.alpha_mode=2;draw.material.chroma=0x1ff00ff;
+        draw.material.texture_sampling=1;draw.texture_sampler=1;
+        if(!draw_quad(&draw,0,0,64,64,0,1,1,1,1,&texture,VULKAN_DRAW_BLEND) || !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !pixel(rgba,2,16,0,0,0) || !pixel(rgba,60,16,0,255,0)){ok=0;goto done;}
+        /* At x=21.5, q-weighted UV is 86/171. Key alpha is filtered before
+         * blending, preserving the comparator's chroma fringe semantics. */
+        if(!pixel(rgba,21,16,64,65,64) || !vulkan_draw_resume(&draw)){ok=0;goto done;}
+        draw.material.chroma=0;draw.material.color_mode=1;draw.material.alpha_mode=3;
+        draw.material.constant[0]=draw.material.constant[1]=0;draw.material.constant[2]=draw.material.constant[3]=1;
+        if(!draw_quad(&draw,0,0,16,16,0,1,1,1,1,NULL,0)){ok=0;goto done;}
+        draw.material.constant[0]=1;draw.material.constant[2]=0;
+        if(!draw_quad(&draw,16,0,32,16,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !pixel(rgba,8,8,0,0,255) || !pixel(rgba,24,8,255,0,0)){ok=0;goto done;}
+        printf("VULKAN_MATERIAL_PASS keyed_filter=checked batch_constants=checked\n");
+    }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
 }

@@ -139,21 +139,23 @@ int vulkan_buffer_create(VulkanDevice *v,VulkanBuffer *b,VkDeviceSize size,VkBuf
     CHECK(v->CreateBuffer(v->device,&create,NULL,&b->buffer));v->GetBufferMemoryRequirements(v->device,b->buffer,&r);a.allocationSize=r.size;
     b->coherent=memory_type(v,r.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,&a.memoryTypeIndex);
     if(!b->coherent && !memory_type(v,r.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,&a.memoryTypeIndex))goto fail;
-    CHECK(v->AllocateMemory(v->device,&a,NULL,&b->memory));CHECK(v->BindBufferMemory(v->device,b->buffer,b->memory,0));b->size=size;return 1;
+    CHECK(v->AllocateMemory(v->device,&a,NULL,&b->memory));CHECK(v->BindBufferMemory(v->device,b->buffer,b->memory,0));
+    CHECK(v->MapMemory(v->device,b->memory,0,VK_WHOLE_SIZE,0,&b->mapping));b->size=size;return 1;
 fail:vulkan_buffer_destroy(v,b);return 0;
 }
 void vulkan_buffer_destroy(VulkanDevice *v,VulkanBuffer *b){
     if(b->buffer)v->DestroyBuffer(v->device,b->buffer,NULL);
+    if(b->mapping)v->UnmapMemory(v->device,b->memory);
     if(b->memory)v->FreeMemory(v->device,b->memory,NULL);
     memset(b,0,sizeof(*b));
 }
 static int buffer_transfer(VulkanDevice *v,VulkanBuffer *b,void *data,size_t size,int write){
-    VkMappedMemoryRange range={VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};void *mapped;VkResult r=VK_SUCCESS;
-    if(size>b->size || !result(v->MapMemory(v->device,b->memory,0,VK_WHOLE_SIZE,0,&mapped),"map buffer"))return 0;
+    VkMappedMemoryRange range={VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};void *mapped=b->mapping;VkResult r=VK_SUCCESS;
+    if(size>b->size || !mapped)return 0;
     range.memory=b->memory;range.size=VK_WHOLE_SIZE;
     if(write){memcpy(mapped,data,size);if(!b->coherent)r=v->FlushMappedMemoryRanges(v->device,1,&range);}
     else {if(!b->coherent)r=v->InvalidateMappedMemoryRanges(v->device,1,&range);if(r==VK_SUCCESS)memcpy(data,mapped,size);}
-    v->UnmapMemory(v->device,b->memory);return result(r,"mapped buffer synchronization");
+    return result(r,"mapped buffer synchronization");
 }
 int vulkan_buffer_write(VulkanDevice *v,VulkanBuffer *b,const void *data,size_t size){return buffer_transfer(v,b,(void *)data,size,1);}
 int vulkan_buffer_read(VulkanDevice *v,VulkanBuffer *b,void *data,size_t size){return buffer_transfer(v,b,data,size,0);}

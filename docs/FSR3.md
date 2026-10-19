@@ -7,11 +7,11 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
 
 ## Stages and acceptance
 
-1. **Dependency proof (current).** Native SDL/Vulkan device, queues, explicit
+1. **Dependency proof.** Native SDL/Vulkan device, queues, explicit
    resource ownership/barriers, real AMD shader dispatch/readback and presentation.
    Probe every build architecture. Run with validation on actual drivers where
    available; Linux software-driver CI is functional evidence, not hardware FPS.
-2. **Playable Vulkan rendering.** Retain OpenGL for comparisons. Replace immediate
+2. **Playable Vulkan rendering (current).** Retain OpenGL for comparisons. Replace immediate
    drawing with buffered submissions and shaders preserving palette/NCC textures,
    chroma/alpha, legacy W-depth, fog, layered skies, menus, videos and HUD order.
    Keep pixel-readback/glyph/mask consumers working before optimizing transfers.
@@ -48,9 +48,11 @@ checks occlusion, projective UV division, transparent cutouts, blending and HUD
 ordering over three frames, then presents that rendered image through a reusable
 aspect-preserving swapchain, including a forced rebuild. Command buffers and
 texture descriptors are released after use. This parity path is synchronous;
-frame overlap, game integration, full material modes and mip chains remain ahead.
+The current parity path is synchronous; frame overlap and complete rendering
+parity remain ahead. Samplers use the selected base LOD, matching the comparator's
+non-mipmapped minification. Original mip bytes remain owned by the shared cache.
 
-## Experimental application menu
+## Experimental game integration
 
 `-DUPRISING_EXPERIMENTAL_VULKAN=ON` builds the optional game integration. Set
 `UPRISING_RENDERER=vulkan` to select it; otherwise the OpenGL comparator remains
@@ -61,14 +63,27 @@ Set `UPRISING_ASSET_DIRECTORY` to the existing game directory and
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
 Menu readback/PNG capture is supported. Advanced FSR/MSAA controls remain disabled
-in this WIP backend. Entering a level fails explicitly until the world renderer is
-connected; it never creates an OpenGL context behind the Vulkan selection.
+in this WIP backend. The level renderer now submits terrain, actors, projected
+effects, HUD/text, layered skies/fog and masked remote-monitor skies to Vulkan.
+The established material/texture owner is shared with the comparator; selecting
+Vulkan never creates or re-enters an OpenGL context. Native text ink uses buffered
+rectangles; immutable HUD tile versions use a bounded content-checked atlas.
 
 Local Windows x64: the existing Graphics drawer regression passed three cycles.
 Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
 closed normally. Runs were windowed, muted and isolated; stable EXEs were untouched.
-Six-platform CI now also compiles this application integration; execution outside
-the local Windows GPU and validation-layer coverage of the menu remain pending.
+The existing Training1 1,740-frame movement/fire/weapon/save/reload/shutdown check
+passed with exact saved position/ammo restored. Erudara's 320-frame O-view check
+passed remote sky/mask, camera rotation, return to tank, pause and window restore.
+These establish exercised routes, not complete visual equivalence or performance
+acceptance. A matched stationary Training1 sample without GDB measured about
+53 FPS Vulkan versus 141 FPS stable OpenGL after fixing repeated texture uploads
+and per-pixel glyph vertex initialization. Performance remains an explicit
+blocker before temporal work; retain the OpenGL release. The bounded timed samples
+were deliberately terminated by the launcher; clean shutdown was checked above.
+Six-platform application CI passed before the level extension. Its new run and
+validation-layer coverage of level rendering remain pending, as do native Apple
+GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
 Windows/Linux use the installed Vulkan driver/loader. macOS explicitly requires
 KosmicKrisp, Apple Silicon and macOS 26+, with a developer Vulkan SDK for now:

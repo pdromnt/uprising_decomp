@@ -45,3 +45,7 @@ int vulkan_menu_clear(VulkanMenu *m){
         vulkan_present_image(&m->present,m->draw.color.image,640,480);
 }
 int vulkan_menu_readback(VulkanMenu *m,uint8_t *rgba,size_t bytes){return vulkan_draw_readback(&m->draw,rgba,bytes);}
+VulkanDevice *vulkan_menu_device(VulkanMenu *m){return &m->device;}
+int vulkan_menu_present_image(VulkanMenu *m,VulkanDraw *draw){
+    return vulkan_present_image(&m->present,draw->color.image,draw->width,draw->height);
+}

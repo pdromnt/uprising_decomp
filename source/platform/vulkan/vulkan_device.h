@@ -39,7 +39,7 @@ typedef struct VulkanDevice {
 #undef DECLARE
 } VulkanDevice;
 
-typedef struct VulkanBuffer {VkBuffer buffer;VkDeviceMemory memory;VkDeviceSize size;int coherent;} VulkanBuffer;
+typedef struct VulkanBuffer {VkBuffer buffer;VkDeviceMemory memory;VkDeviceSize size;void *mapping;int coherent;} VulkanBuffer;
 typedef struct VulkanImage {VkImage image;VkImageView view;VkDeviceMemory memory;} VulkanImage;
 int vulkan_device_open(VulkanDevice *,SDL_Window *,int validation);
 void vulkan_device_close(VulkanDevice *);

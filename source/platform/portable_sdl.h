@@ -12,4 +12,6 @@ int game_menu_pump_events(GameApplication *application,int deliver_input);
 int game_menu_event_forward(GameApplication *application,const SDL_Event *event);
 int game_menu_pointer_from_client(GameApplication *application,int32_t point[2]);
 int game_menu_capture_png(GameApplication *,const char *path);
+struct VulkanMenu;
+struct VulkanMenu *game_menu_vulkan(GameApplication *);
 #endif

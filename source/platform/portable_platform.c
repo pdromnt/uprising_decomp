@@ -372,6 +372,7 @@ static int level_image_tile(void *context,const uint8_t pixels[1024],const GameR
         info.format=record->image.format;info.pixels=record->image.pixels;
         gl1_upload(record->address,&info);
     }
+    gl1_ui_tile(record->address);
     if(!draw->started) {
         gl1_color_mode(RENDER_COLOR_TEXTURE);gl1_alpha_blend(0);
         gl1_depth_func(7);gl1_depth_mode(2);gl1_depth_mask(1);gl1_filter(0,0);
@@ -391,6 +392,7 @@ static int frame_image_tile(void *context,const uint8_t pixels[1024],const GameR
     info.small_lod=info.large_lod=record->image.lod;info.aspect=record->image.aspect;
     info.format=record->image.format;info.pixels=record->image.pixels;
     gl1_upload(record->address,&info);
+    gl1_ui_tile(record->address);
     if(!game_application_surface_texture(draw->app,record))return 0;
     gl1_triangle(vertices,vertices+1,vertices+2);gl1_triangle(vertices,vertices+2,vertices+3);return 1;
 }
@@ -612,6 +614,7 @@ int game_application_world_begin(GameApplication *a){
 void game_application_world_antialias(GameApplication *a,int enabled){
     Gl1Device *g=gl1_current;
     if(!g || g->application!=a || !gl1_ready())return;
+    if(g->vulkan)return; /* Vulkan multisampling is a later parity step. */
     if(enabled && g->aa_samples)glEnable(GL_MULTISAMPLE);else glDisable(GL_MULTISAMPLE);
 }
 int game_application_world_state(GameApplication *a,WorldRenderState kind,int value){

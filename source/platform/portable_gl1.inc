@@ -5,6 +5,10 @@
 #include <SDL3/SDL_opengl.h>
 #include <SDL3/SDL_opengl_glext.h>
 #include <math.h>
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+#include "vulkan_menu.h"
+#include "vulkan_draw.h"
+#endif
 
 typedef struct Gl1Texture {
     uint32_t key,bytes,format,palette_generation,chroma;
@@ -16,6 +20,8 @@ typedef struct Gl1Texture {
     GLuint name;
     uint8_t *pixels;
     struct Gl1Texture *next;
+    void *vulkan_texture;
+    unsigned native_tile;int ui_tile;
 } Gl1Texture;
 typedef struct Gl1Device {
     GameApplication *application;
@@ -61,22 +67,43 @@ typedef struct Gl1Device {
     float fog_color[4];
     GLuint remote_mask;
     int32_t remote_bounds[4];
+    struct Vk1Device *vulkan;
+    uint32_t native_depth_write,native_depth_func,native_cull;
+    int native_blend,native_fog;
+    float native_fog_start,native_fog_end;
 } Gl1Device;
 /* Callbacks borrow the single window-thread device; PortablePlatform owns it. */
 static Gl1Device *gl1_current;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+static int vk1_open(SDL_Window *,VulkanMenu *);
+static void vk1_close(void),vk1_texture_release(Gl1Texture *),vk1_refresh(Gl1Texture *);
+static void vk1_triangle(const GameRenderVertex *,const GameRenderVertex *,const GameRenderVertex *);
+static void vk1_line(const GameRenderVertex *,const GameRenderVertex *),vk1_point(const GameRenderVertex *);
+static void vk1_clear(uint32_t,uint32_t,uint32_t),vk1_swap(void);
+static int vk1_map(int,unsigned,RenderPixelView *),vk1_unmap(void);
+static int vk1_sky_upload(unsigned,unsigned,unsigned),vk1_sky_end(void);
+static void vk1_sky_release(void);
+static int vk1_remote_read(const int32_t[4]),vk1_remote_upload(unsigned,unsigned),vk1_remote_sky(const GameRemoteSkyFrame *);
+#define VK1_RETURN(call) do {if(gl1_current && gl1_current->vulkan)return (call);}while(0)
+#define VK1_DO(call) do {if(gl1_current && gl1_current->vulkan){call;return;}}while(0)
+#else
+#define VK1_RETURN(call) do {}while(0)
+#define VK1_DO(call) do {}while(0)
+#endif
 static void gl1_fail(const char *reason){
     Gl1Device *g=gl1_current;if(!g || g->failed)return;
     g->failed=1;game_application_log(g->application,"native OpenGL1 failure: %s\n",reason);
 }
 static int gl1_ready(void){
     Gl1Device *g=gl1_current;
-    if(!g || !g->context || g->failed)return 0;
+    if(!g || (!g->context && !g->vulkan) || g->failed)return 0;
     if(g->thread!=SDL_GetCurrentThreadID()){gl1_fail("wrong context thread");return 0;}
     /* This owner is the only context user on the window thread. Context
      * creation binds it; teardown unbinds it. Avoid SDL TLS lookups for every
      * primitive/state command, and verify ownership at the frame boundary. */
     return 1;
 }
+static int gl1_gl_ready(void){return gl1_ready() && !gl1_current->vulkan;}
 static SDL_FunctionPointer gl1_extension(const char *core,const char *extension){
     SDL_FunctionPointer p=SDL_GL_GetProcAddress(core);
     if(!p)p=SDL_GL_GetProcAddress(extension);
@@ -173,6 +200,7 @@ static uint16_t gl1_w_depth(float oow){
 }
 static void gl1_alpha_state(void){
     Gl1Device *g=gl1_current;
+    if(g->vulkan)return;
     if(g->chroma_enabled && g->textured){glEnable(GL_ALPHA_TEST);glAlphaFunc(GL_GREATER,0);}
     else if(g->alpha_function==7)glDisable(GL_ALPHA_TEST);
     else {glEnable(GL_ALPHA_TEST);glAlphaFunc(gl1_compare(g->alpha_function),g->alpha_reference);}
@@ -182,6 +210,7 @@ static void gl1_combine(void){
     if(!gl1_ready())return;
     g->textured=g->color_mode==RENDER_COLOR_TEXTURE || g->color_mode==RENDER_COLOR_INVERSE_TEXTURE;
     g->constant_enabled=g->color_mode==RENDER_COLOR_CONSTANT;
+    if(g->vulkan)return;
     if(!g->textured){glDisable(GL_TEXTURE_2D);gl1_alpha_state();return;}
     glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_COMBINE);
     glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE0_RGB,GL_TEXTURE);
@@ -213,6 +242,7 @@ static void gl1_release_texture(uint32_t key){
     while((t=*link)!=NULL){
         if(t->key==key){
             *link=t->next;if(g->bound==t)g->bound=NULL;
+            VK1_DO(vk1_texture_release(t);free(t->pixels);memset(t,0,sizeof(*t)));
             if(t->name && g->context && gl1_ready())glDeleteTextures(1,&t->name);
             free(t->pixels);memset(t,0,sizeof(*t));return;
         }
@@ -246,6 +276,7 @@ static void gl1_convert(const Gl1Texture *texture,const uint8_t *input,unsigned 
     }
 }
 static void gl1_refresh(Gl1Texture *texture){
+    VK1_DO(vk1_refresh(texture));
     Gl1Device *g=gl1_current;size_t offset=0;int lod;
     int compressed=texture->format==1 || texture->format==9;
     glBindTexture(GL_TEXTURE_2D,texture->name);
@@ -269,8 +300,8 @@ static void gl1_refresh(Gl1Texture *texture){
 }
 static int gl1_texture_stale(const Gl1Texture *t){
     Gl1Device *g=gl1_current;
-    return t->dirty || !t->gpu_width || t->chroma_enabled!=g->chroma_enabled ||
-        (g->chroma_enabled && t->chroma!=g->chroma) ||
+    return t->dirty || !t->gpu_width || (!g->vulkan && (t->chroma_enabled!=g->chroma_enabled ||
+        (g->chroma_enabled && t->chroma!=g->chroma))) ||
         ((t->format==5 || t->format==14) && t->palette_generation!=g->palette_generation) ||
         ((t->format==1 || t->format==9) && (t->ncc_table!=g->ncc_selected || t->ncc_generation!=g->ncc_generation[g->ncc_selected]));
 }
@@ -288,16 +319,19 @@ static void gl1_upload(uint32_t address,const RenderTextureView *info){
     texture->first_lod=info->small_lod<info->large_lod?info->small_lod:info->large_lod;
     texture->last_lod=info->small_lod>info->large_lod?info->small_lod:info->large_lod;
     gl1_dimensions(texture->first_lod,texture->aspect,&texture->width,&texture->height);
-    if(!texture->name)glGenTextures(1,&texture->name);
+    if(!g->vulkan && !texture->name)glGenTextures(1,&texture->name);
     /* Decode at submission, after the caller has selected this texture's
      * palette/NCC/chroma state. Uploading here converts the previous material. */
     texture->dirty=1;++g->uploads;
+    texture->ui_tile=0;
 }
+static void gl1_ui_tile(uint32_t address){Gl1Texture *texture=gl1_find(address);if(texture && texture->width==32 && texture->height==32 && texture->format==5)texture->ui_tile=1;}
 static void gl1_source(uint32_t address){
     Gl1Device *g=gl1_current;Gl1Texture *texture;
     if(!gl1_ready())return;
     texture=gl1_find(address);if(!texture){gl1_fail("binding absent texture upload");return;}
     g->bound=texture;
+    if(g->vulkan)return;
     glBindTexture(GL_TEXTURE_2D,texture->name);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,g->min_filter);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,g->mag_filter);
@@ -345,10 +379,11 @@ static int gl1_draw_ready(void){
 static void gl1_triangle(const GameRenderVertex *a,const GameRenderVertex *b,const GameRenderVertex *c){
     if(!gl1_draw_ready())return;
     if(gl1_current->sky_active){gl1_sky_triangle(a,b,c);return;}
+    VK1_DO(vk1_triangle(a,b,c));
     glBegin(GL_TRIANGLES);gl1_emit(a);gl1_emit(b);gl1_emit(c);glEnd();++gl1_current->triangles;
 }
-static void gl1_line(const GameRenderVertex *a,const GameRenderVertex *b){if(gl1_draw_ready()){glBegin(GL_LINES);gl1_emit(a);gl1_emit(b);glEnd();}}
-static void gl1_point(const GameRenderVertex *a){if(gl1_draw_ready()){glBegin(GL_POINTS);gl1_emit(a);glEnd();}}
+static void gl1_line(const GameRenderVertex *a,const GameRenderVertex *b){VK1_DO(vk1_line(a,b));if(gl1_draw_ready()){glBegin(GL_LINES);gl1_emit(a);gl1_emit(b);glEnd();}}
+static void gl1_point(const GameRenderVertex *a){VK1_DO(vk1_point(a));if(gl1_draw_ready()){glBegin(GL_POINTS);gl1_emit(a);glEnd();}}
 static int gl1_world_point(const GameRenderVertex *a){
     Gl1Device *g=gl1_current;GameRenderVertex vertex=*a;int textured,constant;
     if(!gl1_ready())return 0;
@@ -358,6 +393,7 @@ static int gl1_world_point(const GameRenderVertex *a){
      * sample the preceding building material or its chroma/constant color. */
     vertex.r=a->b;vertex.b=a->r;
     textured=g->textured;constant=g->constant_enabled;
+    if(g->vulkan){g->textured=g->constant_enabled=0;gl1_point(&vertex);g->textured=textured;g->constant_enabled=constant;return !g->failed;}
     glPushAttrib(GL_ENABLE_BIT|GL_CURRENT_BIT|GL_COLOR_BUFFER_BIT);
     glDisable(GL_TEXTURE_2D);glDisable(GL_ALPHA_TEST);
     g->textured=g->constant_enabled=0;
@@ -367,20 +403,20 @@ static int gl1_world_point(const GameRenderVertex *a){
 static void gl1_color_mode(RenderColorMode mode){gl1_current->color_mode=mode;gl1_combine();}
 static void gl1_alpha_mode(RenderAlphaMode mode){gl1_current->alpha_mode=mode;gl1_combine();}
 static void gl1_constant(uint32_t value){Gl1Device *g=gl1_current;unsigned i;for(i=0;i<4;i++)g->constant[i]=(float)((value>>(i==3?24:16-i*8))&255)/255;gl1_combine();}
-static void gl1_alpha_test(uint32_t v){gl1_current->alpha_function=v;if(gl1_ready())gl1_alpha_state();}
-static void gl1_alpha_reference(uint32_t v){gl1_current->alpha_reference=(v&255)/255.0f;if(gl1_ready())gl1_alpha_state();}
-static void gl1_chroma_mode(uint32_t v){gl1_current->chroma_enabled=v!=0;if(gl1_ready())gl1_alpha_state();}
+static void gl1_alpha_test(uint32_t v){gl1_current->alpha_function=v;if(gl1_gl_ready())gl1_alpha_state();}
+static void gl1_alpha_reference(uint32_t v){gl1_current->alpha_reference=(v&255)/255.0f;if(gl1_gl_ready())gl1_alpha_state();}
+static void gl1_chroma_mode(uint32_t v){gl1_current->chroma_enabled=v!=0;if(gl1_gl_ready())gl1_alpha_state();}
 static void gl1_chroma_value(uint32_t v){gl1_current->chroma=v&0xffffff;}
 static void gl1_filter(int min,int mag){
     Gl1Device *g=gl1_current;g->min_filter=min?GL_LINEAR:GL_NEAREST;g->mag_filter=mag?GL_LINEAR:GL_NEAREST;
-    if(gl1_ready() && g->bound){glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,g->min_filter);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,g->mag_filter);}
+    if(gl1_gl_ready() && g->bound){glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,g->min_filter);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,g->mag_filter);}
 }
 static void gl1_clamp(int s,int t){
     /* The preserved renderer already fixed this terrain seam: Edge clamping
      * repeats the edge texel; GL_CLAMP mixes in the border with linear filtering. */
     Gl1Device *g=gl1_current;
     g->wrap_s=s?GL_CLAMP_TO_EDGE:GL_REPEAT;g->wrap_t=t?GL_CLAMP_TO_EDGE:GL_REPEAT;
-    if(gl1_ready() && g->bound){glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,g->wrap_s);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,g->wrap_t);}
+    if(gl1_gl_ready() && g->bound){glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,g->wrap_s);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,g->wrap_t);}
 }
 static void gl1_palette_range(const uint32_t *pixels,uint32_t first,uint32_t last){
     Gl1Device *g=gl1_current;if(!pixels || first>last || last>=256){gl1_fail("palette range");return;}
@@ -395,19 +431,20 @@ static void gl1_ncc_palette(const uint8_t pixels[112]){
         memcpy(g->ncc[table],rgb,sizeof(rgb));++g->ncc_generation[table];g->ncc_loaded[table]=1;
     }
 }
-static void gl1_depth_mode(uint32_t v){gl1_current->depth_mode=v;if(gl1_ready()){if(v)glEnable(GL_DEPTH_TEST);else glDisable(GL_DEPTH_TEST);}}
-static void gl1_depth_mask(uint32_t v){if(gl1_ready())glDepthMask(v?GL_TRUE:GL_FALSE);}
-static void gl1_depth_func(uint32_t v){if(gl1_ready())glDepthFunc(gl1_compare(v));}
+static void gl1_depth_mode(uint32_t v){gl1_current->depth_mode=v;if(gl1_gl_ready()){if(v)glEnable(GL_DEPTH_TEST);else glDisable(GL_DEPTH_TEST);}}
+static void gl1_depth_mask(uint32_t v){gl1_current->native_depth_write=v;if(gl1_gl_ready())glDepthMask(v?GL_TRUE:GL_FALSE);}
+static void gl1_depth_func(uint32_t v){gl1_current->native_depth_func=v&7;if(gl1_gl_ready())glDepthFunc(gl1_compare(v));}
 static void gl1_depth_bias(int32_t v){gl1_current->depth_bias=v;}
-static void gl1_dither(uint32_t v){if(gl1_ready()){if(v)glEnable(GL_DITHER);else glDisable(GL_DITHER);}}
-static void gl1_cull(uint32_t v){if(gl1_ready()){if(v){glEnable(GL_CULL_FACE);glCullFace(GL_BACK);glFrontFace(v==1?GL_CCW:GL_CW);}else glDisable(GL_CULL_FACE);}}
-static void gl1_alpha_blend(int enabled){if(gl1_ready()){glEnable(GL_BLEND);glBlendFunc(enabled?GL_SRC_ALPHA:GL_ONE,enabled?GL_ONE_MINUS_SRC_ALPHA:GL_ZERO);}}
+static void gl1_dither(uint32_t v){if(gl1_gl_ready()){if(v)glEnable(GL_DITHER);else glDisable(GL_DITHER);}}
+static void gl1_cull(uint32_t v){gl1_current->native_cull=v;if(gl1_gl_ready()){if(v){glEnable(GL_CULL_FACE);glCullFace(GL_BACK);glFrontFace(v==1?GL_CCW:GL_CW);}else glDisable(GL_CULL_FACE);}}
+static void gl1_alpha_blend(int enabled){gl1_current->native_blend=enabled;if(gl1_gl_ready()){glEnable(GL_BLEND);glBlendFunc(enabled?GL_SRC_ALPHA:GL_ONE,enabled?GL_ONE_MINUS_SRC_ALPHA:GL_ZERO);}}
 static void gl1_lod_bias(float v){gl1_current->lod_bias=v;}
 static void gl1_fog_generate(uint8_t *table,float density){unsigned i;gl1_current->density=density;for(i=0;i<64;i++){float w=ldexpf(1+(i&3)*0.25f,i>>2),d=density*w;table[i]=(uint8_t)(255*(1-expf(-d*d)));}}
-static void gl1_fog_color(uint32_t v){GLfloat rgba[4]={(float)((v>>16)&255)/255,(float)((v>>8)&255)/255,(float)(v&255)/255,1};if(gl1_ready())glFogfv(GL_FOG_COLOR,rgba);}
+static void gl1_fog_color(uint32_t v){GLfloat rgba[4]={(float)((v>>16)&255)/255,(float)((v>>8)&255)/255,(float)(v&255)/255,1};memcpy(gl1_current->fog_color,rgba,sizeof(rgba));if(gl1_gl_ready())glFogfv(GL_FOG_COLOR,rgba);}
 static void gl1_fog_table(const uint8_t *table){memcpy(gl1_current->fog,table,64);}
 static void gl1_fog_mode(uint32_t v){
     Gl1Device *g=gl1_current;if(!gl1_ready())return;
+    if(g->vulkan){g->native_fog=v?(g->sky_loaded?1:2):0;return;}
     if(g->sky_loaded){gl1_level_fog(v!=0);return;}
     if(v){uint32_t bits;glFogi(GL_FOG_COORDINATE_SOURCE,GL_FOG_COORDINATE);glFogi(GL_FOG_MODE,GL_EXP2);glFogf(GL_FOG_DENSITY,g->density);glEnable(GL_FOG);
         bits=game_memory_read_u32(&g->application->memory,0x6290c8);memcpy(&g->projection_center,&bits,4);
@@ -420,6 +457,7 @@ static void gl1_fog_mode(uint32_t v){
 static void gl1_stats(uint32_t *out){memset(out,0,5*4);}
 static void gl1_reset_stats(void){gl1_current->triangles=gl1_current->uploads=0;}
 static void gl1_clear(uint32_t color,uint32_t alpha,uint32_t depth){
+    VK1_DO(vk1_clear(color,alpha,depth));
     GLboolean mask;
     if(!gl1_ready())return;glClearColor(((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f);
     glGetBooleanv(GL_DEPTH_WRITEMASK,&mask);glDepthMask(GL_TRUE);
@@ -434,6 +472,7 @@ static void gl1_screen_rect(unsigned left,unsigned top,unsigned right,unsigned b
     glTexCoord2f(r,b);glVertex2f((float)right,(float)bottom);glTexCoord2f(l,b);glVertex2f((float)left,(float)bottom);glEnd();
 }
 static void gl1_swap(int32_t interval){
+    VK1_DO(vk1_swap());
     Gl1Device *g=gl1_current;int width,height;unsigned old;(void)interval;
     if(!gl1_ready())return;
     if(SDL_GL_GetCurrentContext()!=g->context){gl1_fail("lost current context");return;}
@@ -446,6 +485,7 @@ static void gl1_swap(int32_t interval){
     g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));glPopAttrib();glViewport(0,0,g->width,g->height);
 }
 static int32_t gl1_map_pixels(int write,unsigned buffer,RenderPixelView *info){
+    VK1_RETURN(vk1_map(write,buffer,info));
     Gl1Device *g=gl1_current;unsigned x,y;
     if(!gl1_ready() || !info || g->locked || buffer>1)return 0;
     g->locked=1;g->write_lock=write!=0;g->lock_buffer=buffer;
@@ -463,6 +503,7 @@ static int32_t gl1_map_pixels(int write,unsigned buffer,RenderPixelView *info){
     info->pixels=g->lfb;info->stride=g->width*2;return 1;
 }
 static int gl1_unmap_pixels(void){
+    VK1_RETURN(vk1_unmap());
     Gl1Device *g=gl1_current;unsigned x,y,buffer=g?g->lock_buffer:0;
     if(!gl1_ready() || !g->locked)return 0;
     if(g->write_lock){
@@ -494,6 +535,9 @@ static int gl1_unmap_pixels(void){
 }
 static void gl1_close(void){
     Gl1Device *g=gl1_current;unsigned i;if(!g)return;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(g->vulkan)vk1_close();
+#endif
     if(g->context){
         if(SDL_GL_GetCurrentContext()==g->context || SDL_GL_MakeCurrent(g->window,g->context)){
             for(i=0;i<4096;i++)if(g->textures[i].name)glDeleteTextures(1,&g->textures[i].name);
@@ -527,8 +571,11 @@ static void gl1_close(void){
 static void gl1_shutdown(void){gl1_close();free(gl1_current);gl1_current=NULL;}
 static int32_t gl1_open(SDL_Window *window){
     Gl1Device *g=gl1_current;unsigned i;
+    if(!g || g->context || g->vulkan || !window)return 0;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(game_menu_vulkan(g->application))return vk1_open(window,game_menu_vulkan(g->application));
+#endif
 
-    if(!g || g->context || !window)return 0;
     g->failed=0;g->window=window;g->width=640;g->height=480;g->front=0;g->back=1;
     g->context=game_menu_gl_context(g->application);
     if(!g->context || !SDL_GL_MakeCurrent(window,g->context))goto failed;
@@ -595,3 +642,6 @@ static int gl1_create(GameApplication *a,PortablePlatform *p){
     p->renderer_initialized=1;
     game_application_log(a,"%s\n","NATIVE_OPENGL1_CPU_FREE: native fixed-function device; direct calls and texture identities");return 1;
 }
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+#include "portable_vk.inc"
+#endif

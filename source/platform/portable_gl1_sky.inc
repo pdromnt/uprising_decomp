@@ -30,12 +30,18 @@ static int gl1_sky_load(unsigned layer,const char *path){
             sums[0]+=out[0];sums[1]+=out[1];sums[2]+=out[2];
         }
     }
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(g->vulkan){if(!vk1_sky_upload(layer,w,h))goto done;}
+    else
+#endif
+    {
     glGenTextures(1,g->sky_layers+layer);glBindTexture(GL_TEXTURE_2D,g->sky_layers[layer]);
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,g->rgba);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,layer==2?GL_NEAREST:GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,layer==2?GL_NEAREST:GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,layer==2?GL_CLAMP:GL_REPEAT);
+    }
     if(!layer){for(x=0;x<3;x++)g->fog_color[x]=(float)sums[x]/(w*h*255.0f);g->fog_color[3]=1;}
     ok=1;
 done:fclose(file);return ok;
@@ -43,7 +49,11 @@ done:fclose(file);return ok;
 static void gl1_sky_select(const char *name){
     Gl1Device *g=gl1_current;char path[256],base[128],message[256],*extension;unsigned i;
     if(!SDL_strcasecmp(name,g->sky_name))return;
-    glDeleteTextures(3,g->sky_layers);memset(g->sky_layers,0,sizeof(g->sky_layers));
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(g->vulkan)vk1_sky_release();else
+#endif
+    glDeleteTextures(3,g->sky_layers);
+    memset(g->sky_layers,0,sizeof(g->sky_layers));
     snprintf(g->sky_name,sizeof(g->sky_name),"%s",name);g->sky_loaded=0;g->fog_pending=0;
     if(!*name || !SDL_strcasecmp(name,"nosky"))return;
     /* Level configuration supplies a basename, not an arbitrary path. */
@@ -66,6 +76,14 @@ static void gl1_sky_select(const char *name){
 static void gl1_level_fog(int enabled){
     Gl1Device *g=gl1_current;uint32_t config,range=0;float horizon=10000;
     if(!gl1_ready())return;
+    if(g->vulkan){
+        g->native_fog=enabled && g->sky_loaded?1:0;
+        if(g->native_fog){
+            config=game_memory_read_u32(&g->application->memory,0x5943c8);if(config)range=game_memory_read_u32(&g->application->memory,config+0x14);
+            if(range>=500 && range<=20000)horizon=(float)range;
+            g->native_fog_start=horizon*0.67f;g->native_fog_end=horizon;
+        }return;
+    }
     if(!enabled || !g->sky_loaded){glDisable(GL_FOG);return;}
     config=game_memory_read_u32(&g->application->memory,0x5943c8);
     if(config)range=game_memory_read_u32(&g->application->memory,config+0x14);
@@ -80,7 +98,8 @@ static int gl1_sky_begin(const GameSkyFrame *frame){
     if(!isfinite(frame->center[0]) || !isfinite(frame->center[1]) ||
        !isfinite(frame->scale) || !isfinite(frame->vertical))return 0;
     for(i=0;i<12;i++)if(!isfinite(frame->view[i]))return 0;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D,&previous);gl1_sky_select(frame->name);glBindTexture(GL_TEXTURE_2D,(GLuint)previous);
+    if(g->vulkan)gl1_sky_select(frame->name);
+    else{glGetIntegerv(GL_TEXTURE_BINDING_2D,&previous);gl1_sky_select(frame->name);glBindTexture(GL_TEXTURE_2D,(GLuint)previous);}
     g->projection_center=frame->center[0];g->projection_scale=frame->scale>1?frame->scale:381.3607f;
     horizontal=hypotf(frame->view[8],frame->view[10]);if(!(horizontal>0.0001f))horizontal=1;
     pitch=atan2f(frame->view[9],horizontal);
@@ -91,6 +110,7 @@ static int gl1_sky_begin(const GameSkyFrame *frame){
     g->sky_yaw_scale=(g->width/256.0f)*6.28318530718f/fov;
     g->sky_offset=isfinite(frame->speed) && fabsf(frame->speed)<=1000?
         (float)(uint32_t)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000:0;
+    if(g->vulkan){g->sky_active=1;g->sky_triangles=0;return 1;}
     glPushAttrib(GL_CURRENT_BIT|GL_ENABLE_BIT|GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_TEXTURE_BIT|GL_SCISSOR_BIT);
     glDepthMask(GL_FALSE);glEnable(GL_DEPTH_TEST);glDisable(GL_CULL_FACE);glDisable(GL_ALPHA_TEST);glDisable(GL_FOG);
     glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
@@ -107,6 +127,7 @@ static void gl1_sky_triangle(const GameRenderVertex *a,const GameRenderVertex *b
     ++g->sky_triangles;
 }
 static int gl1_sky_end(void){
+    VK1_RETURN(vk1_sky_end());
     Gl1Device *g=gl1_current;float bottom,top,repeats,u;GLint previous;unsigned layer;
     if(!g || !g->sky_active)return 0;
     /* The retail cylinder's finite bottom curls up at wide/downward camera
@@ -165,11 +186,17 @@ static int gl1_remote_mask(const int32_t bounds[4]){
     uint32_t *queue=NULL;GLint packing;int ok=0;
     if(g->remote_mask && !memcmp(g->remote_bounds,bounds,sizeof(g->remote_bounds)))return 1;
     inside=calloc(count,1);queue=malloc(count*sizeof(*queue));if(!inside || !queue)goto done;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(g->vulkan){if(!vk1_remote_read(bounds))goto done;}
+    else
+#endif
+    {
     glGetIntegerv(GL_PACK_ALIGNMENT,&packing);glPixelStorei(GL_PACK_ALIGNMENT,1);
     gl1_readback_begin(g);
     glReadPixels(bounds[0],g->height-bounds[3],width,height,GL_RGB,GL_UNSIGNED_BYTE,g->rgba);
     gl1_readback_end(g);
     glPixelStorei(GL_PACK_ALIGNMENT,packing);
+    }
     index=(size_t)(height/2)*width+width/2;memcpy(color,g->rgba+index*3,3);
     inside[index]=1;queue[tail++]=(uint32_t)index;
     while(head<tail){
@@ -193,11 +220,17 @@ static int gl1_remote_mask(const int32_t bounds[4]){
     for(index=0;index<count;index++){
         uint8_t *p=g->rgba+index*4;p[0]=p[1]=p[2]=255;p[3]=inside[index]?255:0;
     }
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(g->vulkan){if(!vk1_remote_upload((unsigned)width,(unsigned)height))goto done;}
+    else
+#endif
+    {
     if(!g->remote_mask)glGenTextures(1,&g->remote_mask);
     glBindTexture(GL_TEXTURE_2D,g->remote_mask);
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,g->rgba);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
+    }
     memcpy(g->remote_bounds,bounds,sizeof(g->remote_bounds));
     game_application_log(g->application,"%s","native OpenGL1 remote glass mask ready\n");ok=1;
 done:free(queue);free(inside);return ok;
@@ -210,6 +243,7 @@ static void gl1_remote_quad(float l,float t,float r,float b,float u0,float v0,fl
 static int gl1_remote_sky(const GameRemoteSkyFrame *frame){
     Gl1Device *g=gl1_current;int32_t bounds[4];GLint previous;float width,height,scale,fov,u0,u1,offset=0,bottom;
     if(!gl1_ready() || !frame || !frame->name || g->sky_active || !isfinite(frame->yaw))return 0;
+    VK1_RETURN(vk1_remote_sky(frame));
     memcpy(bounds,frame->bounds,sizeof(bounds));
     if(bounds[0]<0)bounds[0]=0;if(bounds[1]<0)bounds[1]=0;
     if(bounds[2]>(int)g->width)bounds[2]=(int)g->width;if(bounds[3]>(int)g->height)bounds[3]=(int)g->height;

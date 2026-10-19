@@ -12,7 +12,8 @@ typedef struct Vk1Device {
     int track_text,scratch_clean;
     RenderMotionHistory history;
     uint32_t history_camera,history_mode;
-    float history_projection[4];
+    float history_projection[5];
+    int jitter_enabled;
     uint64_t motion_samples,motion_valid;
     uint64_t motion_clipped;
 } Vk1Device;
@@ -30,6 +31,7 @@ static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     Gl1Device *g=gl1_current;unsigned i;const float clear[4]={0,0,0,0};
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
+    {const char *jitter=SDL_getenv("UPRISING_VULKAN_JITTER");g->vulkan->jitter_enabled=jitter && !strcmp(jitter,"1");}
     g->width=640;g->height=480;g->front=0;g->back=1;
     g->lfb=malloc((size_t)g->width*g->height*2);g->rgba=malloc((size_t)g->width*g->height*4);
     if(!g->lfb || !g->rgba)goto fail;

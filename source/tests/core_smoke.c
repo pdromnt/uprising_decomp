@@ -780,6 +780,13 @@ static int check_motion_clipping(void){
 static int check_render_motion(void){
     RenderMotionHistory history={0};float a[3]={4,8,0.125f},b[3]={12,6,0.25f},previous[3],packed[4];
     uint32_t page;uint64_t first_key,second_key;
+    {float jitter[2],repeat[2];unsigned i;
+    CHECK(!render_motion_jitter(0,0,jitter) && jitter[0]==0 && jitter[1]==0);
+    CHECK(render_motion_jitter(0,8,jitter) && jitter[0]==0 && fabsf(jitter[1]+1.0f/6.0f)<0.000001f);
+    for(i=0;i<72;i++){
+        CHECK(render_motion_jitter(i,72,jitter) && render_motion_jitter(i+72,72,repeat));
+        CHECK(!memcmp(jitter,repeat,sizeof(jitter)) && fabsf(jitter[0])<=0.5f && fabsf(jitter[1])<=0.5f && (jitter[0]!=0 || jitter[1]!=0));
+    }}
     CHECK(!render_motion_sample(&history,1,42,a,previous));
     CHECK(render_motion_sample(&history,2,42,b,previous) && !memcmp(previous,a,sizeof(a)));
     CHECK(render_motion_sample(&history,2,42,b,previous) && !memcmp(previous,a,sizeof(a)));

@@ -627,13 +627,17 @@ int game_application_scene_depth(GameApplication *a,int enabled){
     if(!gl1_current || gl1_current->application!=a || !gl1_ready())return 0;
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     if(enabled && gl1_current->vulkan){
-        Vk1Device *n=gl1_current->vulkan;float projection[4];unsigned i;
-        static const GameAddress fields[4]={0x6290c8,0x6290cc,0x6290f0,0x6290f4};
+        Vk1Device *n=gl1_current->vulkan;float projection[5],jitter[2]={0,0};unsigned i;
+        static const GameAddress fields[5]={0x6290c8,0x6290cc,0x6290f0,0x6290f4,0x574cb0};
         uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
-        for(i=0;i<4;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
+        for(i=0;i<5;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
         if(a->memory.fault)return 0;
         if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)))render_motion_reset(&n->history);
         n->history_camera=camera;n->history_mode=mode;memcpy(n->history_projection,projection,sizeof(projection));
+        if(n->jitter_enabled)render_motion_jitter(n->frames,8,jitter);
+        /* Terrain and model near clipping both use z=10. The infinite depth
+         * encoding does not remove their existing finite visibility limits. */
+        if(!vulkan_draw_projection(vk1_back(),10,projection[4],jitter[0],jitter[1]))return 0;
         if(!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back()))return 0;
     }
 #endif

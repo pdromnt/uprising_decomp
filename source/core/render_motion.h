@@ -11,6 +11,9 @@ typedef struct RenderMotionEntry {
 typedef struct RenderMotionHistory {RenderMotionEntry *entries;} RenderMotionHistory;
 void render_motion_release(RenderMotionHistory *);
 void render_motion_reset(RenderMotionHistory *);
+/* Halton[2,3], pixel offsets in [-.5,.5], matching the FSR jitter convention.
+ * Sequence length belongs to the render/display ratio; no simulation state. */
+int render_motion_jitter(uint64_t frame,uint32_t phases,float output[2]);
 int render_motion_sample(RenderMotionHistory *,uint64_t frame,uint64_t key,
     const float current[3],float previous[3]);
 /* Pack previous screen coordinates for correct projective interpolation.

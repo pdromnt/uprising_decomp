@@ -11,6 +11,7 @@ typedef struct VulkanDrawMaterial {
     float constant[4],fog_color[4],fog_range[2];
     uint32_t fog_mode,alpha_function;float alpha_reference;uint32_t chroma;
     uint32_t padding[2];float mask_bounds[4];uint32_t mask_enabled,texture_sampling;
+    float jitter[2],depth_scale;uint32_t projection_padding;
 } VulkanDrawMaterial;
 typedef struct VulkanDrawTexture {
     VulkanImage image;VkSampler sampler;VkDescriptorSet descriptor;
@@ -35,10 +36,15 @@ typedef struct VulkanDraw {
     VulkanDrawVertex *staging;size_t vertex_count,vertex_capacity;
     VulkanDrawBatch *batches;size_t batch_count,batch_capacity;
     float clear[4],clear_depth;int recording,has_frame,resuming;
-    /* Capture unquantized world 1/w alongside color. UI/skies and draws without
-     * depth writes preserve it. This is not yet FSR's perspective depth. */
+    /* R32F world reversed-infinite perspective depth (near/z), derived from
+     * unquantized q. UI/skies and draws without depth writes preserve it. */
     int capture_depth,clear_reciprocal;
+    float scene_jitter[2],scene_depth_scale;
 } VulkanDraw;
+/* q=numerator/z becomes reversed infinite perspective depth near/z. Hardware
+ * W-depth remains unchanged. Jitter is in top-left pixel coordinates, applied
+ * only to captured world draws; previous positions remain unjittered. */
+int vulkan_draw_projection(VulkanDraw *,float near_z,float numerator,float jitter_x,float jitter_y);
 int vulkan_draw_open(VulkanDraw *,VulkanDevice *,uint32_t width,uint32_t height);
 void vulkan_draw_close(VulkanDraw *);
 /* Each texture owns its descriptor until destroyed; batches borrow it through
@@ -60,6 +66,7 @@ int vulkan_draw_lines(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,Vulka
  * A later frame ring can overlap work without changing submission semantics. */
 int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
+/* Historical name: returns normalized near/z, not raw numerator/z. */
 int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);
 /* RGBA32F: previous-minus-current pixels, validity, conservative history rejection.
  * Unknown geometry rejects history. Translucent scene coverage raises rejection

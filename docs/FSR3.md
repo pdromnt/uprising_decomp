@@ -19,7 +19,8 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
 3. **Temporal inputs (in progress).** World reciprocal depth and previous rendered
    positions now produce vectors for terrain and stable owned-model vertices,
    including camera/object motion and owned clipping-edge provenance.
-   Complete particle/discontinuity coverage; add perspective depth and jitter.
+   Reversed-infinite perspective depth and opt-in scene jitter are connected.
+   Complete particle/discontinuity coverage and jittered sky/color separation.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -73,15 +74,16 @@ Points and lines now use native primitive pipelines rather than expanded/cullabl
 triangles. The probe checks mixed primitive batches, pixel coverage and occlusion;
 complete cross-driver line raster equivalence remains unproved.
 
-An owned R32F target now records unquantized reciprocal depth from real world
-vertices alongside color, under the existing hardware depth/alpha tests. Explicit
+An owned R32F target records reversed-infinite perspective depth `10/z`, derived
+from unquantized `q=numerator/z`, under existing hardware depth/alpha tests. Terrain
+and model near clipping both use z=10; finite visibility limits remain unchanged. Explicit
 tank/citadel and O-view world scopes exclude artwork and final overlay queues;
 skies and draws without depth writes preserve this input. Its independent reset
 also works on resumed double-buffer targets without erasing color or legacy depth.
 The live check compares all 1,228,800 depth bytes before/after HUD draws, including
 world geometry underneath the cockpit. The GPU probe checks interpolation,
 occlusion, alpha cutouts, preserved depth through UI/resume and removal of stale
-depth on reset. This is **not yet FSR perspective depth**; conversion remains.
+depth on reset. The historical `reciprocal_depth` API name now returns normalized near/z.
 
 An RGBA32F target now receives previous-minus-current motion in pixel units,
 correspondence validity and conservative history rejection. Terrain identities follow world-lattice
@@ -113,6 +115,18 @@ the comparator's point check remains, with a Vulkan submission check added.
 Particle quality, same-owner camera discontinuities, composition masks and complete
 UI/color separation still need coverage. No temporal upscaler is enabled yet.
 
+Per-batch projection snapshots apply subpixel jitter only to world geometry;
+motion subtracts the current raster jitter and history keeps original positions.
+`UPRISING_VULKAN_JITTER=1` enables an eight-phase Halton[2,3] sequence at the
+current 1:1 render size. Default is off until temporal reconstruction can resolve
+it. Sky jitter, final scene/UI color separation, variable-resolution phase counts
+and FSR dispatch metadata still need integration. GPU checks cover depth scaling,
+clamping, alternating jitter, actual shifted coverage, unchanged HUD and vectors;
+x86/x64 core checks cover sequence bounds and wrapping. Live jitter-enabled
+Training1 readback preserved every depth/motion byte across HUD rendering.
+Jitter-enabled Training1 movement/fire/save/reload/shutdown and Erudara
+O-view/mask/rotation/return checks passed. Full temporal image quality is unproved.
+
 Local Windows x64: the existing Graphics drawer regression passed three cycles.
 Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
 closed normally. Runs were windowed, muted and isolated; stable EXEs were untouched.
@@ -132,7 +146,7 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with terrain/model motion. CI for clipping/coverage
+Six-platform application CI passed with clipping/coverage. New projection CI
 and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 

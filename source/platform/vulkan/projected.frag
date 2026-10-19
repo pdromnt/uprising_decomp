@@ -6,6 +6,7 @@ layout(push_constant) uniform Material {
     vec4 constant_color;vec4 fog_color;vec2 fog_range;
     uint fog_mode;uint alpha_function;float alpha_reference;uint chroma;
     uvec2 padding;vec4 mask_bounds;uint mask_enabled;uint texture_sampling;
+    vec2 jitter;float depth_scale;uint projection_padding;
 } material;
 layout(location=0) in vec4 vertex_color;
 layout(location=1) in vec3 texture_coordinate;
@@ -61,9 +62,9 @@ void main() {
         rgb=mix(material.fog_color.rgb,rgb,visibility);
     }
     output_color=vec4(rgb,alpha);
-    output_reciprocal_depth=texture_coordinate.z;
+    output_reciprocal_depth=clamp(texture_coordinate.z*material.depth_scale,0.0,1.0);
     output_motion=vec4(0,0,0,1);
     if(previous_coordinate.w>=0.99999 && previous_coordinate.z>0.0)
-        output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-gl_FragCoord.xy,1,0);
+        output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-(gl_FragCoord.xy-material.jitter),1,0);
     if(material.padding.x!=0u)output_motion.w=1.0;
 }

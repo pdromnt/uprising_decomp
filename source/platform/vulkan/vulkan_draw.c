@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-_Static_assert(sizeof(VulkanDrawMaterial)==104,"Vulkan push block layout");
+#include <math.h>
+_Static_assert(sizeof(VulkanDrawMaterial)==120,"Vulkan push block layout");
+_Static_assert(offsetof(VulkanDrawMaterial,jitter)==104 && offsetof(VulkanDrawMaterial,depth_scale)==112,"Vulkan projection offsets");
 enum {CAPTURE_RECIPROCAL_DEPTH=256,CAPTURE_REACTIVE=512};
 
 #define VK(call) do {VkResult status=(call);if(status!=VK_SUCCESS){fprintf(stderr,"Vulkan draw %s: %d\n",#call,(int)status);goto fail;}}while(0)
@@ -144,7 +146,7 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     VkShaderModuleCreateInfo shader={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};VkDescriptorSetLayout layouts[2];
     const uint8_t white[4]={255,255,255,255};
     memset(d,0,sizeof(*d));d->device=v;d->width=width;d->height=height;
-    d->texture_sampler=-1;
+    d->texture_sampler=-1;d->scene_depth_scale=1;
     d->clear_depth=1;d->material.extent[0]=(float)width;d->material.extent[1]=(float)height;
     d->material.color_mode=d->material.alpha_mode=4;d->material.alpha_function=4;
     if(!width || !height || width>v->properties.limits.maxFramebufferWidth || height>v->properties.limits.maxFramebufferHeight || (uint64_t)width*height>SIZE_MAX/16)goto fail;
@@ -228,6 +230,14 @@ static void *grow(void *data,size_t *capacity,size_t needed,size_t element){
     if(count>SIZE_MAX/element)return NULL;
     p=realloc(data,count*element);if(!p)return NULL;*capacity=count;return p;
 }
+int vulkan_draw_projection(VulkanDraw *d,float near_z,float numerator,float jitter_x,float jitter_y){
+    float scale;
+    if(!isfinite(near_z) || near_z<=0 || !isfinite(numerator) || numerator<=0 ||
+       !isfinite(jitter_x) || !isfinite(jitter_y) ||
+       fabsf(jitter_x)>0.5f || fabsf(jitter_y)>0.5f)return 0;
+    scale=near_z/numerator;if(!isfinite(scale) || scale<=0)return 0;
+    d->scene_depth_scale=scale;d->scene_jitter[0]=jitter_x;d->scene_jitter[1]=jitter_y;return 1;
+}
 static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32_t count,VulkanDrawTexture *texture,uint32_t flags){
     VkDescriptorSet descriptor;VulkanDrawBatch *last,*batches;VulkanDrawVertex *staging;
     VulkanDrawMaterial material=d->material;
@@ -235,6 +245,9 @@ static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32
     if(d->capture_depth && (flags&3)==3)flags|=CAPTURE_RECIPROCAL_DEPTH;
     else if(d->capture_depth && (flags&VULKAN_DRAW_DEPTH_TEST))flags|=CAPTURE_REACTIVE;
     material.padding[0]=(flags&CAPTURE_REACTIVE)!=0;
+    material.depth_scale=d->scene_depth_scale;
+    material.jitter[0]=d->capture_depth?d->scene_jitter[0]:0;
+    material.jitter[1]=d->capture_depth?d->scene_jitter[1]:0;
     descriptor=texture?texture_binding(d,texture):d->white.descriptor;if(!descriptor)return 0;
     staging=grow(d->staging,&d->vertex_capacity,d->vertex_count+count,sizeof(*vertices));if(!staging)return 0;d->staging=staging;
     batches=grow(d->batches,&d->batch_capacity,d->batch_count+1,sizeof(*last));if(!batches)return 0;d->batches=batches;

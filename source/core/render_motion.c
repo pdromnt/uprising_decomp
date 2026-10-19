@@ -3,6 +3,17 @@
 #include <stdlib.h>
 #include <string.h>
 enum {BUCKETS=8192,WAYS=4};
+int render_motion_jitter(uint64_t frame,uint32_t phases,float output[2]){
+    unsigned axis;uint32_t index;
+    output[0]=output[1]=0;if(!phases)return 0;
+    index=(uint32_t)(frame%phases)+1;
+    for(axis=0;axis<2;axis++){
+        uint32_t n=index,base=axis?3:2;float value=0,weight=1;
+        while(n){weight/=(float)base;value+=(float)(n%base)*weight;n/=base;}
+        output[axis]=value-0.5f;
+    }
+    return 1;
+}
 void render_motion_release(RenderMotionHistory *h){free(h->entries);h->entries=NULL;}
 void render_motion_reset(RenderMotionHistory *h){if(h->entries)memset(h->entries,0,BUCKETS*WAYS*sizeof(*h->entries));}
 int render_motion_sample(RenderMotionHistory *h,uint64_t frame,uint64_t key,

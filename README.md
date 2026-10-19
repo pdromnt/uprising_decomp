@@ -1,7 +1,6 @@
 # Uprising: Join or Die — RE/Decompiled
 
-<img width="641" height="493" src="https://github.com/user-attachments/assets/5aab263b-75ba-4a55-867a-71572ff7030f" />
-<img width="640" height="493" src="https://github.com/user-attachments/assets/e8512391-3f07-4b7e-b8c6-00d9ea17c4de" />
+<img width="641" height="493" src="https://github.com/user-attachments/assets/5aab263b-75ba-4a55-867a-71572ff7030f" /> <img width="640" height="493" src="https://github.com/user-attachments/assets/e8512391-3f07-4b7e-b8c6-00d9ea17c4de" />
 
 A behavior-focused reconstruction of **Uprising: Join or Die**, the 1997 game
 by Cyclone Studios. Game data is included alongside the source; original game

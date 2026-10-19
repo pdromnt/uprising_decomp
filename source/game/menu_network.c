@@ -2,7 +2,7 @@
 #include "game_initializers.h"
 #include <string.h>
 /*Shared packet algorithms use native payloads/IDs, never registers or guest
- * stack words. The transport owns copied SDK events until this thread drains.*/
+ * stack words. The transport owns copied events until this thread drains.*/
 extern int game_network_game_packet(GameApplication *,const uint8_t *,uint32_t,uint32_t,int *);
 extern int game_network_publish_initial_state(GameApplication *,uint32_t,uint32_t); /*473600*/
 extern int game_network_publish_roster(GameApplication *,uint32_t,uint32_t,uint32_t); /*4732a0*/
@@ -129,7 +129,7 @@ int game_menu_demo_start(GameApplication *a,unsigned choose_host) {
 /*4722a0: close the session, retain transport ownership for later connections. */
 int game_network_session_reset(GameApplication *a) {
     /*4722b5 ignores Close's HRESULT. Clock destruction already closes this
-     *session; a second SDK Close must not reject an otherwise clean return. */
+     *session; closing twice must not reject an otherwise clean return. */
     (void)game_network_transport_close(a);
     if(!managers_reset(a))return 0;
     game_memory_write_u8(&a->memory,0x5efe80,0);put(a,0x5f0208,0);put(a,0x5eff28,0);

@@ -1,28 +1,36 @@
 #include "portable_sdl.h"
-#define WIN32_LEAN_AND_MEAN
-#define CINTERFACE
-#define COBJMACROS
-#include <windows.h>
-#include <objbase.h>
-#include <dplay.h> /*Only fixed legacy result codes and provider IDs.*/
-#include <dplay8.h>
-#include <dpaddr.h>
-#include <dplobby8.h>
+#include "menu_network.h"
+#include <enet/enet.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
-#include "menu_network.h"
 
-/*The platform service owns all native SDK objects and copied callback data.
- * SDK workers never enter GameApplication/GameMemory. Game roster/clock code
- * drains the bounded queue on its own thread, with no SDK pointers in packets.
- * DP8 sessions connect reconstructed peers, not the retail DP3 wire protocol.*/
+/* Reconstructed peers use versioned ENet sessions, not a DirectPlay wire format.
+ * One SDL worker owns socket progress under the transport mutex. It copies only
+ * bounded byte packets into the game-thread queue; it never touches GameMemory.
+ * Full peer links survive host departure; normal traffic follows one host so
+ * ordering does not change as mesh connections are established. */
 #define NETWORK_QUEUE_LIMIT (8u*1024u*1024u)
 #define NETWORK_PACKET_LIMIT (1024u*1024u)
 #define NETWORK_SESSION_LIMIT 128u
 #define NETWORK_PORT 2302u
-static const uint8_t open_policy[8]={'U','N','P','1',1,0,0,0};
+#define DISCOVERY_PORT 2303u
+#define JOIN_TOKEN 0x554e5032u
+#define HEADER_SIZE 32u
+#define PEER_SIZE 160u
+#define SNAPSHOT_SIZE (144u+4u*PEER_SIZE)
+/* Historical result values remain at the core clock boundary only. */
+#define RESULT_OK 0u
+#define RESULT_ARGUMENT 0x80070057u
+#define RESULT_FAILED 0x80004005u
+#define RESULT_SMALL 0x8877001eu
+#define RESULT_OBJECT 0x88770082u
+#define RESULT_PLAYER 0x88770096u
+#define RESULT_EMPTY 0x887700beu
+#define RESULT_BUSY 0x8877010eu
+
+enum {WIRE_WELCOME=1,WIRE_SNAPSHOT,WIRE_METADATA,WIRE_GAME,WIRE_POLICY,WIRE_LEAVE};
 typedef struct NetworkPacket {
     struct NetworkPacket *next;
     uint32_t sender,size;
@@ -30,28 +38,38 @@ typedef struct NetworkPacket {
 } NetworkPacket;
 typedef struct NetworkSession {
     struct NetworkSession *next;
-    GUID guid;
+    uint8_t guid[16];
     char name[128];
-    IDirectPlay8Address *host,*device;
+    ENetAddress address;
 } NetworkSession;
-typedef struct NetworkPeer {DPNID id;int published;} NetworkPeer;
+typedef struct NetworkPeer {
+    uint32_t id;
+    int ready,published;
+    ENetAddress address;
+    ENetPeer *link;
+    uint8_t metadata[16];
+    char name[128];
+} NetworkPeer;
 struct GameNetworkTransport {
-    IDirectPlay8Peer *play;
-    IDirectPlay8LobbiedApplication *lobby;
-    DPNHANDLE lobby_connection;
-    CRITICAL_SECTION lock;
-    GUID provider;
+    SDL_Mutex *lock;
+    SDL_Thread *worker;
+    ENetHost *play;
+    ENetPeer *joining;
+    ENetSocket discovery;
     NetworkPacket *head,*tail;
     NetworkSession *sessions;
     NetworkPeer peers[4];
-    uint32_t queued,session_count;
-    DPNID local,host;
-    int com_owned,initialized,opened,accepting,failed,enumerating;
+    uint8_t application[16],instance[16];
+    char name[128];
+    uint32_t local,host,next_id,queued,outgoing,session_count;
+    int enet_owned,opened,accepting,failed,enumerating,stop,discovery_host;
 };
 static uint32_t word(const uint8_t *p){return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
 static void put_word(uint8_t *p,uint32_t v){unsigned i;for(i=0;i<4;++i)p[i]=(uint8_t)(v>>(i*8));}
-static int wide(const char *in,WCHAR *out,int capacity){return in && MultiByteToWideChar(CP_ACP,0,in,-1,out,capacity)>0;}
-static int narrow(const WCHAR *in,char *out,int capacity){return in && WideCharToMultiByte(CP_ACP,0,in,-1,out,capacity,NULL,NULL)>0;}
+static NetworkPeer *peer_id(struct GameNetworkTransport *n,uint32_t id){unsigned i;for(i=0;i<4;++i)if(id && n->peers[i].id==id)return &n->peers[i];return NULL;}
+static NetworkPeer *peer_link(struct GameNetworkTransport *n,ENetPeer *link){unsigned i;for(i=0;i<4;++i)if(n->peers[i].link==link && n->peers[i].id)return &n->peers[i];return NULL;}
+static void sessions_clear(struct GameNetworkTransport *n){NetworkSession *s;while((s=n->sessions)!=NULL){n->sessions=s->next;free(s);}n->session_count=0;}
+static void packets_clear(struct GameNetworkTransport *n){NetworkPacket *p;while((p=n->head)!=NULL){n->head=p->next;free(p);}n->tail=NULL;n->queued=0;}
 static void queue_locked(struct GameNetworkTransport *n,uint32_t sender,const void *data,uint32_t size){
     NetworkPacket *p;
     if(n->failed)return;
@@ -59,334 +77,315 @@ static void queue_locked(struct GameNetworkTransport *n,uint32_t sender,const vo
     p->next=NULL;p->sender=sender;p->size=size;if(size)memcpy(p->data,data,size);
     if(n->tail)n->tail->next=p;else n->head=p;n->tail=p;n->queued+=(uint32_t)sizeof(*p)+size;
 }
-static void system_locked(struct GameNetworkTransport *n,uint32_t type,DPNID id,const void *data,const char *name){
-    uint8_t event[16+16+128]={0};uint32_t size=16;
+static void system_locked(struct GameNetworkTransport *n,uint32_t type,uint32_t id,const void *data,const char *name){
+    uint8_t event[160]={0};uint32_t size=16;
     put_word(event,type);put_word(event+4,id);put_word(event+8,1);
     if(type==3){size_t length=strlen(name)+1;if(length>128){n->failed=1;return;}
         put_word(event+12,16);memcpy(event+16,data,16);memcpy(event+32,name,length);size=32+(uint32_t)length;}
     queue_locked(n,0,event,size);
 }
-static void peer_info(struct GameNetworkTransport *n,DPNID id){
-    DWORD size=0;DPN_PLAYER_INFO *info;HRESULT hr;unsigned i;char name[128];
-    hr=IDirectPlay8Peer_GetPeerInfo(n->play,id,NULL,&size,0);
-    if(hr!=DPNERR_BUFFERTOOSMALL || size<sizeof(*info) || size>65536)return;
-    info=calloc(1,size);if(!info){EnterCriticalSection(&n->lock);n->failed=1;LeaveCriticalSection(&n->lock);return;}
-    info->dwSize=sizeof(*info);hr=IDirectPlay8Peer_GetPeerInfo(n->play,id,info,&size,0);
-    if(SUCCEEDED(hr)){
-        EnterCriticalSection(&n->lock);
-        for(i=0;i<4 && n->peers[i].id && n->peers[i].id!=id;++i){}
-        if(i==4)n->failed=1;
-        else{
-            n->peers[i].id=id;
-            if(info->dwPlayerFlags&DPNPLAYER_LOCAL)n->local=id;
-            if(info->dwPlayerFlags&DPNPLAYER_HOST)n->host=id;
-            /*Host/Connect create the peer before the game's CreatePlayer call.
-             * Publish the remote roster event only once its real16-byte game
-             * metadata arrives through SetPeerInfo. Never register self twice.*/
-            if(!(info->dwPlayerFlags&DPNPLAYER_LOCAL) && !n->peers[i].published && info->dwDataSize==16 && info->pvData && narrow(info->pwszName,name,sizeof(name))){
-                system_locked(n,3,id,info->pvData,name);n->peers[i].published=1;
+static void publish_peer(struct GameNetworkTransport *n,NetworkPeer *p){
+    if(p->id && p->id!=n->local && p->ready && !p->published){system_locked(n,3,p->id,p->metadata,p->name);p->published=1;}
+}
+static void ENET_CALLBACK sent_packet_free(ENetPacket *packet){
+    struct GameNetworkTransport *n=packet->userData;n->outgoing-=(uint32_t)packet->dataLength;
+}
+static int send_wire(struct GameNetworkTransport *n,ENetPeer *link,uint32_t kind,uint32_t sender,uint32_t to,const void *data,uint32_t size){
+    ENetPacket *packet;uint8_t *p;
+    if(!link || link->state!=ENET_PEER_STATE_CONNECTED || size>NETWORK_PACKET_LIMIT || n->outgoing>NETWORK_QUEUE_LIMIT-size-HEADER_SIZE)return 0;
+    packet=enet_packet_create(NULL,HEADER_SIZE+size,ENET_PACKET_FLAG_RELIABLE);if(!packet)return 0;
+    packet->userData=n;packet->freeCallback=sent_packet_free;n->outgoing+=(uint32_t)packet->dataLength;
+    p=packet->data;memcpy(p,"UNP2",4);put_word(p+4,kind);put_word(p+8,sender);put_word(p+12,to);memcpy(p+16,n->instance,16);
+    if(size)memcpy(p+HEADER_SIZE,data,size);
+    if(enet_peer_send(link,0,packet)<0){enet_packet_destroy(packet);return 0;}return 1;
+}
+static void snapshot(struct GameNetworkTransport *n,ENetPeer *link,uint32_t local,int welcome){
+    uint8_t data[SNAPSHOT_SIZE]={0};unsigned i;
+    put_word(data,local);put_word(data+4,n->host);put_word(data+8,n->next_id);put_word(data+12,n->accepting);memcpy(data+16,n->name,128);
+    for(i=0;i<4;++i){NetworkPeer *p=&n->peers[i];uint8_t *q=data+144+i*PEER_SIZE;
+        put_word(q,p->id);memcpy(q+4,&p->address.host,4);put_word(q+8,p->address.port);put_word(q+12,p->ready);
+        memcpy(q+16,p->metadata,16);memcpy(q+32,p->name,128);}
+    if(!send_wire(n,link,welcome?WIRE_WELCOME:WIRE_SNAPSHOT,n->local,local,data,sizeof(data)))n->failed=1;
+}
+static void snapshots(struct GameNetworkTransport *n){unsigned i;for(i=0;i<4;++i)if(n->peers[i].id && n->peers[i].id!=n->local)snapshot(n,n->peers[i].link,n->peers[i].id,0);}
+static int discovery_open(struct GameNetworkTransport *n,int hosting){
+    ENetAddress bind_address={ENET_HOST_ANY,hosting?DISCOVERY_PORT:0};ENetSocket socket;
+    if(n->discovery!=ENET_SOCKET_NULL && n->discovery_host==hosting)return 1;
+    if(n->discovery!=ENET_SOCKET_NULL)enet_socket_destroy(n->discovery);
+    n->discovery=ENET_SOCKET_NULL;
+    socket=enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);if(socket==ENET_SOCKET_NULL)return 0;
+    if(enet_socket_set_option(socket,ENET_SOCKOPT_NONBLOCK,1)<0 || enet_socket_set_option(socket,ENET_SOCKOPT_BROADCAST,1)<0 || enet_socket_bind(socket,&bind_address)<0){enet_socket_destroy(socket);return 0;}
+    n->discovery=socket;n->discovery_host=hosting;return 1;
+}
+static void peer_departed(struct GameNetworkTransport *n,NetworkPeer *p){
+    uint32_t id=p->id,previous=n->host;unsigned i;
+    if(p->published)system_locked(n,5,id,NULL,NULL);
+    memset(p,0,sizeof(*p));
+    if(id==previous){
+        n->host=0;for(i=0;i<4;++i)if(n->peers[i].id && (!n->host || n->peers[i].id<n->host))n->host=n->peers[i].id;
+        if(n->host==n->local){
+            if(!discovery_open(n,1))n->failed=1;
+            system_locked(n,257,n->host,NULL,NULL);
+        }
+    }
+    if(n->host==n->local && n->opened)snapshots(n);
+}
+static int read_snapshot(struct GameNetworkTransport *n,ENetPeer *link,const uint8_t *data,uint32_t size,int welcome){
+    NetworkPeer next[4]={0};uint32_t local=welcome?word(data):n->local,host;unsigned i,j;
+    if(size!=SNAPSHOT_SIZE || !local || word(data+12)>1 || !memchr(data+16,0,128))return 0;
+    host=word(data+4);if(!host || !word(data+8))return 0;
+    for(i=0;i<4;++i){const uint8_t *q=data+144+i*PEER_SIZE;NetworkPeer *p=&next[i],*old;
+        p->id=word(q);if(!p->id)continue;
+        for(j=0;j<i;++j)if(next[j].id==p->id)return 0;
+        if(word(q+8)>65535 || word(q+12)>1 || !memchr(q+32,0,128))return 0;
+        memcpy(&p->address.host,q+4,4);p->address.port=(enet_uint16)word(q+8);p->ready=(int)word(q+12);
+        memcpy(p->metadata,q+16,16);memcpy(p->name,q+32,128);
+        old=peer_id(n,p->id);if(old){p->link=old->link;p->published=old->published;
+            /* An earlier host snapshot may cross local metadata publication. */
+            if(p->id==local && old->ready){p->ready=1;memcpy(p->metadata,old->metadata,16);memcpy(p->name,old->name,128);}}
+        if(p->id==host){p->link=link;if(!p->address.host)p->address.host=link->address.host;}
+    }
+    for(i=0;i<4 && next[i].id!=local;++i){}if(i==4)return 0;
+    for(i=0;i<4 && next[i].id!=host;++i){}if(i==4)return 0;
+    for(i=0;i<4;++i)if(n->peers[i].id && n->peers[i].id!=local){
+        for(j=0;j<4 && next[j].id!=n->peers[i].id;++j){}
+        if(j==4){if(n->peers[i].published)system_locked(n,5,n->peers[i].id,NULL,NULL);if(n->peers[i].link)enet_peer_reset(n->peers[i].link);}
+    }
+    memcpy(n->peers,next,sizeof(next));n->local=local;n->host=host;n->next_id=word(data+8);n->accepting=(int)word(data+12);memcpy(n->name,data+16,128);
+    n->opened=1;n->joining=NULL;for(i=0;i<4;++i)publish_peer(n,&n->peers[i]);return 1;
+}
+static void route_game(struct GameNetworkTransport *n,uint32_t sender,uint32_t to,const uint8_t *data,uint32_t size){
+    unsigned i;
+    if(!to || to==n->local){if(sender!=n->local)queue_locked(n,sender,data,size);}
+    if(n->local==n->host)for(i=0;i<4;++i){NetworkPeer *p=&n->peers[i];
+        if(p->id && p->id!=sender && p->id!=n->local && (!to || to==p->id))
+            if(!send_wire(n,p->link,WIRE_GAME,sender,to,data,size))n->failed=1;
+    }
+}
+static void received(struct GameNetworkTransport *n,ENetPeer *link,const uint8_t *packet,size_t length){
+    uint32_t kind,sender,to,size;const uint8_t *data;NetworkPeer *p=peer_link(n,link);
+    if(length<HEADER_SIZE || length>NETWORK_PACKET_LIMIT+HEADER_SIZE || memcmp(packet,"UNP2",4))return;
+    kind=word(packet+4);sender=word(packet+8);to=word(packet+12);size=(uint32_t)length-HEADER_SIZE;data=packet+HEADER_SIZE;
+    if(kind==WIRE_WELCOME){
+        if(link!=n->joining || size!=SNAPSHOT_SIZE)return;
+        memcpy(n->instance,packet+16,16);if(!read_snapshot(n,link,data,size,1))n->failed=1;return;
+    }
+    if(memcmp(packet+16,n->instance,16) || !p)return;
+    if(kind==WIRE_SNAPSHOT){
+        if(sender==n->host && p->id==n->host && !read_snapshot(n,link,data,size,0))n->failed=1;
+    }else if(kind==WIRE_METADATA){
+        if(n->local!=n->host || sender!=p->id || size!=144 || !memchr(data+16,0,128))return;
+        memcpy(p->metadata,data,16);memcpy(p->name,data+16,128);p->ready=1;publish_peer(n,p);snapshots(n);
+    }else if(kind==WIRE_GAME){
+        if(!peer_id(n,sender) || (p->id!=sender && p->id!=n->host) || (to && !peer_id(n,to)))return;
+        route_game(n,sender,to,data,size);
+    }else if(kind==WIRE_POLICY){
+        if(p->id==n->host && size==4 && word(data)<=1)n->accepting=(int)word(data);
+    }else if(kind==WIRE_LEAVE && p->id==n->host && size==4){
+        NetworkPeer *departing=peer_id(n,word(data));if(departing && departing->id!=n->local){if(departing->link)enet_peer_reset(departing->link);peer_departed(n,departing);}
+    }
+}
+static void connected(struct GameNetworkTransport *n,ENetEvent *event){
+    NetworkPeer *p;unsigned i;
+    enet_peer_timeout(event->peer,8,2000,5000);
+    if(event->peer==n->joining || peer_link(n,event->peer))return;
+    if(event->data==JOIN_TOKEN && n->opened && n->local==n->host && n->accepting){
+        for(i=0;i<4 && n->peers[i].id;++i){}if(i==4 || !n->next_id){enet_peer_disconnect_now(event->peer,0);return;}
+        p=&n->peers[i];p->id=n->next_id++;p->address=event->peer->address;p->link=event->peer;
+        snapshot(n,event->peer,p->id,1);snapshots(n);return;
+    }
+    p=peer_id(n,event->data);
+    if(p && p->id>n->local && !p->link && p->address.host==event->peer->address.host)p->link=event->peer;
+    else enet_peer_disconnect_now(event->peer,0);
+}
+static void discovery_pump(struct GameNetworkTransport *n){
+    uint8_t data[184];ENetBuffer buffer;ENetAddress from;int length;unsigned visits=0;
+    if(n->discovery==ENET_SOCKET_NULL)return;
+    buffer.data=data;buffer.dataLength=sizeof(data);
+    while(visits++<32 && (length=enet_socket_receive(n->discovery,&from,&buffer,1))>0){
+        if(length==20 && !memcmp(data,"UNQ2",4) && !memcmp(data+4,n->application,16)){
+            if(n->opened && n->host==n->local && n->accepting){
+                uint8_t reply[184]={0};ENetBuffer out;out.data=reply;out.dataLength=sizeof(reply);
+                memcpy(reply,"UNS2",4);memcpy(reply+4,n->application,16);memcpy(reply+20,n->instance,16);
+                put_word(reply+36,n->play->address.port);memcpy(reply+40,n->name,128);put_word(reply+168,n->host);
+                (void)enet_socket_send(n->discovery,&from,&out,1);
+            }
+        }else if(length==184 && n->enumerating && !memcmp(data,"UNS2",4) && !memcmp(data+4,n->application,16) && word(data+36)>0 && word(data+36)<=65535 && memchr(data+40,0,128)){
+            NetworkSession *s,**at;for(s=n->sessions;s && memcmp(s->guid,data+20,16);s=s->next){}
+            if(!s && n->session_count<NETWORK_SESSION_LIMIT){s=calloc(1,sizeof(*s));if(!s){n->failed=1;return;}
+                memcpy(s->guid,data+20,16);memcpy(s->name,data+40,128);s->address.host=from.host;s->address.port=(enet_uint16)word(data+36);
+                for(at=&n->sessions;*at && strcmp(s->name,(*at)->name)>=0;at=&(*at)->next){}s->next=*at;*at=s;++n->session_count;
             }
         }
-        LeaveCriticalSection(&n->lock);
+        buffer.dataLength=sizeof(data);
     }
-    free(info);
 }
-static DPN_APPLICATION_DESC *application_description(struct GameNetworkTransport *n){
-    DPN_APPLICATION_DESC *d;DWORD size=0;HRESULT hr;
-    hr=IDirectPlay8Peer_GetApplicationDesc(n->play,NULL,&size,0);
-    if(hr!=DPNERR_BUFFERTOOSMALL || size<sizeof(*d) || size>65536)return NULL;
-    d=calloc(1,size);if(!d)return NULL;d->dwSize=sizeof(*d);
-    if(FAILED(IDirectPlay8Peer_GetApplicationDesc(n->play,d,&size,0))){free(d);return NULL;}
-    return d;
-}
-static void application_policy(struct GameNetworkTransport *n){
-    DPN_APPLICATION_DESC *d;
-    /*Serialize the query with its cache publication. Otherwise an older
-     * callback can read "open", pause, and overwrite a later "closed" value.*/
-    EnterCriticalSection(&n->lock);
-    d=application_description(n);
-    if(d && !d->dwApplicationReservedDataSize)n->accepting=1;
-    else if(d && d->dwApplicationReservedDataSize==8 && d->pvApplicationReservedData &&
-            !memcmp(d->pvApplicationReservedData,open_policy,4) && word((const uint8_t *)d->pvApplicationReservedData+4)<=1)
-        n->accepting=(int)word((const uint8_t *)d->pvApplicationReservedData+4);
-    else{n->accepting=0;n->failed=1;}
-    LeaveCriticalSection(&n->lock);free(d);
-}
-static HRESULT WINAPI network_callback(void *context,DWORD kind,void *message){
-    struct GameNetworkTransport *n=context;
-    if(kind==DPN_MSGID_CREATE_PLAYER){DPNMSG_CREATE_PLAYER *p=message;peer_info(n,p->dpnidPlayer);}
-    else if(kind==DPN_MSGID_PEER_INFO){DPNMSG_PEER_INFO *p=message;peer_info(n,p->dpnidPeer);}
-    else if(kind==DPN_MSGID_RECEIVE){DPNMSG_RECEIVE *p=message;
-        EnterCriticalSection(&n->lock);queue_locked(n,p->dpnidSender,p->pReceiveData,p->dwReceiveDataSize);LeaveCriticalSection(&n->lock);
-    }else if(kind==DPN_MSGID_DESTROY_PLAYER){DPNMSG_DESTROY_PLAYER *p=message;unsigned i;
-        EnterCriticalSection(&n->lock);
-        for(i=0;i<4;++i)if(n->peers[i].id==p->dpnidPlayer){
-            if(n->peers[i].published)system_locked(n,5,p->dpnidPlayer,NULL,NULL);
-            memset(&n->peers[i],0,sizeof(n->peers[i]));break;
+static int worker(void *context){
+    struct GameNetworkTransport *n=context;ENetEvent event;int stop;
+    for(;;){unsigned i,events=0;SDL_LockMutex(n->lock);stop=n->stop;
+        if(!stop){
+            while(events++<256 && enet_host_service(n->play,&event,0)>0){
+                if(event.type==ENET_EVENT_TYPE_CONNECT)connected(n,&event);
+                else if(event.type==ENET_EVENT_TYPE_RECEIVE){received(n,event.peer,event.packet->data,event.packet->dataLength);enet_packet_destroy(event.packet);}
+                else if(event.type==ENET_EVENT_TYPE_DISCONNECT){NetworkPeer *p=peer_link(n,event.peer);if(p)peer_departed(n,p);else if(event.peer==n->joining){n->joining=NULL;n->failed=1;}}
+            }
+            if(n->opened)for(i=0;i<4;++i){NetworkPeer *p=&n->peers[i];
+                if(p->id && p->id<n->local && p->id!=n->host && !p->link){p->link=enet_host_connect(n->play,&p->address,1,n->local);if(!p->link)n->failed=1;}
+            }
+            discovery_pump(n);enet_host_flush(n->play);
         }
-        LeaveCriticalSection(&n->lock);
-    }else if(kind==DPN_MSGID_HOST_MIGRATE){DPNMSG_HOST_MIGRATE *p=message;
-        /*The shared SDK description, not each peer's old local toggle, owns
-         * admission policy. Recover it before the new host can accept joins.*/
-        application_policy(n);
-        EnterCriticalSection(&n->lock);n->host=p->dpnidNewHost;
-        /*Retail DPSYS_HOST is delivered only to the newly selected host.*/
-        if(n->host==n->local)system_locked(n,257,n->host,NULL,NULL);
-        LeaveCriticalSection(&n->lock);
-    }else if(kind==DPN_MSGID_APPLICATION_DESC){
-        application_policy(n);
-    }else if(kind==DPN_MSGID_INDICATE_CONNECT){int accepting;
-        EnterCriticalSection(&n->lock);accepting=n->accepting;LeaveCriticalSection(&n->lock);
-        if(!accepting)return DPNERR_HOSTREJECTEDCONNECTION;
-    }else if(kind==DPN_MSGID_ENUM_HOSTS_RESPONSE){DPNMSG_ENUM_HOSTS_RESPONSE *p=message;NetworkSession *s,**at;
-        const DPN_APPLICATION_DESC *d=p->pApplicationDescription;
-        if(!d || !p->pAddressSender || !p->pAddressDevice)return S_OK;
-        /*DP8 session flags cannot be changed after Host. Its supported mutable
-         * application data carries admission to discovery and future hosts.*/
-        if(d->dwApplicationReservedDataSize==8 && d->pvApplicationReservedData &&
-           !memcmp(d->pvApplicationReservedData,open_policy,4) && !word((const uint8_t *)d->pvApplicationReservedData+4))return S_OK;
-        EnterCriticalSection(&n->lock);
-        if(!n->enumerating){LeaveCriticalSection(&n->lock);return S_OK;}
-        for(s=n->sessions;s;s=s->next)if(!memcmp(&s->guid,&d->guidInstance,16))break;
-        if(!s){
-            s=calloc(1,sizeof(*s));
-            if(!s || n->session_count>=NETWORK_SESSION_LIMIT || !narrow(d->pwszSessionName,s->name,sizeof(s->name))){free(s);n->failed=1;}
-            else if(FAILED(IDirectPlay8Address_Duplicate(p->pAddressSender,&s->host)) || FAILED(IDirectPlay8Address_Duplicate(p->pAddressDevice,&s->device))){
-                if(s->host)IDirectPlay8Address_Release(s->host);free(s);n->failed=1;
-            }else{memcpy(&s->guid,&d->guidInstance,16);
-                for(at=&n->sessions;*at && strcmp(s->name,(*at)->name)>=0;at=&(*at)->next){}
-                s->next=*at;*at=s;++n->session_count;}
-        }
-        LeaveCriticalSection(&n->lock);
-    }
-    return S_OK;
+        SDL_UnlockMutex(n->lock);if(stop)break;SDL_Delay(2);
+    }return 0;
 }
-static HRESULT WINAPI lobby_callback(void *context,DWORD kind,void *message){
-    (void)context;(void)kind;(void)message;return S_OK;
+static int begin(struct GameNetworkTransport *n,int hosting){
+    ENetAddress address={ENET_HOST_ANY,hosting?NETWORK_PORT:0};
+    if(n->play)return n->worker!=NULL;
+    n->play=enet_host_create(&address,8,1,0,0);if(!n->play)return 0;
+    n->play->maximumPacketSize=NETWORK_PACKET_LIMIT+HEADER_SIZE;n->play->maximumWaitingData=NETWORK_QUEUE_LIMIT;
+    if(!discovery_open(n,hosting))goto failed;
+    n->stop=0;n->worker=SDL_CreateThread(worker,"Uprising network",n);if(n->worker)return 1;
+failed:
+    enet_host_destroy(n->play);n->play=NULL;
+    if(n->discovery!=ENET_SOCKET_NULL)enet_socket_destroy(n->discovery);
+    n->discovery=ENET_SOCKET_NULL;return 0;
 }
-static void sessions_clear(struct GameNetworkTransport *n){NetworkSession *s;
-    while((s=n->sessions)!=NULL){n->sessions=s->next;IDirectPlay8Address_Release(s->host);IDirectPlay8Address_Release(s->device);free(s);}n->session_count=0;
-}
-static void packets_clear(struct GameNetworkTransport *n){NetworkPacket *p;
-    while((p=n->head)!=NULL){n->head=p->next;free(p);}n->tail=NULL;n->queued=0;
-}
-static void release(struct GameNetworkTransport *n){
-    if(!n)return;
-    /*Close waits for SDK callbacks before their queue/lock/context are freed.*/
-    if(n->play){if(n->initialized)IDirectPlay8Peer_Close(n->play,0);IDirectPlay8Peer_Release(n->play);}
-    if(n->lobby){IDirectPlay8LobbiedApplication_Close(n->lobby,0);IDirectPlay8LobbiedApplication_Release(n->lobby);}
-    sessions_clear(n);packets_clear(n);DeleteCriticalSection(&n->lock);
-    if(n->com_owned)CoUninitialize();
-    free(n);
-}
-static struct GameNetworkTransport *create(void){
-    struct GameNetworkTransport *n=calloc(1,sizeof(*n));HRESULT hr;
-    if(!n)return NULL;
-    InitializeCriticalSection(&n->lock);n->accepting=1;
-    hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);n->com_owned=SUCCEEDED(hr);
-    if(FAILED(hr) && hr!=RPC_E_CHANGED_MODE)goto fail;
-    hr=CoCreateInstance(&CLSID_DirectPlay8Peer,NULL,CLSCTX_INPROC_SERVER,&IID_IDirectPlay8Peer,(void **)&n->play);
-    if(FAILED(hr))goto fail;
-    hr=IDirectPlay8Peer_Initialize(n->play,n,network_callback,0);if(FAILED(hr))goto fail;
-    n->initialized=1;return n;
-fail:fprintf(stderr,"native DP8 initialization failed: %08lx\n",(unsigned long)hr);release(n);return NULL;
-}
-static int reinitialize(struct GameNetworkTransport *n){
-    if(n->initialized)return 1;
-    if(FAILED(IDirectPlay8Peer_Initialize(n->play,n,network_callback,0)))return 0;
-    n->initialized=1;return 1;
-}
-static IDirectPlay8Address *address(struct GameNetworkTransport *n,int remote,int hosting){
-    IDirectPlay8Address *p=NULL;char endpoint[256];DWORD length,port=NETWORK_PORT;WCHAR host[256];
-    if(FAILED(CoCreateInstance(&CLSID_DirectPlay8Address,NULL,CLSCTX_INPROC_SERVER,&IID_IDirectPlay8Address,(void **)&p)))return NULL;
-    if(FAILED(IDirectPlay8Address_SetSP(p,&n->provider)))goto fail;
-    if(!memcmp(&n->provider,&CLSID_DP8SP_TCPIP,16)){
-        if((remote || hosting) && FAILED(IDirectPlay8Address_AddComponent(p,DPNA_KEY_PORT,&port,sizeof(port),DPNA_DATATYPE_DWORD)))goto fail;
-        if(remote){length=GetEnvironmentVariableA("UPRISING_RECOMP_NETWORK_ADDRESS",endpoint,sizeof(endpoint));
-            if(length>=sizeof(endpoint))goto fail;
-            if(length && (!wide(endpoint,host,256) || FAILED(IDirectPlay8Address_AddComponent(p,DPNA_KEY_HOSTNAME,host,((DWORD)lstrlenW(host)+1)*sizeof(WCHAR),DPNA_DATATYPE_STRING))))goto fail;
-        }
-    }
-    return p;
-fail:IDirectPlay8Address_Release(p);return NULL;
-}
-void game_network_dispose(GameApplication *a){release(a->network);a->network=NULL;}
-int game_network_providers(GameApplication *a,GameAddress selector){
-    struct GameNetworkTransport *n=create();DPN_SERVICE_PROVIDER_INFO *providers=NULL;DWORD size=0,count=0,i;int ok=0;HRESULT hr;
+int game_network_transport_close(GameApplication *a){
+    struct GameNetworkTransport *n=a->network;unsigned i;uint64_t until;
     if(!n)return 0;
-    hr=IDirectPlay8Peer_EnumServiceProviders(n->play,NULL,NULL,NULL,&size,&count,0);
-    if(hr!=DPNERR_BUFFERTOOSMALL || !size || size>65536)goto done;
-    providers=malloc(size);if(!providers)goto done;
-    if(FAILED(IDirectPlay8Peer_EnumServiceProviders(n->play,NULL,NULL,providers,&size,&count,0)) || count>size/sizeof(*providers))goto done;
-    ok=1;for(i=0;i<count && ok;++i){uint8_t guid[16];char name[128];
-        if(!narrow(providers[i].pwszName,name,sizeof(name))){ok=0;break;}
-        /*Retain the existing TCP menu row's stable provider ID/localized label.*/
-        memcpy(guid,!memcmp(&providers[i].guid,&CLSID_DP8SP_TCPIP,16)?&DPSPGUID_TCPIP:&providers[i].guid,16);
-        ok=game_menu_network_provider_row(a,selector,guid,name);
+    if(n->play){
+        SDL_LockMutex(n->lock);n->opened=0;
+        /* Release the well-known discovery port before peers elect a successor. */
+        if(n->discovery!=ENET_SOCKET_NULL)enet_socket_destroy(n->discovery);
+        n->discovery=ENET_SOCKET_NULL;
+        for(i=0;i<n->play->peerCount;++i)if(n->play->peers[i].state==ENET_PEER_STATE_CONNECTED)enet_peer_disconnect_later(&n->play->peers[i],0);
+        enet_host_flush(n->play);SDL_UnlockMutex(n->lock);
+        until=SDL_GetTicks()+300;
+        while(n->worker && SDL_GetTicks()<until){int active=0;SDL_LockMutex(n->lock);for(i=0;i<n->play->peerCount;++i)if(n->play->peers[i].state!=ENET_PEER_STATE_DISCONNECTED)active=1;SDL_UnlockMutex(n->lock);if(!active)break;SDL_Delay(2);}
+        SDL_LockMutex(n->lock);n->stop=1;SDL_UnlockMutex(n->lock);if(n->worker)SDL_WaitThread(n->worker,NULL);n->worker=NULL;
+        /* Do not make survivors wait for a timeout if the graceful drain was
+         * bounded by a paused/debugged peer or by a congested link. */
+        for(i=0;i<n->play->peerCount;++i)if(n->play->peers[i].state!=ENET_PEER_STATE_DISCONNECTED)enet_peer_disconnect_now(&n->play->peers[i],0);
+        enet_host_destroy(n->play);n->play=NULL;
     }
-done:free(providers);release(n);return ok && !a->memory.fault;
+    if(n->discovery!=ENET_SOCKET_NULL)enet_socket_destroy(n->discovery);
+    n->discovery=ENET_SOCKET_NULL;
+    n->joining=NULL;n->opened=0;n->local=n->host=0;n->failed=0;n->accepting=1;
+    memset(n->peers,0,sizeof(n->peers));packets_clear(n);sessions_clear(n);return 1;
 }
-int game_network_provider_open(GameApplication *a,const uint8_t bytes[16]){
-    struct GameNetworkTransport *n;if(!bytes || !(n=create()))return 0;
-    memcpy(&n->provider,bytes,16);if(!memcmp(bytes,&DPSPGUID_TCPIP,16))n->provider=CLSID_DP8SP_TCPIP;
+void game_network_dispose(GameApplication *a){struct GameNetworkTransport *n=a->network;if(!n)return;
+    (void)game_network_transport_close(a);SDL_DestroyMutex(n->lock);if(n->enet_owned)enet_deinitialize();free(n);a->network=NULL;
+}
+static struct GameNetworkTransport *create(GameApplication *a){
+    struct GameNetworkTransport *n=calloc(1,sizeof(*n));if(!n)return NULL;
+    n->discovery=ENET_SOCKET_NULL;n->accepting=1;n->next_id=2;
+    n->lock=SDL_CreateMutex();if(!n->lock || enet_initialize()<0){if(n->lock)SDL_DestroyMutex(n->lock);free(n);return NULL;}
+    n->enet_owned=1;if(!game_memory_read(&a->memory,0x573bf8,n->application,16)){enet_deinitialize();SDL_DestroyMutex(n->lock);free(n);return NULL;}return n;
+}
+int game_network_providers(GameApplication *a,GameAddress selector){uint8_t guid[16];
+    return game_memory_read(&a->memory,0x577ce8,guid,16) && game_menu_network_provider_row(a,selector,guid,"LAN / Internet (ENet)");
+}
+int game_network_provider_open(GameApplication *a,const uint8_t bytes[16]){uint8_t known[16];struct GameNetworkTransport *n;
+    if(!bytes || !game_memory_read(&a->memory,0x577ce8,known,16) || memcmp(bytes,known,16) || !(n=create(a)))return 0;
     game_network_dispose(a);a->network=n;return 1;
 }
 int game_network_session_open(GameApplication *a,int hosting,const char *name,const uint8_t instance[16]){
-    struct GameNetworkTransport *n=a->network;DPN_APPLICATION_DESC d={0};IDirectPlay8Address *device=NULL;NetworkSession *s;
-    WCHAR title[128];HRESULT hr=E_INVALIDARG;
-    if(!n || !reinitialize(n) || !game_memory_read(&a->memory,0x573bf8,&d.guidApplication,16))return 0;
-    d.dwSize=sizeof(d);
+    struct GameNetworkTransport *n=a->network;int ok=0;uint64_t until;
+    if(!n)return 0;
     if(hosting){
-        if(!wide(name,title,128) || !(device=address(n,0,1)))return 0;
-        d.dwFlags=DPNSESSION_MIGRATE_HOST|DPNSESSION_NODPNSVR;d.dwMaxPlayers=4;d.pwszSessionName=title;
-        d.pvApplicationReservedData=(void *)open_policy;d.dwApplicationReservedDataSize=sizeof(open_policy);
-        hr=IDirectPlay8Peer_Host(n->play,&d,&device,1,NULL,NULL,NULL,0);IDirectPlay8Address_Release(device);
-    }else if(instance){
-        for(s=n->sessions;s && memcmp(&s->guid,instance,16);s=s->next){}
-        if(s){memcpy(&d.guidInstance,instance,16);hr=IDirectPlay8Peer_Connect(n->play,&d,s->host,s->device,NULL,NULL,NULL,0,NULL,NULL,NULL,DPNCONNECT_SYNC);}
+        uint64_t seed=SDL_GetPerformanceCounter();unsigned i;if(!name || strlen(name)>=128)return 0;
+        if(n->play && !game_network_transport_close(a))return 0;
+        if(!begin(n,1))return 0;
+        SDL_LockMutex(n->lock);for(i=0;i<4;++i)put_word(n->instance+i*4,SDL_rand_bits_r(&seed));
+        strcpy(n->name,name);n->local=n->host=1;n->next_id=2;n->peers[0].id=1;n->peers[0].address=n->play->address;n->opened=1;SDL_UnlockMutex(n->lock);return 1;
     }
-    if(FAILED(hr)){fprintf(stderr,"native DP8 %s failed: %08lx\n",hosting?"host":"join",(unsigned long)hr);return 0;}
-    n->opened=1;return 1;
+    if(!instance || !begin(n,0))return 0;
+    SDL_LockMutex(n->lock);{NetworkSession *s;for(s=n->sessions;s && memcmp(s->guid,instance,16);s=s->next){}
+        if(s){memcpy(n->instance,instance,16);n->joining=enet_host_connect(n->play,&s->address,1,JOIN_TOKEN);}}
+    ok=n->joining!=NULL;SDL_UnlockMutex(n->lock);if(!ok)return 0;
+    until=SDL_GetTicks()+5000;do{SDL_LockMutex(n->lock);ok=n->opened;int failed=n->failed;SDL_UnlockMutex(n->lock);if(ok || failed)break;SDL_Delay(2);}while(SDL_GetTicks()<until);
+    return ok;
 }
 int game_network_sessions(GameApplication *a,GameAddress selector,const uint8_t *selected){
-    struct GameNetworkTransport *n=a->network;DPN_APPLICATION_DESC d={0};IDirectPlay8Address *host=NULL,*device=NULL;NetworkSession *s;HRESULT hr;int ok=0;
-    if(!n || !reinitialize(n) || !game_memory_read(&a->memory,0x573bf8,&d.guidApplication,16))return 0;
-    d.dwSize=sizeof(d);
-    host=address(n,1,0);device=address(n,0,0);if(!host || !device)goto done;
-    EnterCriticalSection(&n->lock);sessions_clear(n);n->enumerating=1;LeaveCriticalSection(&n->lock);
-    hr=IDirectPlay8Peer_EnumHosts(n->play,&d,host,device,NULL,0,2,250,750,NULL,NULL,DPNENUMHOSTS_SYNC);
-    EnterCriticalSection(&n->lock);n->enumerating=0;LeaveCriticalSection(&n->lock);
-    if(FAILED(hr) || n->failed)goto done;
-    ok=1;for(s=n->sessions;s && ok;s=s->next)ok=game_menu_network_session_row(a,selector,(const uint8_t *)&s->guid,s->name,selected);
-done:if(host)IDirectPlay8Address_Release(host);if(device)IDirectPlay8Address_Release(device);return ok && !a->memory.fault;
+    struct GameNetworkTransport *n=a->network;NetworkSession *s;ENetAddress remote={ENET_HOST_BROADCAST,DISCOVERY_PORT};
+    const char *endpoint=SDL_getenv("UPRISING_RECOMP_NETWORK_ADDRESS");uint8_t query[20];ENetBuffer buffer;unsigned i;int ok=1;
+    if(!n || !begin(n,0) || (endpoint && *endpoint && enet_address_set_host(&remote,endpoint)<0))return 0;
+    buffer.data=query;buffer.dataLength=sizeof(query);memcpy(query,"UNQ2",4);memcpy(query+4,n->application,16);
+    SDL_LockMutex(n->lock);sessions_clear(n);n->enumerating=1;SDL_UnlockMutex(n->lock);
+    for(i=0;i<3;++i){SDL_LockMutex(n->lock);(void)enet_socket_send(n->discovery,&remote,&buffer,1);SDL_UnlockMutex(n->lock);SDL_Delay(250);}
+    SDL_LockMutex(n->lock);n->enumerating=0;
+    for(s=n->sessions;s && ok;s=s->next)ok=game_menu_network_session_row(a,selector,s->guid,s->name,selected);
+    ok=ok && !n->failed;SDL_UnlockMutex(n->lock);return ok && !a->memory.fault;
 }
-/*External lobby launches use the native DP8 lobby contract. No installed lobby
- * connection is an ordinary unavailable route, not a fabricated session.*/
+/* DirectPlay's external lobby ABI is retired. Explicit portable launch intent
+ * can still host or discover/join through these same real session functions. */
 int game_network_lobby_open(GameApplication *a){
-    struct GameNetworkTransport *n;DPL_CONNECTION_SETTINGS *settings=NULL;DWORD size=0,i;HRESULT hr;int ok=0,settings_owned=0;
+    const char *intent=SDL_getenv("UPRISING_NETWORK_LOBBY");uint8_t guid[16];
     if(a->network)return 1;
-    n=create();if(!n)return 0;
-    hr=CoCreateInstance(&CLSID_DirectPlay8LobbiedApplication,NULL,CLSCTX_INPROC_SERVER,&IID_IDirectPlay8LobbiedApplication,(void **)&n->lobby);if(FAILED(hr))goto done;
-    hr=IDirectPlay8LobbiedApplication_Initialize(n->lobby,n,lobby_callback,&n->lobby_connection,0);
-    if(FAILED(hr) || !n->lobby_connection)goto done;
-    hr=IDirectPlay8LobbiedApplication_GetConnectionSettings(n->lobby,n->lobby_connection,NULL,&size,0);
-    if(hr!=DPNERR_BUFFERTOOSMALL || size<sizeof(*settings) || size>65536)goto done;
-    settings=calloc(1,size);if(!settings)goto done;settings->dwSize=sizeof(*settings);
-    if(FAILED(IDirectPlay8LobbiedApplication_GetConnectionSettings(n->lobby,n->lobby_connection,settings,&size,0)))goto done;
-    settings_owned=1; /*The SDK adds a reference to each returned address.*/
-    if(!settings->cNumDeviceAddresses || !settings->ppdp8DeviceAddresses)goto done;
-    if(FAILED(IDirectPlay8Address_GetSP(settings->ppdp8DeviceAddresses[0],&n->provider)))goto done;
-    if(FAILED(IDirectPlay8Peer_RegisterLobby(n->play,n->lobby_connection,n->lobby,DPNLOBBY_REGISTER)))goto done;
-    settings->dpnAppDesc.dwMaxPlayers=4;settings->dpnAppDesc.dwFlags|=DPNSESSION_MIGRATE_HOST|DPNSESSION_NODPNSVR;
-    settings->dpnAppDesc.pvApplicationReservedData=(void *)open_policy;settings->dpnAppDesc.dwApplicationReservedDataSize=sizeof(open_policy);
-    if(settings->dwFlags&DPLCONNECTSETTINGS_HOST)hr=IDirectPlay8Peer_Host(n->play,&settings->dpnAppDesc,settings->ppdp8DeviceAddresses,settings->cNumDeviceAddresses,NULL,NULL,NULL,0);
-    else hr=IDirectPlay8Peer_Connect(n->play,&settings->dpnAppDesc,settings->pdp8HostAddress,settings->ppdp8DeviceAddresses[0],NULL,NULL,NULL,0,NULL,NULL,NULL,DPNCONNECT_SYNC);
-    if(FAILED(hr))goto done;
-    n->opened=1;a->network=n;n=NULL;ok=1;
-done:
-    if(settings_owned){
-        if(settings->pdp8HostAddress)IDirectPlay8Address_Release(settings->pdp8HostAddress);
-        if(settings->ppdp8DeviceAddresses)for(i=0;i<settings->cNumDeviceAddresses;++i)
-            if(settings->ppdp8DeviceAddresses[i])IDirectPlay8Address_Release(settings->ppdp8DeviceAddresses[i]);
-    }
-    free(settings);release(n);return ok;
+    if(!intent || strncmp(intent,"host:",5))return 0;
+    if(!game_memory_read(&a->memory,0x577ce8,guid,16) || !game_network_provider_open(a,guid))return 0;
+    return game_network_session_open(a,1,intent+5,NULL);
 }
 int game_network_capabilities(GameApplication *a,GameNetworkCapabilities *out){
-    struct GameNetworkTransport *n=a->network;DPN_SP_CAPS caps={0};DPN_CONNECTION_INFO info={0};DPNID local,host;
-    if(!n || !out)return 0;
-    caps.dwSize=sizeof(caps);if(FAILED(IDirectPlay8Peer_GetSPCaps(n->play,&n->provider,&caps,0)))return 0;
-    EnterCriticalSection(&n->lock);local=n->local;host=n->host;LeaveCriticalSection(&n->lock);
-    memset(out,0,sizeof(*out));out->flags=local && local==host?2:0;
-    /*DP8 has no advertised link baud rate. Zero stays unknown; the core's
-     * existing100ms fallback remains until real connection measurements exist.*/
-    if(host && host!=local){info.dwSize=sizeof(info);if(SUCCEEDED(IDirectPlay8Peer_GetConnectionInfo(n->play,host,&info,0))){
-        out->latency=info.dwRoundTripLatencyMS;out->hundred_baud=info.dwThroughputBPS/100u*8u;
-    }}return 1;
+    struct GameNetworkTransport *n=a->network;NetworkPeer *host;if(!n || !out)return 0;
+    SDL_LockMutex(n->lock);memset(out,0,sizeof(*out));out->flags=n->local && n->local==n->host?2:0;
+    host=peer_id(n,n->host);if(host && host->link)out->latency=host->link->roundTripTime;SDL_UnlockMutex(n->lock);return 1;
 }
 int game_network_player_create(GameApplication *a,const char *name,const uint8_t data[16],uint32_t *id){
-    struct GameNetworkTransport *n=a->network;DPN_PLAYER_INFO p={0};WCHAR title[128];
-    if(!n || !n->opened || !data || !id || !wide(name,title,128))return 0;
-    p.dwSize=sizeof(p);p.dwInfoFlags=DPNINFO_NAME|DPNINFO_DATA;p.pwszName=title;p.pvData=(void *)data;p.dwDataSize=16;
-    if(FAILED(IDirectPlay8Peer_SetPeerInfo(n->play,&p,NULL,NULL,DPNSETPEERINFO_SYNC)))return 0;
-    EnterCriticalSection(&n->lock);*id=n->local;LeaveCriticalSection(&n->lock);return *id!=0;
+    struct GameNetworkTransport *n=a->network;NetworkPeer *local,*host;int ok=1;
+    if(!n || !name || strlen(name)>=128 || !data || !id)return 0;
+    SDL_LockMutex(n->lock);local=peer_id(n,n->local);host=peer_id(n,n->host);
+    if(!n->opened || !local || !host)ok=0;
+    else{memcpy(local->metadata,data,16);strcpy(local->name,name);local->ready=1;*id=n->local;
+        if(n->local==n->host)snapshots(n);
+        else{uint8_t metadata[144]={0};memcpy(metadata,data,16);strcpy((char *)metadata+16,name);ok=send_wire(n,host->link,WIRE_METADATA,n->local,n->host,metadata,sizeof(metadata));}}
+    SDL_UnlockMutex(n->lock);return ok;
 }
 uint32_t game_network_receive_result(GameApplication *a,uint32_t *sender,uint32_t *receiver,uint8_t *data,uint32_t *size){
-    struct GameNetworkTransport *n=a->network;NetworkPacket *p;uint32_t result=DP_OK;
-    if(!n || !sender || !receiver || !data || !size)return (uint32_t)DPERR_INVALIDPARAMS;
-    EnterCriticalSection(&n->lock);p=n->head;
-    if(n->failed)result=(uint32_t)DPERR_GENERIC;
-    else if(!p)result=(uint32_t)DPERR_NOMESSAGES;
-    else{*sender=p->sender;*receiver=n->local;if(*size<p->size)result=(uint32_t)DPERR_BUFFERTOOSMALL;
+    struct GameNetworkTransport *n=a->network;NetworkPacket *p;uint32_t result=RESULT_OK;
+    if(!n || !sender || !receiver || !data || !size)return RESULT_ARGUMENT;
+    SDL_LockMutex(n->lock);p=n->head;
+    if(n->failed)result=RESULT_FAILED;else if(!p)result=RESULT_EMPTY;
+    else{*sender=p->sender;*receiver=n->local;if(*size<p->size)result=RESULT_SMALL;
         else{if(p->size)memcpy(data,p->data,p->size);n->head=p->next;if(!n->head)n->tail=NULL;n->queued-=(uint32_t)sizeof(*p)+p->size;}
-        *size=p->size;if(!result)free(p);
-    }
-    LeaveCriticalSection(&n->lock);return result;
+        *size=p->size;if(!result)free(p);}
+    SDL_UnlockMutex(n->lock);return result;
 }
-int game_network_receive(GameApplication *a,uint32_t *sender,uint32_t *receiver,uint8_t *data,uint32_t *size){
-    uint32_t result=game_network_receive_result(a,sender,receiver,data,size);return result==(uint32_t)DPERR_NOMESSAGES?0:result==DP_OK?1:-1;
-}
-int game_network_transport_close(GameApplication *a){
-    struct GameNetworkTransport *n=a->network;HRESULT hr;
-    if(!n)return 0;
-    if(!n->initialized)return 1;
-    hr=IDirectPlay8Peer_Close(n->play,0);if(FAILED(hr))return 0;
-    n->initialized=0;n->opened=0;n->local=n->host=0;n->failed=0;n->accepting=1;
-    memset(n->peers,0,sizeof(n->peers));packets_clear(n);sessions_clear(n);return 1;
-}
-uint32_t game_network_milliseconds(GameApplication *a){(void)a;return (uint32_t)(uint32_t)SDL_GetTicks();}
-static uint32_t result_code(HRESULT hr){
-    if(SUCCEEDED(hr))return DP_OK;
-    if(hr==DPNERR_INVALIDPLAYER || hr==DPNERR_PLAYERLOST || hr==DPNERR_PLAYERNOTREACHABLE)return (uint32_t)DPERR_INVALIDPLAYER;
-    if(hr==DPNERR_INVALIDOBJECT || hr==DPNERR_UNINITIALIZED || hr==DPNERR_NOCONNECTION)return (uint32_t)DPERR_INVALIDOBJECT;
-    if(hr==DPNERR_NOTREADY || hr==DPNERR_CONNECTING)return (uint32_t)DPERR_BUSY;
-    return (uint32_t)hr;
-}
+int game_network_receive(GameApplication *a,uint32_t *sender,uint32_t *receiver,uint8_t *data,uint32_t *size){uint32_t result=game_network_receive_result(a,sender,receiver,data,size);return result==RESULT_EMPTY?0:result==RESULT_OK?1:-1;}
+uint32_t game_network_milliseconds(GameApplication *a){(void)a;return (uint32_t)SDL_GetTicks();}
 uint32_t game_network_send_result(GameApplication *a,uint32_t from,uint32_t to,const uint8_t *data,uint32_t size){
-    struct GameNetworkTransport *n=a->network;DPN_BUFFER_DESC p;DPNID local;
-    if(!n || (!data && size) || size>NETWORK_PACKET_LIMIT)return (uint32_t)DPERR_INVALIDPARAMS;
-    EnterCriticalSection(&n->lock);local=n->local;LeaveCriticalSection(&n->lock);
-    if(from!=local || !local)return (uint32_t)DPERR_INVALIDPLAYER;
-    p.dwBufferSize=size;p.pBufferData=(BYTE *)data;
-    return result_code(IDirectPlay8Peer_SendTo(n->play,to,&p,1,0,NULL,NULL,DPNSEND_SYNC|DPNSEND_NOLOOPBACK));
+    struct GameNetworkTransport *n=a->network;NetworkPeer *host;uint32_t result=RESULT_OK;
+    if(!n || (!data && size) || size>NETWORK_PACKET_LIMIT)return RESULT_ARGUMENT;
+    SDL_LockMutex(n->lock);host=peer_id(n,n->host);
+    if(!n->opened || n->failed)result=RESULT_OBJECT;
+    else if(!from || from!=n->local || (to && !peer_id(n,to)))result=RESULT_PLAYER;
+    else if(n->local==n->host){route_game(n,from,to,data,size);if(n->failed)result=RESULT_FAILED;}
+    else if(!host || !send_wire(n,host->link,WIRE_GAME,from,to,data,size))result=RESULT_BUSY;
+    SDL_UnlockMutex(n->lock);return result;
 }
-int game_network_send(GameApplication *a,uint32_t from,uint32_t to,const uint8_t *data,uint32_t size){return game_network_send_result(a,from,to,data,size)==DP_OK;}
-int game_network_player_destroy(GameApplication *a,uint32_t id){
-    struct GameNetworkTransport *n=a->network;DPNID local;
+int game_network_send(GameApplication *a,uint32_t from,uint32_t to,const uint8_t *data,uint32_t size){return game_network_send_result(a,from,to,data,size)==RESULT_OK;}
+int game_network_player_destroy(GameApplication *a,uint32_t id){struct GameNetworkTransport *n=a->network;NetworkPeer *p;unsigned i;
     if(!n)return 0;
-    EnterCriticalSection(&n->lock);local=n->local;LeaveCriticalSection(&n->lock);
-    if(id==local)return game_network_transport_close(a);
-    /*The roster also requests destruction after a real SDK departure.*/
-    {HRESULT hr=IDirectPlay8Peer_DestroyPeer(n->play,id,NULL,0,0);
-     return SUCCEEDED(hr) || hr==DPNERR_INVALIDPLAYER || hr==DPNERR_PLAYERLOST;}
+    SDL_LockMutex(n->lock);
+    if(id==n->local){SDL_UnlockMutex(n->lock);return game_network_transport_close(a);}
+    p=peer_id(n,id);
+    if(p && n->local==n->host){uint8_t data[4];put_word(data,id);for(i=0;i<4;++i)if(n->peers[i].id && n->peers[i].id!=n->local && n->peers[i].id!=id)(void)send_wire(n,n->peers[i].link,WIRE_LEAVE,n->local,0,data,4);
+        if(p->link)enet_peer_disconnect_now(p->link,0);
+        peer_departed(n,p);}
+    SDL_UnlockMutex(n->lock);return 1;
 }
-int game_network_enable_players(GameApplication *a,int enabled){
-    struct GameNetworkTransport *n=a->network;DPN_APPLICATION_DESC *d;HRESULT hr;uint8_t policy[8];
+int game_network_enable_players(GameApplication *a,int enabled){struct GameNetworkTransport *n=a->network;
     if(!n)return 0;
-    d=application_description(n);
-    if(!d){DWORD bytes=0;char diagnostic[128];hr=IDirectPlay8Peer_GetApplicationDesc(n->play,NULL,&bytes,0);
-        snprintf(diagnostic,sizeof(diagnostic),"native DP8 description unavailable: result=%08lx size=%lu",(unsigned long)hr,(unsigned long)bytes);
-        game_application_log(a,"%s\n",diagnostic);return 0;}
-    /*Only supported mutable SDK application data carries this8-byte service
-     * record. The SDK owns its copy across migration; gameplay packets stay
-     * unchanged. Local accepting is the callback cache of that shared policy.*/
-    memcpy(policy,open_policy,sizeof(policy));put_word(policy+4,!!enabled);
-    d->pvApplicationReservedData=policy;d->dwApplicationReservedDataSize=sizeof(policy);
-    hr=IDirectPlay8Peer_SetApplicationDesc(n->play,d,0);free(d);
-    if(FAILED(hr)){char diagnostic[128];snprintf(diagnostic,sizeof(diagnostic),"native DP8 admission failed: enabled=%d result=%08lx",!!enabled,(unsigned long)hr);game_application_log(a,"%s\n",diagnostic);return 0;}
-    application_policy(n);
-    EnterCriticalSection(&n->lock);enabled=!n->failed;LeaveCriticalSection(&n->lock);return enabled;
+    SDL_LockMutex(n->lock);if(n->local!=n->host){SDL_UnlockMutex(n->lock);return 0;}
+    n->accepting=!!enabled;snapshots(n);int ok=!n->failed;SDL_UnlockMutex(n->lock);return ok;
 }
 int game_network_decode_system(GameApplication *a,const uint8_t *p,uint32_t size){
     uint32_t type;if(!size)return !a->memory.fault;if(!p || size<16)return 0;type=word(p);
-    if(type==3){if(size<33 || word(p+12)!=16 || !memchr(p+32,0,size-32))return 0;
-        return game_network_system_player(a,3,word(p+4),p+16,16,(const char *)p+32);}
+    if(type==3){if(size<33 || word(p+12)!=16 || !memchr(p+32,0,size-32))return 0;return game_network_system_player(a,3,word(p+4),p+16,16,(const char *)p+32);}
     if(type==5)return game_network_system_player(a,5,word(p+4),NULL,0,NULL);
     return !a->memory.fault;
 }
 int game_network_decode_clock_system(const uint8_t *p,uint32_t size,GameNetworkSystemEvent *out){
     if(!p || !out || size<16)return 0;
     memset(out,0,sizeof(*out));
-    if(word(p)==5){out->type=5;out->player_type=word(p+8);out->player_id=word(p+4);}
-    else if(word(p)==257)out->type=257;
-    return 1;
+    if(word(p)==5){out->type=5;out->player_type=word(p+8);out->player_id=word(p+4);}else if(word(p)==257)out->type=257;return 1;
 }

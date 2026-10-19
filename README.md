@@ -31,6 +31,13 @@ architectures. The old music DLLs and `winmm.ini` are no longer required.
 Music/effects volume and track preferences use `CONFIG/settings.ini`; volume
 controls affect the game, leaving desktop volume alone.
 
+Multiplayer's TCP/IP menu entry now uses ENet reliable UDP between reconstructed
+builds (up to four players), with LAN discovery and host migration. Allow UDP
+ports 2302 (initial host) and 2303 (discovery), plus peer traffic, through your
+firewall. Retail/older DirectPlay builds, external DirectPlay lobbies, IPX,
+modem and serial-cable connections are not compatible. Separate-machine and
+internet play still need manual acceptance.
+
 ## Building
 
 From the repository root, run `source\scripts\build.bat` or:

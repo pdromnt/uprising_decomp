@@ -23,6 +23,10 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 - In busy combat, switch views, pause, minimize/restore and exit the mission. Watch
   for hangs, persistent allocations and FPS degradation across mission changes.
 - Exercise weapon/building lists and multiplayer routes with consistent names.
+  Use current reconstructed builds on separate machines; check LAN discovery,
+  joining, four players, chat/ready/start, host departure, closed-session admission
+  and repeated connections. TCP/IP now selects ENet UDP; old DirectPlay peers
+  and serial/modem/IPX providers are unsupported.
 
 Record concrete failures with mission, action and screenshot/log where useful.
 Compare performance under matching mission, camera and activity. A smoke pass

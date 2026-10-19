@@ -9,6 +9,11 @@ adapted from TOU: Bluetooth VID/PID `045e:0b13` endpoints use SDL's existing Xbo
 HIDAPI parser. Wired XGIP proxy endpoints retain their original filtering.
 SDL's upstream license applies to the modified driver.
 
+ENet 1.3.18 (upstream tag `v1.3.18`, commit
+`2662c0de09e36f2a2030ccc2c528a3e4c9e8138a`) is fetched from lsalzman/enet and
+linked statically under the MIT license. Its license is preserved in
+`source/third_party/enet-LICENSE.txt` and included in binary packages.
+
 Portions of this software are copyright © 2026 The FreeType Project
 (https://freetype.org/). All rights reserved. FreeType 2.14.3 is linked under
 the FreeType License, reproduced in `source/third_party/FreeType-FTL.txt` and

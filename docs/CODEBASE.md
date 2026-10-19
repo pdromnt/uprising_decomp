@@ -72,5 +72,17 @@ thread. App-local music/effects gains replace system volume manipulation.
 DirectSound, MCI/AUX/WAVE audio calls and the native SDL message hook are removed.
 
 The legacy I-FORCE SDK/input/effect route is removed; SDL joystick and haptic
-ownership is independent. DirectPlay still uses Windows services.
-Next: network transport and remaining Windows services.
+ownership is independent.
+
+`platform/portable_network.c` owns ENet sessions, SDL worker/mutex, bounded copied
+receive/outgoing queues and UDP discovery. Game packets and roster/clock consumers
+retain their byte layouts and IDs. A versioned envelope carries session/peer IDs;
+normal traffic goes through the elected host, while mesh links support migration.
+Admission policy follows the session to its successor. No COM/DirectPlay objects
+or callbacks remain. The TCP/IP menu row retains its stable selection ID; obsolete
+serial/modem/IPX providers are not advertised. LAN discovery uses UDP 2303 and the
+initial host uses UDP 2302; migrated hosts/other peers use their bound UDP ports.
+`UPRISING_RECOMP_NETWORK_ADDRESS` can direct discovery to a hostname/IPv4 address.
+The optional `UPRISING_NETWORK_LOBBY=host:name` launch intent hosts a native session;
+the old external DirectPlay lobby ABI is retired. Neither is required for menu play.
+Next: remaining Windows services.

@@ -2,8 +2,8 @@
 #define UPRISING_MENU_NETWORK_H
 #include "application_entry.h"
 typedef struct GameNetworkCapabilities {uint32_t flags,hundred_baud,latency;} GameNetworkCapabilities;
-/*Native transport owns its interfaces. IDs/data remain fixed-width; no record
- * contains a COM pointer or a host calling convention. */
+/* Native transport owns sockets, worker and copied events. IDs/data remain
+ * fixed-width; records contain no library pointers or host calling convention. */
 int game_network_lobby_open(GameApplication *);
 int game_network_capabilities(GameApplication *,GameNetworkCapabilities *);
 int game_network_player_create(GameApplication *,const char *,const uint8_t[16],uint32_t *);

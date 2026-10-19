@@ -10,7 +10,9 @@
   pending, including Xbox Series Bluetooth detection with the TOU-derived SDL
   endpoint fix. Check new audio levels, voices, movie sync, music controls and reload
   cleanup manually. Legacy I-FORCE support is removed; SDL joystick/haptics remain.
-  Next: network transport and Windows services.
+  ENet replaces DirectPlay; validate separate-machine discovery, four players,
+  abrupt disconnect/reconnect, mission cycles and congested links manually.
+  Next: remaining Windows services.
 - After the SDL3 migration, remove legacy code and dependencies that are no longer
   used.
 - Once the SDL3 build is stable, add FSR upscaling.

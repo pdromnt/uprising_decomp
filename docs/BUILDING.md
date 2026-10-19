@@ -14,8 +14,9 @@ subsequent builds reuse their shared source caches. Both are linked statically,
 with no additional DLL installation or launch flags. Windows, menu surfaces,
 font rendering, physical input and OpenGL contexts now use portable services.
 Audio/music also use SDL3 with the bundled stb_vorbis decoder. Joystick input and
-periodic haptics use SDL3; the legacy I-FORCE SDK is removed. Networking still
-has a Windows backend.
+periodic haptics use SDL3; the legacy I-FORCE SDK is removed. Networking uses
+checksum-pinned ENet 1.3.18, also downloaded once and linked statically. DirectPlay
+installation is no longer required.
 The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
 to the original fonts; keep the complete FONTS directory with the executable.
 

@@ -62,10 +62,6 @@ static void joystick_close(GameInputDevices *d){
     d->effect=-1;
     if(d->initialized&SDL_INIT_HAPTIC){SDL_QuitSubSystem(SDL_INIT_HAPTIC);d->initialized&=~SDL_INIT_HAPTIC;}
 }
-static const uint32_t input_slots[]={0x604494u,0x604c1cu,0x604c2cu,0x604530u,0x6044ccu,0x604d6cu,0x604d68u};
-static void publish(GameInputDevices *d,unsigned slot,int present){
-    game_memory_write_u32(&d->application->memory,input_slots[slot],present?0xf6000000u+slot*16u:0u);
-}
 static void enqueue(GameInputDevices *d,unsigned which,uint32_t offset,uint32_t value,uint32_t tick){
     InputQueue *q=&d->queues[which];GameInputEvent *e;
     if(q->count==256){q->first=(q->first+1)%256;--q->count;q->overflow=1;}
@@ -200,7 +196,7 @@ static void joystick_open(GameInputDevices *d){
             (void)SDL_SetHapticAutocenter(d->haptic,100);
         }
     }
-    game_memory_write_u32(m,0x604c30,d->effect>=0);publish(d,3,1);publish(d,4,d->effect>=0);
+    game_memory_write_u32(m,0x604c30,d->effect>=0);
     game_memory_write_u32(m,0x604bf0,44);game_memory_write_u32(m,0x604bf4,d->effect>=0?0x100:0);
     game_memory_write_u32(m,0x604bfc,axes);game_memory_write_u32(m,0x604c00,buttons);game_memory_write_u32(m,0x604c04,hats);
     game_memory_write_u32(m,0x604768,1);
@@ -211,7 +207,7 @@ int game_input_devices_begin(GameApplication *a){
     d=calloc(1,sizeof(*d));if(!d)return 0;
     d->application=a;d->effect=-1;a->input_devices=d;
     d->acquired=!game_application_isolated_input(a) && SDL_GetKeyboardFocus()==game_menu_sdl_window(a);
-    publish(d,0,1);publish(d,1,1);publish(d,2,1);publish(d,5,1);publish(d,6,1);
+
     game_memory_write_u32(&a->memory,0x604768,0);game_memory_write_u32(&a->memory,0x604c30,0);
     settings=game_memory_read_u32(&a->memory,0x5943c8);
     if(!game_application_isolated_input(a) && game_memory_read_u32(&a->memory,settings+0x50)){
@@ -242,8 +238,8 @@ int game_menu_input_unacquire(GameApplication *a){
     return 1;
 }
 void game_input_devices_end(GameApplication *a){
-    GameInputDevices *d=a->input_devices;unsigned i;if(!d)return;a->input_devices=NULL;
-    for(i=0;i<7;++i)publish(d,i,0);
+    GameInputDevices *d=a->input_devices;if(!d)return;a->input_devices=NULL;
+
     game_memory_write_u32(&a->memory,0x604768,0);game_memory_write_u32(&a->memory,0x604c30,0);
     joystick_close(d);
     if(d->initialized)SDL_QuitSubSystem((SDL_InitFlags)d->initialized);

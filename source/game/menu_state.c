@@ -7,7 +7,6 @@ extern int game_menu_register_delivery(GameApplication *, GameAddress, GameAddre
 extern int game_menu_bootstrap(GameApplication *, GameAddress);
 extern int game_menu_initial_widgets_construct(GameApplication *, GameAddress);
 extern int game_menu_shutdown_systems(GameApplication *); /* Actual 00541230. */
-extern int game_menu_audio_restore(GameApplication *);
 extern int game_menu_command_start(GameApplication *);
 extern int game_menu_music_start(GameApplication *, uint32_t);
 extern int game_menu_strategic_state(GameApplication *,uint32_t);
@@ -179,7 +178,7 @@ int game_menu_state(GameApplication *a,GameAddress event,uint32_t state,uint32_t
         if (!phase) {
             if (!game_menu_settings_end(a)) return 0;
             game_memory_write_u32(m,0x59d4c8u,1u);
-            if (!game_menu_shutdown_systems(a) || !game_menu_audio_restore(a)) return 0;
+            if (!game_menu_shutdown_systems(a)) return 0;
         }
         return !m->fault;
     }

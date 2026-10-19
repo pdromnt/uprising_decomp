@@ -89,8 +89,8 @@ static int audio_open(void){
     return 1;
 }
 int sound_platform_owns(GameAddress id){int result;lock_sound();result=find_sound(id,1)!=NULL || find_sound(id,2)!=NULL;unlock_sound();return result;}
-GameAddress sound_platform_device(void *window,const uint8_t *guid,int muted){
-    GameAddress id;const char *silent=getenv("UPRISING_RECOMP_SILENT_NATIVE_SOUND");(void)window;(void)guid;
+GameAddress sound_platform_device(int muted){
+    GameAddress id;const char *silent=getenv("UPRISING_RECOMP_SILENT_NATIVE_SOUND");
     if(!audio_open())return 0;
     lock_sound();id=own_sound(1,muted || (silent && !strcmp(silent,"1")));unlock_sound();return id;
 }

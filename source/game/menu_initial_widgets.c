@@ -1,3 +1,5 @@
+#include "menu_music.h"
+#include "sound_platform.h"
 #include "menu_widgets.h"
 #include "scene_projection_storage.h"
 #include <stdio.h>
@@ -7,8 +9,6 @@ extern int game_menu_event_release_assets(GameApplication *,GameAddress);
 extern int game_menu_popup_initialize(GameApplication *); /* 00524af0. */
 extern int game_menu_text_cache_initialize(GameApplication *); /* 0054bf70. */
 extern int game_menu_sound_bank_load(GameApplication *,uint32_t);
-extern uint32_t game_menu_aux_volume_read(GameApplication *);
-extern uint32_t game_menu_wave_volume_read(GameApplication *);
 
 static uint32_t get(GameApplication *a,GameAddress p,unsigned o) {return game_memory_read_u32(&a->memory,p+o);}
 static void put(GameApplication *a,GameAddress p,unsigned o,uint32_t v) {game_memory_write_u32(&a->memory,p+o,v);}
@@ -122,10 +122,10 @@ int game_menu_initial_widgets_construct(GameApplication *a,GameAddress event) {
     transparent(a,p);
     memcpy(&scale,&bits,4);
     p=game_menu_slider_create(a,UINT32_MAX,0x58c4e0,27,85,0x52ca10,5,
-        (float)((long double)(game_menu_aux_volume_read(a)&65535u)*scale+1.0L),0,0,0);
+        (float)((long double)(game_music_volume_read()&65535u)*scale+1.0L),0,0,0);
     if(!publish(a,event+0xd8,p))goto fail;
     p=game_menu_slider_create(a,UINT32_MAX,0x58c504,27,85,0x52ca60,5,
-        (float)((long double)(game_menu_wave_volume_read(a)&65535u)*scale+1.0L),0,0x52cab0,0x52cae0);
+        (float)((long double)(sound_platform_master_volume_read()&65535u)*scale+1.0L),0,0x52cab0,0x52cae0);
     if(!publish(a,event+0xdc,p) ||
        !publish(a,event+0xc0,button(a,UINT32_MAX,0x58c568,0x58c548,0x58c528,0x52c660,0,144,145)))goto fail;
     return !a->memory.fault && game_menu_popup_initialize(a) && game_menu_sound_bank_load(a,1) && game_menu_text_cache_initialize(a);

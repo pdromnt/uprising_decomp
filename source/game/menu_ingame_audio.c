@@ -1,12 +1,11 @@
-#include "menu_widgets.h"
 #include "menu_music.h"
+#include "sound_platform.h"
+#include "menu_widgets.h"
 #include <string.h>
 extern int game_menu_ingame_4c3110(GameApplication *,uint32_t);
 extern int game_menu_register_tick(GameApplication *,GameAddress,GameAddress,uint32_t,uint32_t);
 extern int game_menu_unregister_tick_method(GameApplication *,GameAddress,uint32_t);
 extern int game_menu_music_label_tick(GameApplication *);
-extern uint32_t game_menu_aux_volume_read(GameApplication *);
-extern uint32_t game_menu_wave_volume_read(GameApplication *);
 static uint32_t get(GameApplication *a,GameAddress p){return game_memory_read_u32(&a->memory,p);}
 static void put(GameApplication *a,GameAddress p,uint32_t v){game_memory_write_u32(&a->memory,p,v);}
 static const GameAddress music_slots[]={0x591128,0x59112c,0x591134,0x591130,0x591138,0x59113c,0x591140};
@@ -112,7 +111,7 @@ int game_menu_ingame_4c4e00(GameApplication *a,uint32_t phase){
     for(i=0;i<4;++i)if(get(a,sound_slots[i]))return 0;
     if(!background(a,sound_slots[0],large?0x593a00:0x593908,&x,&y))goto failed;
     bits=get(a,0x574924);memcpy(&scale,&bits,4);
-    for(i=0;i<2;++i){uint32_t volume=i?game_menu_wave_volume_read(a):game_menu_aux_volume_read(a);
+    for(i=0;i<2;++i){uint32_t volume=i?sound_platform_master_volume_read():game_music_volume_read();
         float value=(float)((long double)(volume&65535u)*scale);
         p=game_menu_slider_create(a,UINT32_MAX,i?(large?0x593a58:0x593960):(large?0x593a30:0x593938),
             large?150:102,large?25:20,i?0x52ca10:0x52ca60,6,value,1,i?0:0x52cab0,i?0:0x52cae0);

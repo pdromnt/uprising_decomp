@@ -1,12 +1,11 @@
+#include "menu_music.h"
+#include "sound_platform.h"
 #include "menu_settings.h"
 #include "game_initializers.h"
 #include <math.h>
 #include <string.h>
 
 extern int game_menu_startup_systems(GameApplication *); /* Actual 00505b30. */
-extern int game_menu_audio_initialize(GameApplication *);
-extern int game_menu_aux_volume(GameApplication *,uint32_t);
-extern int game_menu_wave_volume(GameApplication *,uint32_t);
 
 static long double read_double(GameMemory *m,GameAddress address) {
     uint64_t bits=game_memory_read_u32(m,address);double value;
@@ -42,11 +41,10 @@ int game_menu_bootstrap(GameApplication *a,GameAddress event) {
     (void)event;
     if(!initialize_render_state(a) || !game_menu_startup_systems(a) ||
         !game_menu_settings_begin(a))return 0;
-    (void)game_menu_audio_initialize(a); /* Original discovery is optional. */
     settings=game_memory_read_u32(m,0x5943c8u);
     volume=game_memory_read_u32(m,settings+0x54u);
-    if(volume!=UINT32_MAX && !game_menu_aux_volume(a,volume))return 0;
+    if(volume!=UINT32_MAX)game_music_volume(volume);
     volume=game_memory_read_u32(m,settings+0x58u);
-    if(volume!=UINT32_MAX && !game_menu_wave_volume(a,volume))return 0;
+    if(volume!=UINT32_MAX)sound_platform_master_volume(volume);
     return !m->fault;
 }

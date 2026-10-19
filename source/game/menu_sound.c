@@ -13,8 +13,6 @@
 extern int game_application_audio_muted(GameApplication *);
 
 extern int game_menu_request(GameApplication *,GameAddress,uint32_t,uint32_t,uint32_t);
-extern int game_menu_aux_volume(GameApplication *,uint32_t);
-extern int game_menu_wave_volume(GameApplication *,uint32_t);
 extern int game_menu_strategic_modal_action(GameApplication *,uint32_t);
 
 static int buffer_owned(GameApplication *a,GameAddress buffer) {
@@ -113,7 +111,7 @@ int game_menu_sound_bank_begin(GameApplication *a) {
     GameAddress bank,device,auxiliary=0;
     if(game_memory_read_u32(m,0x628a90u))return 0;
     bank=allocate(a,0x480u);if(!bank)return 0;
-    device=sound_platform_device(NULL,NULL,game_application_audio_muted(a));
+    device=sound_platform_device(game_application_audio_muted(a));
     sound_bank_initialize(m,bank,device);
     game_memory_write_u32(m,bank+8u,0x3f800000u);
     if(!m->fault && append_name(m,0x59c678u,path,&used) &&
@@ -376,10 +374,10 @@ int game_menu_button_callback(GameApplication *a,uint32_t method,GameAddress rec
         if(isfinite(scaled) && scaled>=-9223372036854775808.0L && scaled<9223372036854775808.0L)
             volume=(uint32_t)(uint64_t)(int64_t)truncl(scaled)&0xffffu;
         if(method==0x52ca10u) {
-            if(!game_menu_aux_volume(a,volume))return 0;
+            game_music_volume(volume);
             game_memory_write_u32(m,settings+0x54,volume);
         } else {
-            if(!game_menu_wave_volume(a,volume))return 0;
+            sound_platform_master_volume(volume);
             game_memory_write_u32(m,settings+0x58,volume);
         }
         return !m->fault;

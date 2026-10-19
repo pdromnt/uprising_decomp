@@ -47,6 +47,8 @@ The HWND property accessor remains only for existing Windows debugger fixtures.
 
 CMake lists all shipping translation units explicitly. CPU/generated instruction
 execution and oracle sources are absent from the build.
+Unused guest-stack/CRT scaffolding and teardown dispatch metadata are retired;
+the remaining runtime helpers serve actual native callers.
 
 The OpenGL device in `platform/portable_gl1.inc` is called directly, without a
 Glide SDK function table or fallback loader. `core/render_texture_cache.c` uses
@@ -69,6 +71,7 @@ translation, fractional relative motion, joystick sampling and periodic haptics.
 Saved bindings and joystick ranges remain stable. Focus loss publishes releases;
 the game loop consumes input and advances simulation in the same iteration.
 The former DirectInput service and Windows keyboard/focus hooks are removed.
+Input no longer publishes unused synthetic device identities.
 Windows discovery opts into GameInput/WGI where SDL was built with those drivers;
 the current MinGW build uses HIDAPI/XInput. A narrow build-time SDL patch
 allows Xbox Series BLE (`045e:0b13`) Bluetooth endpoints through its Xbox HIDAPI
@@ -79,6 +82,8 @@ through SDL3. Duplicate voices share immutable clips. `portable_music.c` streams
 OGG with stb_vorbis and reports completion to the existing playlist on the main
 thread. App-local music/effects gains replace system volume manipulation.
 DirectSound, MCI/AUX/WAVE audio calls and the native SDL message hook are removed.
+Menus read and set the native music/mixer gains directly; obsolete discovery,
+system-volume snapshots and restore wrappers are removed.
 
 The legacy I-FORCE SDK/input/effect route is removed; SDL joystick and haptic
 ownership is independent.
@@ -94,4 +99,4 @@ initial host uses UDP 2302; migrated hosts/other peers use their bound UDP ports
 `UPRISING_RECOMP_NETWORK_ADDRESS` can direct discovery to a hostname/IPv4 address.
 The optional `UPRISING_NETWORK_LOBBY=host:name` launch intent hosts a native session;
 the old external DirectPlay lobby ABI is retired. Neither is required for menu play.
-Next: unused legacy cleanup and stabilization. Other platforms remain unvalidated.
+Next: stabilization and manual acceptance. Other platforms remain unvalidated.

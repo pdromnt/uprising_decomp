@@ -177,11 +177,8 @@ static void display_unfinished(GameApplication *a,const char *kind,uint32_t iden
     char message[112];snprintf(message,sizeof(message),"%s requires native reconstruction: %08x",kind,(unsigned)identity);
     game_application_log(a,"%s\n",message);
 }
-/*517830: retire the actual display owners, not their published identities.
- * Older auxiliary COM services have no native producer yet. A nonzero unknown
- * identity is an unfinished route, never permission to discard its owner. */
+/*517830: retire the SDL surfaces and their published aliases. */
 int game_level_display_end(GameApplication *a) {
-    static const GameAddress auxiliary[]={0x6278f8,0x6278fc,0x62694c,0x626e58};
     static const GameAddress aliases[]={0x597f64,0x626e78,0x62707c,0x626d58};
     MenuWindow *w=a->menu_window;unsigned i;int ok=1;
     for(i=0;i<3;++i) {
@@ -194,10 +191,6 @@ int game_level_display_end(GameApplication *a) {
     if(game_memory_read_u32(&a->memory,0x626d58)) {
         display_unfinished(a,"display lock alias",0x626d58);return 0;
     }
-    for(i=0;i<sizeof(auxiliary)/sizeof(auxiliary[0]);++i)
-        if(game_memory_read_u32(&a->memory,auxiliary[i])) {
-            display_unfinished(a,"display service",auxiliary[i]);ok=0;
-        }
     if(w) {
         while(w->text_surfaces)
             if(!game_menu_text_surface_release(a,w->text_surfaces->identity))return 0;

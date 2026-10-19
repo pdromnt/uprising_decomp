@@ -7,7 +7,7 @@ int main(void){
     assert(SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"SDL_AUDIODRIVER","dummy",true));
     wave.pcm=bytes;wave.pcm_bytes=4;wave.frequency=48000;wave.channels=1;
     wave.format=1;wave.bits_per_sample=8;wave.block_alignment=1;wave.bytes_per_second=48000;
-    device=sound_platform_device(NULL,NULL,0);assert(device);
+    device=sound_platform_device(0);assert(device);
     assert(SDL_PauseAudioStreamDevice(output_stream));
     buffer=sound_platform_create_buffer(device,&wave);assert(buffer);
     copy=sound_platform_duplicate(device,buffer);assert(copy && find_sound(copy,2)->clip==find_sound(buffer,2)->clip);
@@ -33,14 +33,14 @@ int main(void){
     {uint8_t stereo[]={0,128,255,127,0,0,0,0};
      wave.pcm=stereo;wave.pcm_bytes=8;wave.channels=2;wave.bits_per_sample=16;
      wave.block_alignment=4;wave.bytes_per_second=192000;
-     device=sound_platform_device(NULL,NULL,0);assert(device);
+     device=sound_platform_device(0);assert(device);
      buffer=sound_platform_create_buffer(device,&wave);assert(buffer);
      sound_platform_master_volume(32768);
      assert(!sound_platform_command(buffer,SOUND_BUFFER_PLAY,0));
      lock_sound();sound_mix(mixed,1);unlock_sound();
      assert(fabsf(mixed[0]+32768.0f/65535)<0.00001f && fabsf(mixed[1]-32767.0f/65535)<0.00001f);
      assert(sound_platform_release_buffer(buffer));assert(sound_platform_release_device(device));
-     device=sound_platform_device(NULL,NULL,1);buffer=sound_platform_create_buffer(device,&wave);assert(buffer);
+     device=sound_platform_device(1);buffer=sound_platform_create_buffer(device,&wave);assert(buffer);
      assert(!sound_platform_command(buffer,SOUND_BUFFER_PLAY,1));
      lock_sound();sound_mix(mixed,4);unlock_sound();
      for(i=0;i<8;++i)assert(mixed[i]==0);

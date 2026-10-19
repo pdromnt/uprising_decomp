@@ -8,8 +8,9 @@
 - Validate ENet on separate machines: discovery, four players, abrupt loss/reconnect,
   repeated missions and congested links. Mixed x86/x64 host migration has passed
   same-machine integration; this does not establish broader network acceptance.
-- Remove unused legacy code/dependencies after the SDL3/platform migration.
-  Small Windows file-attribute and CRT cwd/durability adapters remain deliberate.
+- SDL3 legacy cleanup is integrated. Remove further dead code when concrete
+  dependencies establish it is unused; broad cleanup is deferred. Small Windows
+  file-attribute and CRT cwd/durability adapters remain deliberate.
 - Once the SDL3 build is stable, add FSR upscaling.
 - Select a license for project-authored code.
 - Later: better module boundaries, descriptive fields and layout cleanup.

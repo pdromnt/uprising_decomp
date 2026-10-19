@@ -3,7 +3,7 @@
 #include "sound_samples.h"
 /* Platform objects remain private pointers. These identities select native
  * device behavior; they are never vtable addresses or guest call targets. */
-GameAddress sound_platform_device(void *window,const uint8_t *guid,int muted);
+GameAddress sound_platform_device(int muted);
 int sound_platform_owns(GameAddress);
 static inline int sound_platform_identity(GameAddress id){return (id&0xff000000u)==0xf9000000u;}
 GameAddress sound_platform_create_buffer(GameAddress,const SoundWave *);

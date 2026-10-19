@@ -8,8 +8,8 @@
   physical input and audio/music ownership have migrated. Font/pointer visuals
   and SDL keyboard/mouse were manually accepted. Controller/haptic hardware is
   pending. Check new audio levels, voices, movie sync, music controls and reload
-  cleanup manually. Next: optional legacy I-FORCE, network transport and Windows
-  services.
+  cleanup manually. Legacy I-FORCE support is removed; SDL joystick/haptics remain.
+  Next: network transport and Windows services.
 - After the SDL3 migration, remove legacy code and dependencies that are no longer
   used.
 - Once the SDL3 build is stable, add FSR upscaling.

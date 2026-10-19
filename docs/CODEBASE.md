@@ -67,5 +67,6 @@ OGG with stb_vorbis and reports completion to the existing playlist on the main
 thread. App-local music/effects gains replace system volume manipulation.
 DirectSound, MCI/AUX/WAVE audio calls and the native SDL message hook are removed.
 
-Optional legacy I-FORCE effects and DirectPlay still use Windows services.
-Next: remaining legacy hardware services and network transport.
+The legacy I-FORCE SDK/input/effect route is removed; SDL joystick and haptic
+ownership is independent. DirectPlay still uses Windows services.
+Next: network transport and remaining Windows services.

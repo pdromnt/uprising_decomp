@@ -316,16 +316,8 @@ static GameAddress child_notice(PlayerSceneChildKind kind){
 static int child_environment(void *context,GameAddress parent,PlayerSceneChildKind kind,PlayerAttachmentEnvironment *out){
     GameApplication *a=context;GameAddress world=get(a,0x58973cu);
     memset(out,0,sizeof(*out));out->tick=get(a,0x5ac6acu);out->previous_notice=get(a,child_notice(kind));
-    out->current_world_is_local=world==get(a,0x5f0208u);out->feedback_enabled=get(a,0x624f68u)!=0;
-    if(out->feedback_enabled){
-        out->parent_key=game_memory_read_u8(&a->memory,parent+12u);
-        if(out->parent_key==0x23u){GameAddress linked=get(a,get(a,parent+0x294u)+4u);out->linked_world_matches=get(a,linked+0x54u)==world;}
-    }
+    out->current_world_is_local=world==get(a,0x5f0208u);(void)parent;
     return !a->memory.fault;
-}
-static int child_feedback(void *context){
-    GameApplication *a=context;const uint32_t values[3]={400u,0u,50u};
-    return gameplay_feedback_request(&a->memory,values);
 }
 static int child_last_round(void *context,PlayerSceneChildKind kind,uint32_t tick){
     GameApplication *a=context;SoundPlaybackRequest request={0x17,0,1,0,0,0};
@@ -339,7 +331,7 @@ static int child_notify(void *context,GameAddress parent,uint16_t heading){
     return !a->memory.fault && game_menu_sound_play(a,&request);
 }
 static PlayerAttachmentServices child_services(GameApplication *a){
-    PlayerAttachmentServices services={a,child_available,child_emit,child_notify,child_environment,child_feedback,child_last_round};
+    PlayerAttachmentServices services={a,child_available,child_emit,child_notify,child_environment,child_last_round};
     return services;
 }
 int game_level_player_attachment_submit(GameApplication *a,GameAddress child,const float position[3],const PlayerAttachmentFrame *frame){

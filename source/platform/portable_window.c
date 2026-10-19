@@ -275,7 +275,7 @@ int game_menu_window_mode_restore(GameApplication *a){
 void game_menu_window_destroy(GameApplication *a,GameAddress identity){
     MenuWindow *w=a->menu_window;if(!w || identity!=w->identity)return;
     (void)pointer_clip_release(w);(void)game_application_level_graphics_end(a);
-    game_application_force_feedback_close(a,1);game_input_devices_end(a);
+    game_input_devices_end(a);
     while(w->text_surfaces)game_menu_text_surface_release(a,w->text_surfaces->identity);
     window_surfaces_release(w);SDL_DestroySurface(w->upload);game_menu_window_resources_end(a);
     if(w->context){

@@ -544,13 +544,6 @@ int gameplay_state_load_settings(GameMemory *memory,uint32_t *marker,
     return game_memory_fill_u32(memory,game_memory_read_u32(memory,0x5f0208u)+0x5acu,18u,0u,0) && !memory->fault;
 }
 
-int gameplay_feedback_request(GameMemory *memory,const uint32_t values[3]){
-    static const GameAddress fields[3]={0x608220u,0x608214u,0x608210u};unsigned i;
-    if(!memory || !values)return 0;
-    for(i=0;i<3u && !memory->fault;i++)game_memory_write_u32(memory,fields[i],values[i]);
-    game_memory_write_u32(memory,0x608194u,0u);game_memory_write_u32(memory,0x6081c0u,1u);
-    return !memory->fault;
-}
 #include "render_packet_view.h"
 #include "display_transition.h"
 #include <string.h>

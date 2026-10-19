@@ -50,19 +50,6 @@ typedef struct RenderTextureView {
 typedef struct ArchiveFile {ResourceFile *file;GameAddress identity;struct ArchiveFile *next;} ArchiveFile;
 /*Mapped RGB565 pixels are borrowed only until unmap; pointers stay native. */
 typedef struct RenderPixelView {void *pixels;uint32_t stride;} RenderPixelView;
-typedef int (__cdecl *StickBufferCall)(void *);
-typedef int (__cdecl *StickQueryCall)(void);
-typedef void (__cdecl *StickCommandCall)(uint32_t);
-typedef void (__cdecl *StickCloseCall)(void);
-typedef struct ForceFeedback {
-    HMODULE library;
-    FARPROC exports[29];
-    StickBufferCall initialize,position;
-    StickQueryCall enable;
-    StickCommandCall port,report;
-    StickCloseCall close;
-    int initialized;
-} ForceFeedback;
 typedef struct PortablePlatform {
     int isolated_input;
     HINSTANCE instance;
@@ -80,92 +67,10 @@ typedef struct PortablePlatform {
     int screen_mask_active;
     ArchiveFile *archives;
     uint32_t archive_sequence;
-    ForceFeedback *force_feedback;
     void *graphics_owner;
 } PortablePlatform;
 
 #include "portable_gl1.inc"
-
-/*4f9bc0/4f9ee0: the native platform owns the entire SDK binding. Legacy
- * function-table words never contain DLL handles or native function pointers. */
-int game_application_force_feedback_open(GameApplication *app) {
-    static const char *names[]={"_InitStick","_GetStickStatus","_Echo","_IForceAuthenticate",
-        "_GetStickError","_EnableForces","_DisableForces","_ClearForces","_CloseStick",
-        "_SetJoystickPort","_Jolt","_ButtonReflexJolt","_ButtonReflexClear","_XVibration",
-        "_XVibrationClear","_YVibration","_YVibrationClear","_Buffeting","_BuffetingClear",
-        "_VectorForce","_VectorForceClear","_XYVectorForce","_EnablePositionReporting",
-        "_DisablePositionReporting","_GetStickPosition","_XSpring","_XSpringClear","_YSpring","_YSpringClear"};
-    PortablePlatform *p=app->platform;ForceFeedback *f;unsigned i;
-    if(!p)return 0;if(p->force_feedback)return 1;
-    f=calloc(1,sizeof(*f));if(!f)return 0;
-    f->library=LoadLibraryA("iforce.dll");if(!f->library)goto failed;
-    for(i=0;i<sizeof(names)/sizeof(names[0]);++i) {
-        f->exports[i]=GetProcAddress(f->library,names[i]);if(!f->exports[i])goto failed;
-    }
-    /*These are native SDK C function signatures recovered at actual callers. */
-    f->initialize=(StickBufferCall)(void (*)(void))f->exports[0];
-    f->position=(StickBufferCall)(void (*)(void))f->exports[24];
-    f->enable=(StickQueryCall)(void (*)(void))f->exports[5];
-    f->port=(StickCommandCall)(void (*)(void))f->exports[9];
-    f->report=(StickCommandCall)(void (*)(void))f->exports[22];
-    f->close=(StickCloseCall)(void (*)(void))f->exports[8];
-    p->force_feedback=f;return 1;
-failed:
-    if(f->library)FreeLibrary(f->library);free(f);return 0;
-}
-/*4fa450: try each real joystick port, enable forces, then position reporting.
- * SDK replies are fixed-width byte buffers, not host-layout game structures. */
-int game_application_force_feedback_detect(GameApplication *app) {
-    PortablePlatform *p=app->platform;ForceFeedback *f=p?p->force_feedback:NULL;uint32_t port;
-    union {uint32_t words[15];long double alignment;} information;
-    if(!f)return 0;
-    for(port=1;port<=4;++port) {
-        memset(&information,0,sizeof(information));f->port(port);
-        if(f->initialize(information.words)) {f->initialized=1;break;}
-        Sleep(100);f->close();
-    }
-    if(!f->initialized)return 0;
-    while(!f->enable())Sleep(50);
-    Sleep(200);f->report(10);return 1;
-}
-int game_application_force_feedback_poll(GameApplication *app,uint32_t sample[4]) {
-    PortablePlatform *p=app->platform;ForceFeedback *f=p?p->force_feedback:NULL;uint32_t reply[4]={0,0,0,0};
-    if(!f || !f->initialized || !sample || !f->position(reply))return 0;
-    memcpy(sample,reply,sizeof(reply));return 1;
-}
-/*Recovered SDK signatures. The native binding owns full-width function
- *pointers; game records contain only effect parameters and success flags. */
-uint32_t game_application_force_feedback_effect(GameApplication *app,GameForceFeedbackOperation operation,
-    uint32_t first,uint32_t second,uint32_t third,uint32_t fourth,uint32_t fifth){
-    typedef uint32_t (__cdecl *Call0)(void);
-    typedef uint32_t (__cdecl *Call1)(uint32_t);
-    typedef uint32_t (__cdecl *Call2)(uint32_t,uint32_t);
-    typedef uint32_t (__cdecl *Call3)(uint32_t,uint32_t,uint32_t);
-    typedef uint32_t (__cdecl *Call5)(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
-    PortablePlatform *p=app->platform;ForceFeedback *f=p?p->force_feedback:NULL;FARPROC function;
-    if(!f || !f->initialized || (unsigned)operation>=29)return 0;
-    function=f->exports[operation];if(!function)return 0;
-    switch(operation){
-    case GAME_FORCE_JOLT:case GAME_FORCE_X_VIBRATION:case GAME_FORCE_Y_VIBRATION:
-    case GAME_FORCE_X_SPRING:case GAME_FORCE_Y_SPRING:
-        return ((Call3)(void (*)(void))function)(first,second,third);
-    case GAME_FORCE_REFLEX_JOLT:return ((Call5)(void (*)(void))function)(first,second,third,fourth,fifth);
-    case GAME_FORCE_REFLEX_CLEAR:case GAME_FORCE_BUFFETING:return ((Call1)(void (*)(void))function)(first);
-    case GAME_FORCE_VECTOR:case GAME_FORCE_XY_VECTOR:return ((Call2)(void (*)(void))function)(first,second);
-    case GAME_FORCE_X_CLEAR:case GAME_FORCE_Y_CLEAR:case GAME_FORCE_BUFFETING_CLEAR:
-    case GAME_FORCE_VECTOR_CLEAR:case GAME_FORCE_X_SPRING_CLEAR:case GAME_FORCE_Y_SPRING_CLEAR:
-        return ((Call0)(void (*)(void))function)();
-    default:return 0;
-    }
-}
-void game_application_force_feedback_close(GameApplication *app,int finish) {
-    PortablePlatform *p=app->platform;ForceFeedback *f=p?p->force_feedback:NULL;
-    (void)finish;
-    if(!f)return;
-    if(f->initialized)f->close();
-    FreeLibrary(f->library);free(f);p->force_feedback=NULL;
-    game_memory_write_u32(&app->memory,0x624f68,0);
-}
 
 /* Native file operations share the application's isolated user-data owner.
  * Directory enumeration uses that same saves directory as archive loading. */
@@ -969,7 +874,6 @@ int game_application_platform_stop(GameApplication *app) {
     int settings_ok=1;
     if(app->memory.data && !app->memory.fault)
         settings_ok=game_menu_settings_checkpoint(app);
-    game_application_force_feedback_close(app,1);
     game_menu_movies_dispose(app);
     if(app->memory.data && !game_level_world_surface_release(app))game_application_log(app,"world surface cleanup","retirement failed");
     if(app->memory.data)(void)game_level_progress_end(app);

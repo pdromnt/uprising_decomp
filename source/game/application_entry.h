@@ -47,19 +47,6 @@ int game_application_platform_start(GameApplication *, void *instance,
     const char *command_line, int show);
 int game_application_platform_stop(GameApplication *);
 int game_application_services_initialize(GameApplication *, unsigned, unsigned);
-int game_application_force_feedback_open(GameApplication *);
-int game_application_force_feedback_detect(GameApplication *);
-int game_application_force_feedback_poll(GameApplication *, uint32_t sample[4]);
-typedef enum GameForceFeedbackOperation {
-    GAME_FORCE_JOLT=10,GAME_FORCE_REFLEX_JOLT,GAME_FORCE_REFLEX_CLEAR,
-    GAME_FORCE_X_VIBRATION,GAME_FORCE_X_CLEAR,GAME_FORCE_Y_VIBRATION,GAME_FORCE_Y_CLEAR,
-    GAME_FORCE_BUFFETING,GAME_FORCE_BUFFETING_CLEAR,GAME_FORCE_VECTOR,GAME_FORCE_VECTOR_CLEAR,
-    GAME_FORCE_XY_VECTOR,GAME_FORCE_X_SPRING=25,GAME_FORCE_X_SPRING_CLEAR,
-    GAME_FORCE_Y_SPRING,GAME_FORCE_Y_SPRING_CLEAR
-} GameForceFeedbackOperation;
-uint32_t game_application_force_feedback_effect(GameApplication *,GameForceFeedbackOperation,
-    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
-void game_application_force_feedback_close(GameApplication *, int finish);
 int game_application_options_initialize(GameApplication *);
 int game_application_menu_loop(GameApplication *, void *instance,
     const char *level);

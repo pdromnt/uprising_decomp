@@ -7,12 +7,11 @@
 #include "portable_sdl.h"
 extern int game_menu_input_poll(GameApplication *,GameAddress);
 extern int game_level_frame(GameApplication *); /*418470, actual world/render actions*/
-extern int game_level_force_feedback_update(GameApplication *); /*4d05e0/4fa190*/
 extern int game_level_joystick_update(GameApplication *); /*4d0f80*/
 extern int game_menu_pointer_capture(GameApplication *,int);
 
 /*417590: the playable loop drains SDL input, advances the world and retains
- * the original pause/focus, termination, force-feedback and joystick routes. */
+ * the original pause/focus, termination and SDL joystick routes. */
 int game_level_game_loop(GameApplication *a) {
     GameMemory *m=&a->memory;int captured=1;
     unsigned frames=0;DWORD sample_start=(uint32_t)SDL_GetTicks();
@@ -59,7 +58,6 @@ int game_level_game_loop(GameApplication *a) {
                 }
             }else SDL_Delay(10);
         }
-        stage="force feedback";if(game_memory_read_u32(m,0x624f68) && !game_level_force_feedback_update(a))goto fail;
         stage="joystick";if(game_memory_read_u32(m,0x604768) && !game_level_joystick_update(a))goto fail;
     }
 fail:

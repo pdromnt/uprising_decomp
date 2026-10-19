@@ -13,8 +13,9 @@ The first configure downloads checksum-pinned SDL 3.4.16 and FreeType 2.14.3;
 subsequent builds reuse their shared source caches. Both are linked statically,
 with no additional DLL installation or launch flags. Windows, menu surfaces,
 font rendering, physical input and OpenGL contexts now use portable services.
-Audio/music also use SDL3 with the bundled stb_vorbis decoder. Optional legacy
-I-FORCE effects and networking still have Windows backends.
+Audio/music also use SDL3 with the bundled stb_vorbis decoder. Joystick input and
+periodic haptics use SDL3; the legacy I-FORCE SDK is removed. Networking still
+has a Windows backend.
 The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
 to the original fonts; keep the complete FONTS directory with the executable.
 

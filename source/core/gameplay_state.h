@@ -933,7 +933,6 @@ int gameplay_effect_ring_reset(GameMemory *,const GameplayEffectRingServices *,G
 int gameplay_descriptor_payload_update(GameMemory *,const GameplayEffectRingServices *,GameAddress);
 int gameplay_descriptor_payload_retire(GameMemory *,const GameplayEffectRingServices *,GameAddress,int detach_controller);
 
-int gameplay_feedback_request(GameMemory *,const uint32_t values[3]);
 /* Selector controls keep their existing panel/widget records and owners.
  * Unknown widget kinds use a typed query port; known derived classes are native. */
 typedef int (*GameplayWidgetKindQuery)(void *,GameAddress,uint32_t *);

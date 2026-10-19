@@ -11,19 +11,13 @@ static void feedback_store(GameMemory *m,GameAddress p,float v){uint32_t bits;me
 static float feedback_float(GameMemory *memory,GameAddress address){
     uint32_t bits=game_memory_read_u32(memory,address);float value;memcpy(&value,&bits,4u);return value;
 }
-/*4a39b0/4a3a20 share the existing camera record and force-feedback request.
- *An active impulse cannot be restarted. Expiry clears the actual device request.*/
+/*4a39b0/4a3a20 share the camera record. An active impulse cannot restart. */
 int game_camera_hit_begin(GameMemory *m,GameAddress camera,const float impulse[3]){
-    unsigned i;float squared;uint32_t gain;
+    unsigned i;
     if(!m || m->fault || !impulse)return 0;
     if(game_memory_read_u32(m,camera+0x24)!=UINT32_MAX)return !m->fault;
     game_memory_write_u32(m,camera+0x24,game_memory_read_u32(m,0x5ac6ac));
     for(i=0;i<3;i++)feedback_store(m,camera+24+i*4,impulse[i]);
-    if(game_memory_read_u32(m,0x624f68)){
-        squared=(float)(((long double)impulse[0]*impulse[0]+(long double)impulse[1]*impulse[1])+(long double)impulse[2]*impulse[2]);
-        gain=feedback_truncate(sqrtl(squared)*feedback_float(m,0x574358));
-        game_memory_write_u32(m,0x60821c,0);game_memory_write_u32(m,0x608248,1);game_memory_write_u32(m,0x6081ac,gain);
-    }
     return !m->fault;
 }
 int game_camera_hit_sample(GameMemory *m,GameAddress camera,float out[3],int *active){
@@ -32,7 +26,6 @@ int game_camera_hit_sample(GameMemory *m,GameAddress camera,float out[3],int *ac
     *active=0;start=game_memory_read_u32(m,camera+0x24);if(start==UINT32_MAX)return !m->fault;
     tick=game_memory_read_u32(m,0x5ac6ac);age=feedback_signed(tick-start);
     if(age>=16){game_memory_write_u32(m,camera+0x24,UINT32_MAX);memset(out,0,12);
-        if(game_memory_read_u32(m,0x624f68))game_memory_write_u32(m,0x608248,0);
         return !m->fault;
     }
     envelope=(float)(age<8?(long double)age*feedback_float(m,0x57435c):

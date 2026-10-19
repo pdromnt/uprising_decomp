@@ -37,7 +37,6 @@ typedef struct PlayerAttachmentEmission {
 
 typedef struct PlayerAttachmentEnvironment {
     uint32_t tick, previous_notice;
-    unsigned feedback_enabled, parent_key, linked_world_matches;
     unsigned current_world_is_local;
 } PlayerAttachmentEnvironment;
 
@@ -48,7 +47,6 @@ typedef struct PlayerAttachmentServices {
     int (*notify)(void *, GameAddress parent, uint16_t heading);
     int (*environment)(void *, GameAddress parent, PlayerSceneChildKind,
         PlayerAttachmentEnvironment *);
-    int (*feedback)(void *);
     int (*last_round)(void *, PlayerSceneChildKind, uint32_t tick);
 } PlayerAttachmentServices;
 

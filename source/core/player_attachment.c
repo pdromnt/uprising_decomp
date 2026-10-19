@@ -123,9 +123,6 @@ int player_attachment_submit(PlayerAttachmentState *state,
     ++stats.emitted;
     if (!services->environment || !services->environment(services->context,
             state->parent, state->kind, &environment)) return 0;
-    if (environment.feedback_enabled && (environment.parent_key == 0x20u ||
-            (environment.parent_key == 0x23u && environment.linked_world_matches)))
-        if (!services->feedback || !services->feedback(services->context)) return 0;
     quantity = (int32_t)state->quantity;
     if (quantity > 0) {
         if (quantity == 1 && environment.current_world_is_local &&
@@ -176,9 +173,6 @@ int player_attachment_record_submit(GameMemory *m, GameAddress child,
     }
     if (m->fault || !s->emit(s->context, &emission) || !s->environment ||
             !s->environment(s->context, emission.parent, emission.kind, &environment)) return 0;
-    if (environment.feedback_enabled && (environment.parent_key == 0x20u ||
-            (environment.parent_key == 0x23u && environment.linked_world_matches)))
-        if (!s->feedback || !s->feedback(s->context)) return 0;
     quantity = record_word(m, child + 12u);
     if (record_integer(quantity) > 0) {
         if (quantity == 1u && environment.current_world_is_local &&

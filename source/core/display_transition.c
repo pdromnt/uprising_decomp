@@ -85,7 +85,6 @@ static uint32_t camera_integer(long double value){
 }
 int game_camera_activate(GameMemory *memory,GameAddress camera,GameAddress *request){
     GameplayActiveObjectPlan previous;GameAddress active;uint16_t mode;
-    if(game_memory_read_u32(memory,0x624f68u))game_memory_write_u32(memory,0x608248u,0u);
     previous=gameplay_state_active_object_plan(memory);
     if(previous.active==previous.first_previous || previous.active==previous.second_previous)
         gameplay_state_archive_active_object(memory,previous.active);

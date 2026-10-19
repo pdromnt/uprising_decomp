@@ -190,7 +190,6 @@ set(GAME_SOURCES
     game/campaign_world.c
     game/gameplay_capture.c
     game/gameplay_chat.c
-    game/gameplay_force_feedback.c
     game/gameplay_input.c
     game/gameplay_joystick.c
     game/gameplay_keyboard.c

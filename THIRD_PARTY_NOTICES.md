@@ -4,6 +4,11 @@ SDL 3.4.16 is fetched from its official release and linked statically under the
 zlib license. Its license is preserved in `source/third_party/SDL3-LICENSE.txt`
 and included in binary packages.
 
+The pinned SDL source receives a marked Xbox Series BLE compatibility patch,
+adapted from TOU: Bluetooth VID/PID `045e:0b13` endpoints use SDL's existing Xbox
+HIDAPI parser. Wired XGIP proxy endpoints retain their original filtering.
+SDL's upstream license applies to the modified driver.
+
 Portions of this software are copyright © 2026 The FreeType Project
 (https://freetype.org/). All rights reserved. FreeType 2.14.3 is linked under
 the FreeType License, reproduced in `source/third_party/FreeType-FTL.txt` and

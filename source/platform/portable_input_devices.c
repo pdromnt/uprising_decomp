@@ -215,6 +215,12 @@ int game_input_devices_begin(GameApplication *a){
     game_memory_write_u32(&a->memory,0x604768,0);game_memory_write_u32(&a->memory,0x604c30,0);
     settings=game_memory_read_u32(&a->memory,0x5943c8);
     if(!game_application_isolated_input(a) && game_memory_read_u32(&a->memory,settings+0x50)){
+#ifdef _WIN32
+        /* Xbox BLE can be absent from XInput. Keep other SDL discovery paths
+         * available without disabling XInput for controllers that use it. */
+        SDL_SetHint(SDL_HINT_JOYSTICK_GAMEINPUT,"1");
+        SDL_SetHint(SDL_HINT_JOYSTICK_WGI,"1");
+#endif
         if(SDL_InitSubSystem(SDL_INIT_JOYSTICK)){d->initialized|=SDL_INIT_JOYSTICK;joystick_open(d);}
         game_memory_write_u32(&a->memory,0x594d30,2-game_memory_read_u32(&a->memory,settings+0x50));
     }

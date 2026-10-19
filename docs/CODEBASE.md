@@ -60,6 +60,10 @@ translation, fractional relative motion, joystick sampling and periodic haptics.
 Saved bindings and joystick ranges remain stable. Focus loss publishes releases;
 the game loop consumes input and advances simulation in the same iteration.
 The former DirectInput service and Windows keyboard/focus hooks are removed.
+Windows discovery opts into GameInput/WGI where SDL was built with those drivers;
+the current MinGW build uses HIDAPI/XInput. A narrow build-time SDL patch
+allows Xbox Series BLE (`045e:0b13`) Bluetooth endpoints through its Xbox HIDAPI
+filter; wired proxy handling stays intact. Physical Bluetooth acceptance is pending.
 
 `platform/sound_platform.c` mixes owned PCM clips with independent voice cursors
 through SDL3. Duplicate voices share immutable clips. `portable_music.c` streams

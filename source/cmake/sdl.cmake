@@ -16,3 +16,7 @@ FetchContent_Declare(SDL3
     SOURCE_DIR "${FETCHCONTENT_BASE_DIR}/sdl3-src"
     BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/sdl3")
 FetchContent_MakeAvailable(SDL3)
+# Apply on configure as well as fresh downloads: local x86/x64 caches share
+# this source tree. The patch leaves an already-patched file untouched.
+include("${CMAKE_CURRENT_LIST_DIR}/patch-sdl-xbox-ble.cmake")
+uprising_patch_sdl_xbox_ble("${sdl3_SOURCE_DIR}")

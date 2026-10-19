@@ -5,6 +5,9 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 
 - Start without flags; check icon/title, music and sound. Change a setting and
   binding, exit and restart. Confirm one CONFIG file restores them.
+- Check menu pointer alignment, confinement in gameplay and release on pause or
+  focus loss. Inspect campaign/list/debrief text and wrapping after the font
+  backend change; layout metrics are retained, while glyph ink may differ.
 - Play natural training and campaign progression, including mission completion,
   debriefing, save/reload and repeated mission transitions.
 - Exercise movement, aiming and all available weapons, infantry, pickups, debris,

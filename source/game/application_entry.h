@@ -43,7 +43,6 @@ int game_application_load_blob(GameApplication *,const char *,ResourceBlob *);
  * These are native contracts, never guest-ABI calls or successful stubs. */
 /* Full-width platform module owner; windowed validation verifies its local
  * wrapper configuration before any graphics entry point can run. */
-void *game_application_backend_library(GameApplication *,const char *name);
 int game_application_platform_start(GameApplication *, void *instance,
     const char *command_line, int show);
 int game_application_platform_stop(GameApplication *);

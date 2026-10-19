@@ -38,7 +38,7 @@ int game_level_restore_environment(GameApplication *,GameAddress archive); /*45a
 int game_level_restore_player_command(GameApplication *,unsigned slot); /*41a300*/
 int game_level_geometry_finalize(GameApplication *); /*4f01c0*/
 int game_level_display_end(GameApplication *); /*517830*/
-int game_level_display_begin(GameApplication *); /*DirectDraw/viewport initialization*/
+int game_level_display_begin(GameApplication *); /*Native display/viewport initialization*/
 int game_application_level_graphics_begin(GameApplication *); /*439930 platform SDK*/
 int game_application_level_graphics_end(GameApplication *); /*4399b0 platform SDK*/
 int game_level_screen_clear(GameApplication *,int);

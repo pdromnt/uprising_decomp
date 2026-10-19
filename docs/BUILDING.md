@@ -9,11 +9,13 @@ The batch shortcut is `source\scripts\build.bat`; it forwards the same arguments
 to `build.ps1`, preferring PowerShell 7 when installed. Pass `-?` to view help.
 CI calls the PowerShell script directly.
 
-The first configure downloads the checksum-pinned SDL 3.4.16 source release;
-subsequent builds reuse it. SDL is linked statically, so no SDL DLL installation
-or launch flags are required. Window/events/timing and OpenGL contexts use SDL;
-menu surfaces, physical input, audio and networking still have Windows services
-until their respective migration stages.
+The first configure downloads checksum-pinned SDL 3.4.16 and FreeType 2.14.3;
+subsequent builds reuse their shared source caches. Both are linked statically,
+with no additional DLL installation or launch flags. Windows, menu surfaces,
+font rendering and OpenGL contexts now use portable services. Physical input,
+audio and networking still have Windows backends until their migration stages.
+The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
+to the original fonts; keep the complete FONTS directory with the executable.
 
 ```powershell
 ./source/scripts/build.ps1 -Bits 32 -Tests

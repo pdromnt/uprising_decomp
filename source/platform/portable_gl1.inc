@@ -20,6 +20,7 @@ typedef struct Gl1Texture {
 typedef struct Gl1Device {
     GameApplication *application;
     SDL_Window *window;SDL_GLContext context;SDL_ThreadID thread;
+    int context_state_saved;GLint previous_matrix_mode;
     PFNGLGENFRAMEBUFFERSPROC gen_framebuffers;
     PFNGLBINDFRAMEBUFFERPROC bind_framebuffer;
     PFNGLFRAMEBUFFERTEXTURE2DPROC framebuffer_texture;
@@ -449,10 +450,18 @@ static void gl1_close(void){
             glDeleteTextures(2,g->colors);glDeleteTextures(3,g->sky_layers);
             if(g->lfb_texture)glDeleteTextures(1,&g->lfb_texture);
             if(g->remote_mask)glDeleteTextures(1,&g->remote_mask);
-            SDL_GL_MakeCurrent(g->window,NULL);
+            if(g->context_state_saved){
+                glMatrixMode(GL_TEXTURE);glPopMatrix();
+                glMatrixMode(GL_MODELVIEW);glPopMatrix();
+                glMatrixMode(GL_PROJECTION);glPopMatrix();
+                glMatrixMode(g->previous_matrix_mode);
+                glPopClientAttrib();glPopAttrib();
+            }
         }
-        SDL_GL_DestroyContext(g->context);g->context=NULL;
+        /* The SDL window owns the context across menu/level transitions. */
+        g->context=NULL;
     }
+    g->context_state_saved=0;
     for(i=0;i<4096;i++){free(g->textures[i].pixels);memset(g->textures+i,0,sizeof(g->textures[i]));}
     memset(g->texture_index,0,sizeof(g->texture_index));
     free(g->lfb);free(g->rgba);g->lfb=NULL;g->rgba=NULL;g->bound=NULL;g->locked=0;
@@ -468,7 +477,17 @@ static int32_t gl1_open(SDL_Window *window){
 
     if(!g || g->context || !window)return 0;
     g->failed=0;g->window=window;g->width=640;g->height=480;g->front=0;g->back=1;
-    g->context=SDL_GL_CreateContext(window);if(!g->context)goto failed;
+    g->context=game_menu_gl_context(g->application);
+    if(!g->context || !SDL_GL_MakeCurrent(window,g->context))goto failed;
+    /* A level borrows the window's context. Preserve the menu's GL state so
+     * the next level starts from the same state as the first, including depth
+     * writes and pixel-store settings used during framebuffer initialization. */
+    glGetIntegerv(GL_MATRIX_MODE,&g->previous_matrix_mode);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);glPushMatrix();
+    glMatrixMode(GL_TEXTURE);glPushMatrix();glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);g->context_state_saved=1;
     g->thread=SDL_GetCurrentThreadID();
     /* The established renderer is paced by its game clock, not vsync. */
     SDL_GL_SetSwapInterval(0);

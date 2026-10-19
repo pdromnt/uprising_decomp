@@ -1,6 +1,50 @@
 #include "ui_geometry.h"
-
+#include <stdlib.h>
 #include <string.h>
+
+static int indexed_span_valid(const GameMenuPixelSpan *span){
+    return span && span->pixels && span->width>0 && span->height>0 && span->stride>=span->width &&
+        (uint64_t)(uint32_t)(span->height-1)*(uint32_t)span->stride+(uint32_t)span->width<=span->bytes;
+}
+int game_ui_indexed_copy(const GameMenuPixelSpan *destination,const GameMenuPixelSpan *source,
+        const GameUiRect *from,const GameUiRect *to,int transparent,uint8_t key,int mirror){
+    GameMenuPixelSpan view;GameUiRect rectangle;uint8_t *copy=NULL;int64_t sx,sy,dx,dy;
+    int32_t x,y,left,top,right,bottom;uintptr_t a,b;
+    if(!indexed_span_valid(destination) || !indexed_span_valid(source) || !from || !to)return 0;
+    sx=(int64_t)from->right-from->left;sy=(int64_t)from->bottom-from->top;
+    dx=(int64_t)to->right-to->left;dy=(int64_t)to->bottom-to->top;
+    if(dx<=0 || dy<=0 || sx<=0 || sy<=0)return 1;
+    if(from->left<0 || from->top<0 || from->right>source->width || from->bottom>source->height)return 0;
+    left=to->left<0?0:to->left;top=to->top<0?0:to->top;
+    right=to->right>destination->width?destination->width:to->right;
+    bottom=to->bottom>destination->height?destination->height:to->bottom;
+    if(left>=right || top>=bottom)return 1;
+    view=*source;rectangle=*from;
+    a=(uintptr_t)source->pixels;b=(uintptr_t)destination->pixels;
+    if((a<=b && b-a<source->bytes) || (b<a && a-b<destination->bytes)){
+        if((uint64_t)sx*(uint64_t)sy>SIZE_MAX)return 0;
+        copy=malloc((size_t)sx*(size_t)sy);if(!copy)return 0;
+        for(y=0;y<sy;++y)memcpy(copy+(size_t)y*(size_t)sx,
+            source->pixels+(size_t)(from->top+y)*source->stride+from->left,(size_t)sx);
+        view.pixels=copy;view.bytes=(size_t)sx*(size_t)sy;view.width=view.stride=(int32_t)sx;view.height=(int32_t)sy;
+        rectangle.left=rectangle.top=0;rectangle.right=(int32_t)sx;rectangle.bottom=(int32_t)sy;
+    }
+    for(y=top;y<bottom;++y){
+        int64_t row=((int64_t)y-to->top)*sy/dy;
+        const uint8_t *input=view.pixels+(size_t)(rectangle.top+(mirror?sy-1-row:row))*view.stride;
+        uint8_t *output=destination->pixels+(size_t)y*destination->stride;
+        if(!mirror && !transparent && sx==dx){
+            memcpy(output+left,input+rectangle.left+(int64_t)left-to->left,(size_t)(right-left));continue;
+        }
+        for(x=left;x<right;++x){
+            int64_t column=((int64_t)x-to->left)*sx/dx;
+            uint8_t value=input[rectangle.left+(mirror?sx-1-column:column)];
+            if(!transparent || value!=key)output[x]=value;
+        }
+    }
+    free(copy);return 1;
+}
+
 int game_ui_indexed_borders(uint8_t *pixels,size_t bytes,int32_t width,int32_t height,int32_t stride,
     const GameUiRect *rectangles,const uint8_t *colors,size_t count) {
     size_t i;if(!pixels || !rectangles || !colors || width<=0 || height<=0 || stride<width || count>4096 ||

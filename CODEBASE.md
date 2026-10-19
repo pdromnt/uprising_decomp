@@ -45,8 +45,14 @@ texture identities instead of simulated VRAM addresses and eviction spans.
 Texture owners release their device resources explicitly. Original pixel formats,
 depth arithmetic and bounded stream-cache records remain for visual parity.
 
-SDL3 owns the main window, event pump, OpenGL context, swap and shared monotonic
-clock. `platform/portable_sdl.h` is the window/event boundary. DirectDraw menu
-surfaces, GDI fonts, DirectInput, MCI/DirectSound, startup splash and DirectPlay
-still borrow Windows services; they are the next connected replacements. The
-native-message hook exists only for MCI notification and input reacquisition.
+SDL3 owns the windows, indexed menu surfaces/palette, OpenGL context, swap and
+shared monotonic clock. Menus upload their front pixels through the same context
+borrowed by gameplay; level teardown restores its saved GL state. There is no
+DirectDraw loader or GDI text/surface path. `platform/portable_font.c` uses
+FreeType with the two original fonts and Liberation Sans in place of Arial;
+verified advances/line metrics retain existing layout. Glyph rasterization may
+differ. `core/ui_geometry.c` owns bounded keyed/mirrored indexed copies.
+
+DirectInput, MCI/DirectSound and DirectPlay still use Windows services. The native
+message hook remains for MCI notification and input reacquisition. Physical
+input/controllers are next, followed by audio/music and network transport.

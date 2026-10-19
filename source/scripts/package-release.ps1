@@ -23,8 +23,10 @@ $license=Join-Path $staging 'libsmacker-COPYING.txt'
 Copy-Item -LiteralPath (Join-Path $project 'third_party/libsmacker/COPYING') -Destination $license -Force
 $sdlLicense=Join-Path $staging 'SDL3-LICENSE.txt'
 Copy-Item -LiteralPath (Join-Path $project 'third_party/SDL3-LICENSE.txt') -Destination $sdlLicense -Force
+$fontLicense=Join-Path $staging 'FreeType-FTL.txt'
+Copy-Item -LiteralPath (Join-Path $project 'third_party/FreeType-FTL.txt') -Destination $fontLicense -Force
 $archive=Join-Path $OutputDirectory "uprising-$Version-windows-$Bits.zip"
-$files=@(Join-Path $staging 'uprising.exe')+@($documents | ForEach-Object {Join-Path $staging $_})+@($license,$sdlLicense)
+$files=@(Join-Path $staging 'uprising.exe')+@($documents | ForEach-Object {Join-Path $staging $_})+@($license,$sdlLicense,$fontLicense)
 $files+=@('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','hints.txt') | ForEach-Object {Join-Path $repository $_}
 if($Bits -eq 32){$files+=@('WINMM.dll','libogg-0.dll','libvorbis-0.dll','libvorbisfile-3.dll','winmm.ini') | ForEach-Object {Join-Path $repository $_}}
 Compress-Archive -LiteralPath $files -DestinationPath $archive -Force

@@ -183,7 +183,6 @@ pump:
     while (!m->fault && !game_memory_read_u32(m, 0x59d4c8u)) {
         DWORD frame_started=(uint32_t)SDL_GetTicks();
 
-        GdiFlush();
         if(!game_menu_pump_events(app,1)){stage="event delivery";goto done;}
         /* Network handshakes and the guarded windowed profile keep their menu
          * owners running without stealing desktop focus. Physical events and

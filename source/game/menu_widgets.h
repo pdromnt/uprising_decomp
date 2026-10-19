@@ -3,6 +3,7 @@
 #include "application_entry.h"
 #include "asset_bitmap.h"
 #include "ui_tiled_image.h"
+#include "ui_geometry.h"
 
 typedef struct GameMenuTextStyle {
     uint32_t red,green,blue,font,width,height,x,y,fill;
@@ -22,7 +23,6 @@ int game_menu_text_surface_key(GameApplication *,GameAddress,uint32_t);
 int game_menu_text_surface_release(GameApplication *,GameAddress);
 int game_menu_text_surface_restore(GameApplication *,GameAddress);
 int game_menu_text_surface_white(GameApplication *,GameAddress);
-typedef struct GameMenuPixelSpan {uint8_t *pixels;size_t bytes;int32_t width,height,stride;} GameMenuPixelSpan;
 int game_menu_frame_pixels_begin(GameApplication *,GameMenuPixelSpan *);
 int game_menu_frame_pixels_end(GameApplication *);
 int game_menu_surface_dimensions(GameApplication *,GameAddress,GameMenuPixelSpan *);

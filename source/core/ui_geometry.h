@@ -9,6 +9,10 @@
 typedef struct GameUiRect { int32_t left, top, right, bottom; } GameUiRect;
 #endif
 typedef struct GameUiImage { uint16_t pitch, height; GameAddress pixels; } GameUiImage;
+typedef struct GameMenuPixelSpan {uint8_t *pixels;size_t bytes;int32_t width,height,stride;} GameMenuPixelSpan;
+/* Bounded indexed copy/stretch, with optional source key and two-axis mirror. */
+int game_ui_indexed_copy(const GameMenuPixelSpan *,const GameMenuPixelSpan *,
+    const GameUiRect *,const GameUiRect *,int,uint8_t,int);
 typedef struct GameUiImageOps {
     void *context;
     int (*draw)(void *, const GameUiRect *, const GameUiRect *,

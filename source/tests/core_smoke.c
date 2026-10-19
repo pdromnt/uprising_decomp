@@ -1,6 +1,7 @@
 #include "game_memory.h"
 #include "game_initial_data.h"
 #include "render_texture_cache.h"
+#include "ui_geometry.h"
 #include "asset_bitmap.h"
 #include "game_matrix.h"
 #include "game_string_search.h"
@@ -681,6 +682,28 @@ static int producer_deploy(void *c,GameAddress root,GameAddress o,const float p[
 }
 static int producer_recycle(void *c,GameAddress o){ProducerProbe *probe=c;(void)o;++probe->recycled;return 1;}
 int main(void) {
+    {
+        uint8_t source[8]={1,0,3,0xaa,4,5,6,0xbb},destination[24],overlap[6]={1,2,3,4,5,6};
+        GameMenuPixelSpan from={source,sizeof(source),3,2,4},to={destination,sizeof(destination),4,4,6};
+        GameMenuPixelSpan same={overlap,sizeof(overlap),6,1,6};
+        GameUiRect full={0,0,3,2},clipped={-2,0,4,4},mirrored={0,0,3,2};unsigned i;
+        memset(destination,0xcc,sizeof(destination));
+        CHECK(game_ui_indexed_copy(&to,&from,&full,&clipped,1,0,0));
+        CHECK(destination[0]==0xcc && destination[1]==0xcc && destination[2]==3 && destination[3]==3);
+        CHECK(destination[12]==5 && destination[13]==5 && destination[14]==6 && destination[15]==6);
+        for(i=0;i<4;++i)CHECK(destination[i*6+4]==0xcc && destination[i*6+5]==0xcc);
+        CHECK(game_ui_indexed_copy(&to,&from,&full,&mirrored,0,0,1));
+        CHECK(destination[0]==6 && destination[1]==5 && destination[2]==4);
+        CHECK(destination[6]==3 && destination[7]==0 && destination[8]==1);
+        {GameUiRect a={0,0,5,1},b={1,0,6,1};
+         CHECK(game_ui_indexed_copy(&same,&same,&a,&b,0,0,0));
+         CHECK(!memcmp(overlap,(uint8_t[]){1,1,2,3,4,5},6));}
+        {GameUiRect a={0,0,6,1};
+         CHECK(game_ui_indexed_copy(&same,&same,&a,&a,0,0,1));
+         CHECK(!memcmp(overlap,(uint8_t[]){5,4,3,2,1,1},6));}
+        full.right=4;CHECK(!game_ui_indexed_copy(&to,&from,&full,&mirrored,0,0,0));
+        full.right=3;from.bytes=6;CHECK(!game_ui_indexed_copy(&to,&from,&full,&mirrored,0,0,0));
+    }
     {
         GameMemory initial={0};char path[9];
         CHECK(game_initial_data_create(&initial));

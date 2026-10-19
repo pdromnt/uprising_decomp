@@ -56,7 +56,7 @@ int game_menu_text_image_set_bytes(GameApplication *a,GameAddress p,const char *
     return text_set_bytes(a,p,text,strlen(text),layout);
 }
 /* 0040ba80 -> 0040b020 -> 0040bd30. Legacy bounds/style remain in this owned
- * record. The window owns native DDS/GDI objects under its fixed-width identity. */
+ * record. The window owns SDL pixel surfaces under fixed-width identities. */
 GameAddress game_menu_text_image_create_bytes(GameApplication *a,const char *text,const GameMenuTextStyle *style) {
     GameAddress p;size_t length;uint32_t width,height;int32_t measured_width,measured_height;
     if(!style || style->font>=7u)return 0;

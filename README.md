@@ -16,6 +16,7 @@ crashes that have not yet been found.
 
 Place the reconstructed `uprising.exe` (x86) or `uprising64.exe` (x64) beside `uprising.cln`, `FONTS/`, `GRIDS/`,
 `Music/` and `VIDEO/`. Preserve your original executable elsewhere first.
+Use the complete `FONTS/` from this project/release, including Liberation Sans.
 Double-click your chosen executable; no command-line flags are required. The game starts
 windowed with keyboard, mouse and audio enabled. Its title is
 **Uprising: Join or Die - RE/Decompiled**.

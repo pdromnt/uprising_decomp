@@ -239,18 +239,6 @@ GameAddress game_application_archive_open(GameApplication *app,const char *name,
     entry->next=p->archives;p->archives=entry;return entry->identity;
 }
 
-/*004398e0/00439920: native SDK initialization/query/selection and shutdown.
- * This isolates the existing backend; no graphics instructions or CPU thunks
- * execute here. Missing native SDK/hardware retains the original false result. */
-void *game_application_backend_library(GameApplication *a,const char *name){
-    char path[MAX_PATH];UINT length;
-    if(strcmp(name,"ddraw.dll") || !GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0) ||
-       !GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW",NULL,0))return NULL;
-    length=GetSystemDirectoryA(path,sizeof(path));
-    if(!length || length+sizeof("\\ddraw.dll")>sizeof(path))return NULL;
-    memcpy(path+length,"\\ddraw.dll",sizeof("\\ddraw.dll"));
-    (void)a;return LoadLibraryExA(path,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
-}
 int game_application_ui_begin(GameApplication *app) {
     PortablePlatform *p=app->platform;
     if(!p || p->renderer_initialized)return 0;
@@ -288,7 +276,9 @@ int game_application_level_graphics_begin(GameApplication *a) {
     /*4176e0 immediately uploads the existing P8 palette after opening. */
     for(i=0;i<256;++i)palette[i]=game_memory_read_u32(&a->memory,0x5ad3a8+i*4);
     if(a->memory.fault)goto fail;
-    gl1_palette_range(palette,0,255);return 1;
+    gl1_palette_range(palette,0,255);
+    if(!game_menu_game_palette(a,palette))goto fail;
+    return 1;
 fail:gl1_close();p->window_opened=0;return 0;
 }
 /*4399b0, also used when the platform owner itself is retired. */
@@ -365,8 +355,7 @@ done:
     free(row);if(locked && !gl1_unmap_pixels())ok=0;
     game_application_log(a,"native frame capture: %s\n",ok?"saved":"FAILED");
 }
-/*5189a0: actual swap then optional owned DirectDraw surface flip. The native
- * caller consumes success and samples its frame timer immediately afterward. */
+/*5189a0: present the active native display lane and capture its front buffer. */
 int game_application_frame_present(GameApplication *a){
     if(!game_level_screen_present(a,1) || !game_menu_level_surface_flip(a))return 0;
     capture_game_frame(a,0);return 1;
@@ -423,7 +412,7 @@ int game_level_screen_palette(GameApplication *a,GameAddress address) {
     if(!p || !p->window_opened )return 0;
     for(i=0;i<256;++i)colors[i]=game_memory_read_u32(&a->memory,address+i*4);
     if(a->memory.fault)return 0;
-    gl1_palette_range(colors,0,255);return 1;
+    gl1_palette_range(colors,0,255);return game_menu_game_palette(a,colors);
 }
 /*4d9570: the final overlay queue shares the native world renderer. Restore
  *chromakey even when a submission fails, so failure cleanup preserves SDK state. */

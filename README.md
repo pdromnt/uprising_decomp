@@ -1,88 +1,62 @@
 # Uprising: Join or Die — RE/Decompiled
 
 A behavior-focused reconstruction of **Uprising: Join or Die**, the 1997 game
-developed by Cyclone Studios. This project does not claim ownership of the
-original game, artwork, music or other assets. Game data is included alongside the source.
+by Cyclone Studios. Game data is included alongside the source; original game
+content and third-party components retain their separate ownership and terms.
 
-The shipping target runs ordinary C with native OpenGL rendering. It does not
-execute generated x86 instructions, use a CPU/x87 interpreter, load Glide, or read
-the original executable. Recovered addresses and bounded legacy records remain
-where they preserve behavior; this is still a decompilation, not a new engine.
+The game runs ordinary C with native OpenGL rendering, without CPU/x87 emulation,
+generated instruction execution, Glide or loading the original executable.
+Recovered IDs and bounded legacy layouts remain where they preserve behavior;
+this is still a decompilation, not a new engine.
 
 Most of the game runs fine, but it is still under heavy testing and may have
 crashes that have not yet been found.
 
 ## Running
 
-Place the reconstructed `uprising.exe` (x86) or `uprising64.exe` (x64) beside `uprising.cln`, `FONTS/`, `GRIDS/`,
-`Music/` and `VIDEO/`. Preserve your original executable elsewhere first.
-Use the complete `FONTS/` from this project/release, including Liberation Sans.
-Double-click your chosen executable; no command-line flags are required. The game starts
-windowed on first launch, with keyboard, mouse and audio enabled. Its title is
-**Uprising: Join or Die - RE/Decompiled**.
-Assets are resolved beside the executable, including when a shortcut starts it
-from another working directory.
+Launch `uprising.exe` (x86) or `uprising64.exe` (x64); no flags are required.
+Keep it beside `uprising.cln`, `FONTS/`, `GRIDS/`, `Music/` and `VIDEO/`, using the
+complete fonts supplied by this project. Assets resolve beside the executable,
+regardless of the launch directory. Windows builds are currently supported;
+Linux and macOS ports are next.
 
-Settings, keyboard/controller mappings and music preferences share
-`CONFIG/settings.ini`. The first run imports old `FONTS/settings.cfg` and
-`FONTS/keymap.cfg` if present. Later runs use the
-new file. Saves and screenshots remain separate user data.
+The first launch is windowed and centered on the primary monitor. Settings,
+keyboard/controller bindings and music preferences use `CONFIG/settings.ini`.
+Legacy `FONTS/settings.cfg` and `FONTS/keymap.cfg` are imported on first use when
+present. Saves and screenshots are separate user data.
 
-Options → Graphics → **ADVANCED** selects windowed/fullscreen output, 4:3 window
-resolution and optional FSR1 upscaling. Fullscreen uses the desktop mode with a
-centered 4:3 image and black borders; its output size is automatic. Apply previews
-the mode; **KEEP** confirms it within
-20 seconds, otherwise the previous mode returns. Display preferences use the
-same settings file and load without flags. The original game frame keeps its
-aspect ratio; widescreen output has side bars. FSR1 upscales the existing game
-frame, including its HUD, and the front-end menus. With FSR off, a pixel-art
-presentation filter smooths fractional scaling while preserving integer-scale
-pixel interiors. FSR
-requires an OpenGL 4.3 compatibility context; the existing rendering path remains
-available without it. Fullscreen switching still needs manual acceptance.
-The **3D ANTI-ALIASING** control offers Off and supported MSAA 2×/4×/8× modes.
-It takes effect on the next mission load and applies to world geometry, keeping
-HUD, text, menus and 2D overlay draws outside the AA pass.
+Options → Graphics → **ADVANCED** provides:
 
-SDL3 plays effects/movie audio and streams the OGG tracks in `Music/` on both
-architectures. The old music DLLs and `winmm.ini` are no longer required.
-Music/effects volume and track preferences use `CONFIG/settings.ini`; volume
-controls affect the game, leaving desktop volume alone.
+- **Display mode:** windowed or desktop fullscreen. The game stays 4:3 with black
+  borders on wide monitors; windowed resolutions are 4:3 only.
+- **FSR1:** upscales gameplay, HUD and menus. Off uses a pixel-art scaling filter.
+  FSR requires an OpenGL 4.3 compatibility context; the base renderer does not.
+- **3D anti-aliasing:** Off or supported MSAA 2×/4×/8×, applied on the next mission
+  load. HUD, text, menus and 2D overlay draws remain outside the AA pass.
 
-Multiplayer's TCP/IP menu entry now uses ENet reliable UDP between reconstructed
-builds (up to four players), with LAN discovery and host migration. Allow UDP
-ports 2302 (initial host) and 2303 (discovery), plus peer traffic, through your
-firewall. Retail/older DirectPlay builds, external DirectPlay lobbies, IPX,
-modem and serial-cable connections are not compatible. Separate-machine and
-internet play still need manual acceptance.
+**Apply → KEEP** saves the choice. Unconfirmed changes revert after 20 seconds.
+Music and effects volume affect the game only. Movies continue while unfocused.
+Bindings can be changed in Options; **Tab** switches the player camera and **K**
+follows a selected unit.
 
-## Building
+Multiplayer's **TCP/IP** entry uses ENet UDP between reconstructed builds, up to
+four players. Allow UDP 2302 for the initial host, 2303 for discovery, and peer
+traffic through the firewall. Retail DirectPlay peers, external DirectPlay
+lobbies, IPX, modem and serial-cable connections are unsupported.
 
-From the repository root, run `source\scripts\build.bat` or:
+## Building and contributing
+
+Use MinGW-w64 GCC/G++, windres, CMake 3.24+ and Ninja on Windows:
 
 ```powershell
-./source/scripts/build.ps1 -Bits 32
+./source/scripts/build.ps1 -Bits 32 -Tests
 ```
 
-Requires MinGW-w64 GCC, windres, CMake 3.24+ and Ninja. Local output names are `uprising.exe` and `uprising64.exe`. CI packages each architecture separately as `uprising.exe`. The default output directory is
-the repository root, beside the assets; intermediate files stay in `source/build/`.
-The script refuses to overwrite an original or unknown executable. Use
-`-OutputDirectory path` for staging, `-Bits 64` for an x64 build, and `-Tests` for
-the asset-free checks. See [docs/BUILDING.md](docs/BUILDING.md).
+`source\scripts\build.bat` is the batch shortcut. Use `-Bits 64` for x64.
+Outputs go beside the assets; CI packages each architecture as `uprising.exe`.
+See [Building](docs/BUILDING.md), [Codebase](docs/CODEBASE.md),
+[Remaining work](docs/BACKLOG.md) and [Manual testing](docs/MANUAL_TESTING.md).
 
-## Status and contributing
-
-Windows x86 gameplay has received iterative manual testing and original-code
-comparisons. Windows x64 has targeted gameplay/build/core-check coverage; full x64 gameplay,
-natural campaign/tutorial progression and broader multiplayer acceptance remain
-manual validation. SDL3 platform migration is underway; other platforms remain
-deferred. A successful link or smoke test does not establish whole-game parity.
-
-See [CODEBASE.md](docs/CODEBASE.md), [BACKLOG.md](docs/BACKLOG.md), and
-[docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md). Report the mission, exact action,
-architecture and reproducible steps when filing a bug. Keep unrelated cleanup
-separate from behavior fixes.
-
-No project-wide license has been selected for the reconstructed code. Original
-and third-party material retains its separate ownership and terms; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Report the mission, action, build/architecture and steps to reproduce a bug.
+No project-wide license has been selected for the reconstructed code; see
+[Third-party notices](THIRD_PARTY_NOTICES.md) for component and asset terms.

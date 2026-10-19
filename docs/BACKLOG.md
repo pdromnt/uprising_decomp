@@ -1,23 +1,12 @@
 # Remaining work
 
-- Continue manual campaign/tutorial progression, mission cycling, crowded combat,
-  mission exit, menus and multiplayer checks; fix concrete reports.
-- Validate complete x64 gameplay; other platforms/architectures are deferred.
-- Audio is user-confirmed working. Controller and multiplayer are accepted for
-  now on existing local checks. Physical controller/haptics/Bluetooth and ENet
-  separate-machine/four-player/loss/reconnect checks are deferred, not verified.
-- SDL3 legacy cleanup is integrated. Remove further dead code when concrete
-  dependencies establish it is unused; broad cleanup is deferred. Small Windows
-  file-attribute and CRT cwd/durability adapters remain deliberate.
-- Manually accept advanced display settings: fullscreen mode changes, confirmation/
-  timeout, restart persistence and FSR1 appearance at larger resolutions. Local
-  x86/x64 windowed UI, FSR toggling and cleanup checks passed before the latest
-  all-screen filtering/4:3-only/desktop-fullscreen changes, now awaiting the
-  user's manual check. Older-GPU fallback still needs hardware acceptance.
-- Manually accept geometry-only MSAA (Off/2×/4×/8× where supported), including
-  unchanged 2D coverage and repeated mission cleanup. Then attempt Linux/macOS
-  source/build portability; neither platform is validated yet.
+- Port source/builds to Linux and macOS: toolchains, platform adapters, OpenGL
+  compatibility/FSR paths and runtime packaging.
+- Fix concrete gameplay, menu, mission-transition and performance reports from
+  continued play. Use the focused checklist in [Manual testing](MANUAL_TESTING.md).
+- Broaden coverage on older GPUs and physical controllers/haptics, and exercise
+  multiplayer across separate machines when hardware/players are available.
 - Select a license for project-authored code.
-- Later: better module boundaries, descriptive fields and layout cleanup.
+- Later: improve module boundaries, field names and legacy layouts where useful.
 
-Previously accepted gameplay fixes are not reopened without new evidence.
+Feature history and completed work belong in Git, not this backlog.

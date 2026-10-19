@@ -1,57 +1,48 @@
 # Building
 
-Use Windows, MinGW-w64 GCC/G++ (with the desired multilib target), windres, CMake
-3.24+ and Ninja. `source/scripts/build.ps1` finds tools on PATH, or GCC at the existing
-local TDM installation and CMake/Ninja from Visual Studio. Set `-Compiler` to
-override GCC. MSVC and non-Windows backends are not currently supported.
+The current build needs Windows, MinGW-w64 GCC/G++, windres, CMake 3.24+ and
+Ninja. MSVC, Linux and macOS builds are not supported yet.
 
-The batch shortcut is `source\scripts\build.bat`; it forwards the same arguments
-to `build.ps1`, preferring PowerShell 7 when installed. Pass `-?` to view help.
-CI calls the PowerShell script directly.
-
-The first configure downloads checksum-pinned SDL 3.4.16 and FreeType 2.14.3;
-subsequent builds reuse their shared source caches. Both are linked statically,
-with no additional DLL installation or launch flags. Windows, menu surfaces,
-font rendering, physical input and OpenGL contexts now use portable services.
-Audio/music also use SDL3 with the bundled stb_vorbis decoder. Joystick input and
-periodic haptics use SDL3; the legacy I-FORCE SDK is removed. Networking uses
-checksum-pinned ENet 1.3.18, also downloaded once and linked statically. DirectPlay
-installation is no longer required.
-The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
-to the original fonts; keep the complete FONTS directory with the executable.
+From the game root:
 
 ```powershell
 ./source/scripts/build.ps1 -Bits 32 -Tests
-./source/scripts/build.ps1 -Bits 64 -OutputDirectory ./source/build/stage64 -Tests
+./source/scripts/build.ps1 -Bits 64 -Tests
 ```
 
-Local builds use uprising.exe (x86) and uprising64.exe (x64). CI passes `-ExecutableName uprising.exe` for each separate architecture package.
+Run local architectures sequentially: their dependency source caches are shared.
+`source\scripts\build.bat` forwards the same arguments, preferring PowerShell 7.
+Use `-Compiler` to choose GCC, `-OutputDirectory` for staging, and `-?` for help.
+The script finds tools on PATH, with local TDM/Visual Studio fallbacks.
 
-The build is incremental, uses at most four compiler processes, and does not copy
-assets. Per-architecture caches are in `source/build/windows-32` and `windows-64`.
-Run local x86/x64 configurations sequentially; they share dependency download caches.
-The `.rc` is compiled to `uprising.res` and a matching COFF object before linking.
+Outputs are `uprising.exe` (x86) and `uprising64.exe` (x64). Builds are incremental,
+use at most four compiler processes and share assets without copying them.
+Per-architecture caches live under `source/build/windows-32` and `windows-64`.
+The script refuses to replace an original/unknown EXE, retains the previous
+output, and checks the linked execution symbols and renderer identity. `-Tests`
+runs the asset-free core/config/audio checks; it does not establish gameplay parity.
+
+CMake fetches checksum-pinned SDL 3.4.16, FreeType 2.14.3 and ENet 1.3.18 once.
+They link statically; bundled libsmacker, stb_vorbis and FSR shader sources need
+no extra runtime DLLs. The Windows resource script is compiled during the build.
 Do not commit generated resources or binaries.
 
-Normal launches do not create `uprising-portable.log`. To investigate a problem,
-set `UPRISING_RECOMP_NATIVE_OBSERVE=1`; the log is replaced on each launch.
-An explicit `UPRISING_USER_DIRECTORY` also enables logging for isolated checks.
+Keep `uprising.cln`, `FONTS/`, `GRIDS/`, `VIDEO/` and `Music/` beside the EXE.
+Include the complete supplied fonts and licenses. No original EXE or legacy
+Glide/DirectDraw/Smacker DLL/VXD is required.
 
-For direct CMake use, configure a Ninja build with GCC, `-m32`/`-m64`, windres and
-`UPRISING_ASSET_DIRECTORY` set to the output directory. `BUILD_TESTING=ON` enables
-CTest. The build script also checks the linked symbols and native OpenGL identity.
+For diagnostics, `UPRISING_RECOMP_NATIVE_OBSERVE=1` enables a log replaced on each
+launch; normal launches create no log. `UPRISING_USER_DIRECTORY` selects isolated
+user data and enables diagnostic logging. Direct CMake builds use Ninja/GCC,
+`-m32`/`-m64`, windres and `UPRISING_ASSET_DIRECTORY`; `BUILD_TESTING=ON` enables CTest.
 
-Required assets beside the output are `uprising.cln`, `FONTS/`, `GRIDS/`, `VIDEO/`
-and `Music/`. No original EXE, Glide, DirectDraw proxy, Smacker DLL or VXD is a
-shipping dependency. OGG music needs no external codec DLLs or separate INI.
-Do not package retail assets without permission.
+## Releases
 
-`source/scripts/package-release.ps1` packages the EXE, game data and notices.
-It excludes source code, build output, user settings and saves.
-Each architecture package contains `uprising.exe`.
+Tag the desired revision, then manually run **Build release** for that existing
+tag. The workflow builds both architectures and attaches their runtime ZIPs.
+Each package names its EXE `uprising.exe` and includes assets/component notices;
+source, settings, saves and build caches are excluded. GitHub provides the tagged
+source archives. Ordinary main/PR workflows upload the two EXEs separately.
 
-For a release, push the desired tag, then open Actions → Build release → Run
-workflow and enter that existing tag. Both architecture checks must pass before
-the workflow creates/updates the GitHub release and attaches its ZIP files.
-The tag identifies the corresponding source through GitHub's source archives.
-Ordinary main/PR builds check both architectures and upload just their EXEs.
+`source/scripts/package-release.ps1` performs packaging. Preserve asset and
+third-party terms in [Third-party notices](../THIRD_PARTY_NOTICES.md).

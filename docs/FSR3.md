@@ -2,7 +2,7 @@
 
 Branch: `FSR3`, based on `c620bc4b`. `main` remains the release/bug-fix line.
 The first playable target is Vulkan with FSR 3.1 temporal upscaling. Frame
-generation is deferred; its presenter/pacing port is outside this first target.
+generation is out of scope; the existing real frame rate is sufficient.
 The game remains C. Keep any later AMD C++ host code behind a small C interface.
 
 ## Stages and acceptance
@@ -26,9 +26,6 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
    and quality controls; validate moving edges, disocclusion, transparencies and
    all tank/O/citadel views. Composite HUD/text at output resolution. Preserve
    4:3 presentation. Compare real frame time and image quality with FSR disabled.
-5. **Later frame generation.** Separate decision after upscaling is stable.
-   Requires portable scheduling/pacing, UI composition and additional latency/
-   presentation validation. Do not describe upscale-only as full frame generation.
 
 ## Dependency proof
 
@@ -44,6 +41,14 @@ shader in FP32. It checks all 64 readback pixels against the expected 0.4330127.
 `--show` briefly shows the result; `--validation` requires installed Khronos
 validation layers and fails rather than silently skipping them. Run as a normal
 console program. It captures no input and plays no sound.
+
+The graphics foundation now buffers projected triangles, snapshots each batch's
+texture/depth/blend state, and renders into owned RGBA/depth targets. The probe
+checks occlusion, projective UV division, transparent cutouts, blending and HUD
+ordering over three frames, then presents that rendered image through a reusable
+aspect-preserving swapchain, including a forced rebuild. Command buffers and
+texture descriptors are released after use. This parity path is synchronous;
+frame overlap, game integration, full material modes and mip chains remain ahead.
 
 Windows/Linux use the installed Vulkan driver/loader. macOS explicitly requires
 KosmicKrisp, Apple Silicon and macOS 26+, with a developer Vulkan SDK for now:
@@ -64,7 +69,10 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
 
 - Local Windows x64/RTX4060Ti: reactive-mask numeric check and swapchain present
   passed. Khronos validation layers were unavailable locally, so no validation
-  pass is claimed. Six-target probe CI and other native drivers are pending.
+  pass is claimed. Initial six-target CI passed, including validation-enabled
+  Linux x64/ARM64 software-driver execution. The new graphics extension passed
+  locally; its six-target CI is pending. macOS/Windows ARM64 have compile evidence,
+  not native GPU execution evidence.
 - One reactive-mask pass does **not** establish complete FSR upscaling, temporal
   quality, frame generation, playable Vulkan rendering or a performance gain.
 - The SDK v1.1.4 upscaler Vulkan backend already contains non-Windows paths;

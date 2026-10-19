@@ -7,17 +7,20 @@
 
 #define VK_DEVICE_FUNCTIONS(X) \
  X(DestroyDevice) X(GetDeviceQueue) X(DeviceWaitIdle) X(QueueWaitIdle) \
- X(CreateCommandPool) X(DestroyCommandPool) X(AllocateCommandBuffers) X(ResetCommandPool) \
+ X(CreateCommandPool) X(DestroyCommandPool) X(AllocateCommandBuffers) X(FreeCommandBuffers) X(ResetCommandPool) \
  X(BeginCommandBuffer) X(EndCommandBuffer) X(QueueSubmit) X(CreateFence) X(DestroyFence) X(WaitForFences) \
  X(CreateBuffer) X(DestroyBuffer) X(GetBufferMemoryRequirements) X(BindBufferMemory) \
  X(AllocateMemory) X(FreeMemory) X(MapMemory) X(UnmapMemory) X(FlushMappedMemoryRanges) X(InvalidateMappedMemoryRanges) \
  X(CreateImage) X(DestroyImage) X(GetImageMemoryRequirements) X(BindImageMemory) X(CreateImageView) X(DestroyImageView) \
  X(CreateDescriptorSetLayout) X(DestroyDescriptorSetLayout) X(CreateDescriptorPool) X(DestroyDescriptorPool) \
- X(AllocateDescriptorSets) X(UpdateDescriptorSets) X(CreatePipelineLayout) X(DestroyPipelineLayout) \
+ X(AllocateDescriptorSets) X(FreeDescriptorSets) X(UpdateDescriptorSets) X(CreatePipelineLayout) X(DestroyPipelineLayout) \
  X(CreateShaderModule) X(DestroyShaderModule) X(CreateComputePipelines) X(DestroyPipeline) \
  X(CmdPipelineBarrier) X(CmdClearColorImage) X(CmdBindPipeline) X(CmdBindDescriptorSets) X(CmdDispatch) X(CmdCopyImageToBuffer) \
  X(CreateSwapchainKHR) X(DestroySwapchainKHR) X(GetSwapchainImagesKHR) X(AcquireNextImageKHR) X(QueuePresentKHR) \
- X(CreateSemaphore) X(DestroySemaphore)
+ X(CreateSemaphore) X(DestroySemaphore) X(CreateSampler) X(DestroySampler) \
+ X(CreateRenderPass) X(DestroyRenderPass) X(CreateFramebuffer) X(DestroyFramebuffer) \
+ X(CreateGraphicsPipelines) X(CmdBeginRenderPass) X(CmdEndRenderPass) \
+ X(CmdBindVertexBuffers) X(CmdPushConstants) X(CmdDraw) X(CmdCopyBufferToImage) X(CmdBlitImage)
 
 typedef struct VulkanDevice {
     VkInstance instance;VkPhysicalDevice physical;VkDevice device;VkQueue queue;
@@ -45,8 +48,8 @@ void vulkan_buffer_destroy(VulkanDevice *,VulkanBuffer *);
 int vulkan_buffer_write(VulkanDevice *,VulkanBuffer *,const void *,size_t);
 int vulkan_buffer_read(VulkanDevice *,VulkanBuffer *,void *,size_t);
 int vulkan_image_create(VulkanDevice *,VulkanImage *,VkFormat,VkImageUsageFlags,uint32_t,uint32_t);
+int vulkan_image_create_aspect(VulkanDevice *,VulkanImage *,VkFormat,VkImageUsageFlags,uint32_t,uint32_t,VkImageAspectFlags);
 void vulkan_image_destroy(VulkanDevice *,VulkanImage *);
 int vulkan_command_begin(VulkanDevice *,VkCommandBuffer *);
 int vulkan_command_submit(VulkanDevice *,VkCommandBuffer,VkSemaphore,VkSemaphore);
-int vulkan_present_clear(VulkanDevice *,float);
 #endif

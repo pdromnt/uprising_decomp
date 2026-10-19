@@ -39,7 +39,18 @@ add_custom_command(OUTPUT "${embedded}"
         "-I${fsr3_source}/sdk/include/FidelityFX/gpu" "${shader}" -o "${spirv}"
     COMMAND "${CMAKE_COMMAND}" "-DINPUT=${spirv}" "-DOUTPUT=${embedded}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
     DEPENDS ${fsr3_dependencies} cmake/embed_spirv.cmake VERBATIM)
-add_executable(uprising_vulkan_probe tests/vulkan_probe.c platform/vulkan/vulkan_device.c "${embedded}")
+set(graphics_headers)
+foreach(stage vert frag)
+    set(source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/projected.${stage}")
+    set(binary "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}.spv")
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}_spv.h")
+    add_custom_command(OUTPUT "${header}"
+        COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${source}" -o "${binary}"
+        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=projected_${stage}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+        DEPENDS "${source}" cmake/embed_spirv.cmake VERBATIM)
+    list(APPEND graphics_headers "${header}")
+endforeach()
+add_executable(uprising_vulkan_probe tests/vulkan_probe.c platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c "${embedded}" ${graphics_headers})
 target_include_directories(uprising_vulkan_probe PRIVATE platform/vulkan "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(uprising_vulkan_probe PRIVATE SDL3::SDL3-static Vulkan::Headers)
 if(NOT MSVC)

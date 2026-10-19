@@ -158,18 +158,23 @@ static int buffer_transfer(VulkanDevice *v,VulkanBuffer *b,void *data,size_t siz
 int vulkan_buffer_write(VulkanDevice *v,VulkanBuffer *b,const void *data,size_t size){return buffer_transfer(v,b,(void *)data,size,1);}
 int vulkan_buffer_read(VulkanDevice *v,VulkanBuffer *b,void *data,size_t size){return buffer_transfer(v,b,data,size,0);}
 int vulkan_image_create(VulkanDevice *v,VulkanImage *image,VkFormat format,VkImageUsageFlags usage,uint32_t width,uint32_t height){
+    return vulkan_image_create_aspect(v,image,format,usage,width,height,VK_IMAGE_ASPECT_COLOR_BIT);
+}
+int vulkan_image_create_aspect(VulkanDevice *v,VulkanImage *image,VkFormat format,VkImageUsageFlags usage,uint32_t width,uint32_t height,VkImageAspectFlags aspect){
     VkImageCreateInfo create={VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};VkMemoryRequirements r;VkMemoryAllocateInfo a={VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     VkImageViewCreateInfo view={VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};VkFormatProperties supported;VkFormatFeatureFlags required=0;
     memset(image,0,sizeof(*image));v->format_properties(v->physical,format,&supported);
     if(usage&VK_IMAGE_USAGE_STORAGE_BIT)required|=VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     if(usage&VK_IMAGE_USAGE_SAMPLED_BIT)required|=VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    if(usage&VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)required|=VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    if(usage&VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)required|=VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
     if((supported.optimalTilingFeatures&required)!=required){fprintf(stderr,"Vulkan format %u lacks required features\n",format);return 0;}
     create.imageType=VK_IMAGE_TYPE_2D;create.format=format;create.extent=(VkExtent3D){width,height,1};create.mipLevels=create.arrayLayers=1;
     create.samples=VK_SAMPLE_COUNT_1_BIT;create.tiling=VK_IMAGE_TILING_OPTIMAL;create.usage=usage;create.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
     CHECK(v->CreateImage(v->device,&create,NULL,&image->image));v->GetImageMemoryRequirements(v->device,image->image,&r);a.allocationSize=r.size;
     if(!memory_type(v,r.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,&a.memoryTypeIndex))goto fail;
     CHECK(v->AllocateMemory(v->device,&a,NULL,&image->memory));CHECK(v->BindImageMemory(v->device,image->image,image->memory,0));
-    view.image=image->image;view.viewType=VK_IMAGE_VIEW_TYPE_2D;view.format=format;view.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+    view.image=image->image;view.viewType=VK_IMAGE_VIEW_TYPE_2D;view.format=format;view.subresourceRange=(VkImageSubresourceRange){aspect,0,1,0,1};
     CHECK(v->CreateImageView(v->device,&view,NULL,&image->view));return 1;
 fail:vulkan_image_destroy(v,image);return 0;
 }
@@ -183,12 +188,14 @@ int vulkan_command_begin(VulkanDevice *v,VkCommandBuffer *command){
     VkCommandBufferAllocateInfo a={VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};VkCommandBufferBeginInfo b={VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     a.commandPool=v->commands;a.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;a.commandBufferCount=1;
     if(!result(v->AllocateCommandBuffers(v->device,&a,command),"allocate command buffer"))return 0;
-    b.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;return result(v->BeginCommandBuffer(*command,&b),"begin command buffer");
+    b.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if(result(v->BeginCommandBuffer(*command,&b),"begin command buffer"))return 1;
+    v->FreeCommandBuffers(v->device,v->commands,1,command);return 0;
 }
 int vulkan_command_submit(VulkanDevice *v,VkCommandBuffer command,VkSemaphore wait,VkSemaphore signal){
     VkFenceCreateInfo create={VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};VkFence fence=VK_NULL_HANDLE;int ok=0;
     VkSubmitInfo submit={VK_STRUCTURE_TYPE_SUBMIT_INFO};VkPipelineStageFlags stage=VK_PIPELINE_STAGE_TRANSFER_BIT;
-    if(!result(v->EndCommandBuffer(command),"end command buffer"))return 0;
+    if(!result(v->EndCommandBuffer(command),"end command buffer"))goto fail;
     CHECK(v->CreateFence(v->device,&create,NULL,&fence));submit.commandBufferCount=1;submit.pCommandBuffers=&command;
     if(wait){submit.waitSemaphoreCount=1;submit.pWaitSemaphores=&wait;submit.pWaitDstStageMask=&stage;}
     if(signal){submit.signalSemaphoreCount=1;submit.pSignalSemaphores=&signal;}
@@ -196,52 +203,6 @@ int vulkan_command_submit(VulkanDevice *v,VkCommandBuffer command,VkSemaphore wa
 fail:
     if(!ok)v->DeviceWaitIdle(v->device);
     if(fence)v->DestroyFence(v->device,fence,NULL);
+    v->FreeCommandBuffers(v->device,v->commands,1,&command);
     return ok;
-}
-int vulkan_present_clear(VulkanDevice *v,float reactive){
-    VkSurfaceCapabilitiesKHR caps;VkSurfaceFormatKHR *formats=NULL,format;uint32_t n=0,image_count,index,i;int ok=0;
-    VkSwapchainKHR swap=VK_NULL_HANDLE;VkImage *images=NULL;VkSemaphore ready=VK_NULL_HANDLE,done=VK_NULL_HANDLE;VkCommandBuffer command;
-    VkSwapchainCreateInfoKHR create={VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};VkSemaphoreCreateInfo sem={VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkPresentInfoKHR present={VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-    CHECK(v->surface_caps(v->physical,v->surface,&caps));CHECK(v->surface_formats(v->physical,v->surface,&n,NULL));
-    if(!n)goto fail;
-    formats=calloc(n,sizeof(*formats));if(!formats)goto fail;
-    CHECK(v->surface_formats(v->physical,v->surface,&n,formats));format=formats[0];
-    for(i=0;i<n;i++)if(formats[i].format==VK_FORMAT_B8G8R8A8_UNORM){format=formats[i];break;}
-    if(!(caps.supportedUsageFlags&VK_IMAGE_USAGE_TRANSFER_DST_BIT))goto fail;
-    create.surface=v->surface;create.minImageCount=caps.minImageCount+1;
-    if(caps.maxImageCount && create.minImageCount>caps.maxImageCount)create.minImageCount=caps.maxImageCount;
-    create.imageFormat=format.format;create.imageColorSpace=format.colorSpace;
-    create.imageExtent=caps.currentExtent;
-    if(create.imageExtent.width==UINT32_MAX){
-        create.imageExtent=(VkExtent2D){640,480};
-        if(create.imageExtent.width<caps.minImageExtent.width)create.imageExtent.width=caps.minImageExtent.width;
-        if(create.imageExtent.height<caps.minImageExtent.height)create.imageExtent.height=caps.minImageExtent.height;
-        if(create.imageExtent.width>caps.maxImageExtent.width)create.imageExtent.width=caps.maxImageExtent.width;
-        if(create.imageExtent.height>caps.maxImageExtent.height)create.imageExtent.height=caps.maxImageExtent.height;
-    }
-    if(!create.imageExtent.width || !create.imageExtent.height)goto fail;
-    create.imageArrayLayers=1;create.imageUsage=VK_IMAGE_USAGE_TRANSFER_DST_BIT;create.imageSharingMode=VK_SHARING_MODE_EXCLUSIVE;
-    create.preTransform=caps.currentTransform;create.compositeAlpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    if(!(caps.supportedCompositeAlpha&create.compositeAlpha))create.compositeAlpha=(VkCompositeAlphaFlagBitsKHR)(caps.supportedCompositeAlpha&(~caps.supportedCompositeAlpha+1u));
-    create.presentMode=VK_PRESENT_MODE_FIFO_KHR;create.clipped=VK_TRUE;
-    CHECK(v->CreateSwapchainKHR(v->device,&create,NULL,&swap));CHECK(v->GetSwapchainImagesKHR(v->device,swap,&n,NULL));
-    images=calloc(n,sizeof(*images));if(!images)goto fail;image_count=n;CHECK(v->GetSwapchainImagesKHR(v->device,swap,&image_count,images));
-    CHECK(v->CreateSemaphore(v->device,&sem,NULL,&ready));CHECK(v->CreateSemaphore(v->device,&sem,NULL,&done));
-    CHECK(v->AcquireNextImageKHR(v->device,swap,5000000000ull,ready,VK_NULL_HANDLE,&index));
-    if(!vulkan_command_begin(v,&command))goto fail;
-    barrier.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.image=images[index];
-    barrier.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
-    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    {VkClearColorValue color={{reactive,0.1f,0.3f,1.0f}};v->CmdClearColorImage(command,images[index],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&color,1,&barrier.subresourceRange);}
-    barrier.oldLayout=barrier.newLayout;barrier.newLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=0;
-    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&barrier);
-    if(!vulkan_command_submit(v,command,ready,done))goto fail;
-    present.waitSemaphoreCount=1;present.pWaitSemaphores=&done;present.swapchainCount=1;present.pSwapchains=&swap;present.pImageIndices=&index;
-    CHECK(v->QueuePresentKHR(v->queue,&present));CHECK(v->QueueWaitIdle(v->queue));printf("VULKAN_PRESENT_PASS %ux%u\n",create.imageExtent.width,create.imageExtent.height);ok=1;
-fail:
-    v->DeviceWaitIdle(v->device);if(ready)v->DestroySemaphore(v->device,ready,NULL);if(done)v->DestroySemaphore(v->device,done,NULL);
-    if(swap)v->DestroySwapchainKHR(v->device,swap,NULL);
-    free(formats);free(images);return ok;
 }

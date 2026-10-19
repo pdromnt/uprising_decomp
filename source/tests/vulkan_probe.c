@@ -1,8 +1,54 @@
 #include "vulkan_device.h"
+#include "vulkan_draw.h"
+#include "vulkan_present.h"
 #include "fsr3_reactive_spv.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
+
+static int draw_quad(VulkanDraw *d,float left,float top,float right,float bottom,float depth,
+        float r,float g,float b,float a,const VulkanDrawTexture *texture,uint32_t flags){
+    VulkanDrawVertex quad[4]={0},triangles[6];unsigned i;const unsigned index[6]={0,1,2,0,2,3};
+    for(i=0;i<4;i++){
+        int on_right=i==1 || i==2;float q=texture && on_right?2.0f:1.0f;
+        quad[i].position[0]=on_right?right:left;quad[i].position[1]=i>=2?bottom:top;quad[i].position[2]=depth;
+        quad[i].color[0]=r;quad[i].color[1]=g;quad[i].color[2]=b;quad[i].color[3]=a;
+        quad[i].uv[0]=on_right?q:0;quad[i].uv[1]=0.5f*q;quad[i].uv[2]=q;
+    }
+    for(i=0;i<6;i++)triangles[i]=quad[index[i]];
+    return vulkan_draw_triangles(d,triangles,6,texture,flags);
+}
+static int pixel(const uint8_t *rgba,unsigned x,unsigned y,unsigned r,unsigned g,unsigned b){
+    const uint8_t *p=rgba+(y*64+x)*4;
+    if(abs((int)p[0]-(int)r)>1 || abs((int)p[1]-(int)g)>1 || abs((int)p[2]-(int)b)>1){
+        fprintf(stderr,"Vulkan draw pixel %u,%u: %u,%u,%u expected %u,%u,%u\n",x,y,p[0],p[1],p[2],r,g,b);return 0;
+    }return 1;
+}
+static int graphics_pass(VulkanDevice *v,SDL_Window *window){
+    VulkanDraw draw={0};VulkanDrawTexture texture={0};VulkanPresent present={0};uint8_t rgba[64*64*4];unsigned frame;int ok=0;
+    const uint8_t texels[8]={255,255,255,255,255,255,255,0};const float clear[4]={0,0,0,1};
+    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_draw_texture_create(&draw,&texture,texels,2,1,0,0) || !vulkan_present_open(&present,v,window))goto done;
+    for(frame=0;frame<3;frame++){
+        if(!vulkan_draw_begin(&draw,clear) ||
+           !draw_quad(&draw,0,0,64,64,0.6f,1,0,0,1,NULL,3) ||
+           !draw_quad(&draw,8,8,32,32,0.3f,0,1,0,1,NULL,3) ||
+           !draw_quad(&draw,0,0,64,64,0.8f,0,0,1,1,NULL,3) ||
+           !draw_quad(&draw,32,0,64,32,0.2f,0,1,1,1,&texture,3) ||
+           !draw_quad(&draw,0,32,32,64,0.9f,0,0,1,0.5f,NULL,VULKAN_DRAW_BLEND) ||
+           !draw_quad(&draw,48,48,64,64,0.9f,1,1,0,1,NULL,0) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)))goto done;
+        if(!pixel(rgba,2,2,255,0,0) || !pixel(rgba,16,16,0,255,0) ||
+           !pixel(rgba,36,16,0,255,255) || !pixel(rgba,44,16,255,0,0) ||
+           !pixel(rgba,16,48,128,0,128) || !pixel(rgba,56,56,255,255,0))goto done;
+        if(frame==1)present.recreate=1;
+        if(!vulkan_present_image(&present,draw.color.image,64,64))goto done;
+    }
+    printf("VULKAN_GRAPHICS_PASS frames=3 depth=checked alpha=checked projective_uv=checked hud_order=checked\n");ok=1;
+    printf("VULKAN_PRESENT_PASS frames=3 swapchain_rebuild=checked aspect=preserved\n");
+done:
+    vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
+}
 
 /* Runs AMD's unmodified FSR3 reactive-mask shader. This proves a real SDK
  * compute pass, not temporal upscaling or frame generation. No game assets. */
@@ -108,7 +154,7 @@ int main(int argc,char **argv){
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
-    if(!reactive_pass(&device,&reactive) || !vulkan_present_clear(&device,reactive))goto done;
+    if(!graphics_pass(&device,window) || !reactive_pass(&device,&reactive))goto done;
     if(show){SDL_PumpEvents();SDL_Delay(750);}
     if(device.validation_errors){fprintf(stderr,"Vulkan validation errors=%u\n",device.validation_errors);goto done;}
     printf("VULKAN_FSR3_PROBE_PASS validation=%s\n",validation?"enabled":"not-enabled");ok=1;

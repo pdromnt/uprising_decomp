@@ -53,6 +53,10 @@ add_library(uprising_fsr3 STATIC platform/vulkan/fsr3_backend.cpp platform/vulka
     "${fsr3_sdk}/src/shared/ffx_message.cpp"
     "${fsr3_sdk}/src/shared/ffx_breadcrumbs_list.cpp" ${fsr3_headers})
 target_compile_features(uprising_fsr3 PRIVATE cxx_std_17)
+if(NOT WIN32)
+    target_compile_options(uprising_fsr3 PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include>"
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_portability.h>")
+endif()
 target_include_directories(uprising_fsr3 PRIVATE "${fsr3_sdk}/include" "${fsr3_sdk}/src/shared"
     "${fsr3_sdk}/src/backends/shared" "${fsr3_sdk}/src/backends/vk" "${reflect_source}"
     "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan")

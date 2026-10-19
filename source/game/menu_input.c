@@ -108,7 +108,12 @@ int game_menu_controller_pointer(GameApplication *a,GameAddress controller,
             seen=get(m,callback,20);key=get(m,callback,4);
             if(pass==0u && (!seen || key!=0x20bu))continue;
             if(pass==1u && (seen || key!=0x20au))continue;
-            hit=inside(m,get(m,callback,0),x,y);
+            /* A modal thumb drag captures motion and release even outside its
+             * original hit box. SDL coordinates are client/game coordinates;
+             * the old desktop-window rectangle cannot bound this capture. */
+            hit=(get(m,0x627ab4u,0) && get(m,0x59d4c0u,0)==controller &&
+                 (message==0x200u || message==0x202u)) ||
+                inside(m,get(m,callback,0),x,y);
             if(m->fault)return 0;
             if(pass==0u) {
                 if(hit)continue;

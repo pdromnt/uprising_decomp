@@ -137,6 +137,7 @@ int game_menu_pump_events(GameApplication *a,int deliver_input){
             if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:case SDL_EVENT_WINDOW_MINIMIZED:
+            if(!game_menu_slider_cancel(a))return 0;
             if(!pointer_clip_release(w) || !game_menu_input_unacquire(a))return 0;
             game_memory_write_u32(&a->memory,0x6270f4,
                 w->hidden || game_application_isolated_input(a)?1:0);break;
@@ -303,7 +304,7 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
 
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
-    SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE,"0");
+    SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE,"1");
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO))goto fail;
     w->sdl_initialized=1;

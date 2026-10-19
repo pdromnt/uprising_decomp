@@ -934,15 +934,16 @@ int game_application_platform_start(GameApplication *app, void *instance,
     if(GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))
         SetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW","1");
     if(!configuration_begin(app))goto fail;
-    if(platform->user_directory){
+    if(GetEnvironmentVariableA("UPRISING_USER_DIRECTORY",NULL,0) ||
+       GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_OBSERVE",NULL,0)){
         char log_path[4128];
         if(game_application_file_path(app,"uprising-portable.log",1,log_path,sizeof(log_path)))platform->log=fopen(log_path,"w");
-    }else platform->log=fopen("uprising-portable.log","w");
+    }
     if(platform->log)setvbuf(platform->log,NULL,_IOLBF,0);
     if(platform->isolated_input)
         game_application_log(app,"native automated input isolation: %s\n","physical devices and desktop cursor excluded");
     stage = "source-defined initial records";
-    if (!platform->log || !game_initial_data_create(&app->memory)) goto fail;
+    if (!game_initial_data_create(&app->memory)) goto fail;
     app->memory.read_fallback = owned_read;
     app->memory.write_fallback = owned_write;
     app->memory.fallback_context = app;

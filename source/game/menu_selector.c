@@ -243,7 +243,7 @@ int game_menu_slider_geometry(GameApplication *a,GameAddress p) {
     if(get(a,p,0x58)==1) {
         v=l+ratio((int32_t)(r-w-l),value,1);rect(a,p,0x78,v,t,v+w-1,t+h-1);
     } else if(!get(a,p,0x58)) {
-        v=t+ratio((int32_t)(b-t-h),value,1);rect(a,p,0x78,l+w,v,l+w-1,v+h-1);
+        v=t+ratio((int32_t)(b-t-h),value,1);rect(a,p,0x78,l,v,l+w-1,v+h-1);
     }
     return !a->memory.fault;
 }

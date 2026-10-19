@@ -1,7 +1,7 @@
 # Codebase
 
-The repository root contains documentation, CI and game data. C sources and build
-scripts live in `source/`; builds emit EXEs beside the assets.
+Project notes live in `docs/`; the root contains the README, CI and game data.
+C sources and build scripts live in `source/`; builds emit EXEs beside the assets.
 
 ```text
 source/

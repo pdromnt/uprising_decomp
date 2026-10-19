@@ -207,7 +207,7 @@ pump:
             {
                 GameAddress animation=game_memory_read_u32(m,event+0x60u);
                 uint32_t frame=animation?game_memory_read_u32(m,animation+0x300u):0;
-                if(background_windowed && animation && game_memory_read_u32(m,animation+0x308u) &&
+                if(animation && game_memory_read_u32(m,animation+0x308u) &&
                    (animation!=paced_drawer || frame!=drawer_frame)) {
                     uint32_t now=(uint32_t)SDL_GetTicks();
                     int32_t wait;
@@ -236,7 +236,7 @@ pump:
              * Steady menus used to spin at full CPU between input messages.
              * Include controller/presentation time, including nested gameplay,
              * and never accumulate missed frames after a slow operation. */
-            if(background_windowed && !m->fault && !game_memory_read_u32(m,0x59d4c8u)) {
+            if(!m->fault && !game_memory_read_u32(m,0x59d4c8u)) {
                 DWORD elapsed=(uint32_t)SDL_GetTicks()-frame_started;
                 if(elapsed<17u)SDL_Delay(17u-elapsed);
             }

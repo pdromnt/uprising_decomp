@@ -53,7 +53,7 @@ natural campaign/tutorial progression and broader multiplayer acceptance remain
 manual validation. SDL3 platform migration is underway; other platforms remain
 deferred. A successful link or smoke test does not establish whole-game parity.
 
-See [CODEBASE.md](CODEBASE.md), [BACKLOG.md](BACKLOG.md), and
+See [CODEBASE.md](docs/CODEBASE.md), [BACKLOG.md](docs/BACKLOG.md), and
 [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md). Report the mission, exact action,
 architecture and reproducible steps when filing a bug. Keep unrelated cleanup
 separate from behavior fixes.

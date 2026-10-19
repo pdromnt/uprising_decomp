@@ -8,6 +8,8 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 - After the SDL audio migration, listen for effect/voice pitch and looping,
   movie synchronization, music track changes/shuffle and separate music/effects
   sliders. Check both builds; mute, change missions and exit during busy audio.
+  Check thumb clicks, dragging outside the window and changing focus during a
+  drag; menus should continue responding afterward.
 - Font/pointer visuals were accepted before the SDL input change. Recheck
   aiming, weapon/building lists, bindings, pause/focus release and resume with
   the new input backend. If available, check joystick axes, hats, buttons,

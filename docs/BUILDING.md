@@ -30,6 +30,10 @@ assets. Per-architecture caches are in `source/build/windows-32` and `windows-64
 The `.rc` is compiled to `uprising.res` and a matching COFF object before linking.
 Do not commit generated resources or binaries.
 
+Normal launches do not create `uprising-portable.log`. To investigate a problem,
+set `UPRISING_RECOMP_NATIVE_OBSERVE=1`; the log is replaced on each launch.
+An explicit `UPRISING_USER_DIRECTORY` also enables logging for isolated checks.
+
 For direct CMake use, configure a Ninja build with GCC, `-m32`/`-m64`, windres and
 `UPRISING_ASSET_DIRECTORY` set to the output directory. `BUILD_TESTING=ON` enables
 CTest. The build script also checks the linked symbols and native OpenGL identity.

@@ -10,11 +10,8 @@
 #include <string.h>
 #include <math.h>
 
-/* The window owner supplies a full-width native HWND, never a record word. */
-extern void *game_menu_window_handle(GameApplication *);
 extern int game_application_audio_muted(GameApplication *);
 
-extern int game_menu_media_available(GameApplication *); /* Actual 005069e0. */
 extern int game_menu_request(GameApplication *,GameAddress,uint32_t,uint32_t,uint32_t);
 extern int game_menu_aux_volume(GameApplication *,uint32_t);
 extern int game_menu_wave_volume(GameApplication *,uint32_t);
@@ -116,7 +113,7 @@ int game_menu_sound_bank_begin(GameApplication *a) {
     GameAddress bank,device,auxiliary=0;
     if(game_memory_read_u32(m,0x628a90u))return 0;
     bank=allocate(a,0x480u);if(!bank)return 0;
-    device=sound_platform_device(game_menu_window_handle(a),NULL,game_application_audio_muted(a));
+    device=sound_platform_device(NULL,NULL,game_application_audio_muted(a));
     sound_bank_initialize(m,bank,device);
     game_memory_write_u32(m,bank+8u,0x3f800000u);
     if(!m->fault && append_name(m,0x59c678u,path,&used) &&
@@ -403,7 +400,6 @@ int game_menu_button_callback(GameApplication *a,uint32_t method,GameAddress rec
         return game_menu_music_action(a,method,argument);
     if(method==0x52c660)return game_menu_request(a,game_memory_read_u32(m,0x59d4c0),69,1000,4);
     if(method!=0x52cb00u)return game_menu_missing_route(a,"button callback",method);
-    if(game_memory_read_u32(m,0x597084u) && !game_menu_media_available(a))return game_menu_sound(a,0x94u);
     game_memory_write_u32(m,0x597084u,0);
     return !m->fault && game_menu_sound(a,0x91u) &&
         game_menu_request(a,game_memory_read_u32(m,0x59d4c0u),0x45u,1000u,3u);

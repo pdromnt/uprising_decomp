@@ -42,7 +42,6 @@ extern int game_level_display_visibility(GameApplication *,int); /*5179c0*/
 extern int game_level_clock_start(GameApplication *); /*43e6a0/43e790*/
 extern int game_level_default_viewport(GameApplication *); /*4af770*/
 extern int game_menu_music_start(GameApplication *,uint32_t);
-extern int game_menu_media_available(GameApplication *);
 static uint32_t get(GameApplication *a,GameAddress p){return game_memory_read_u32(&a->memory,p);}
 static void put(GameApplication *a,GameAddress p,uint32_t v){game_memory_write_u32(&a->memory,p,v);}
 /*MSVC's main-thread rand/srand state belongs to this game, independently of
@@ -140,7 +139,7 @@ static int load(GameApplication *a) {
     stage="scene audio";if(!game_level_scene_audio_initialize(a))goto fail;
     game_initializer_004d7660(&a->memory);
     stage="progress cleanup";if(!game_level_progress_end(a))goto fail;
-    if(!get(a,0x59d828) && !game_menu_media_available(a)) {
+    if(!get(a,0x59d828)) {
         int32_t track=(int32_t)portable_crt_rand_step(&a->memory)%3+2;
         (void)game_menu_music_start(a,(uint32_t)track);
     }

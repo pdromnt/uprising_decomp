@@ -20,6 +20,8 @@ Use the complete `FONTS/` from this project/release, including Liberation Sans.
 Double-click your chosen executable; no command-line flags are required. The game starts
 windowed with keyboard, mouse and audio enabled. Its title is
 **Uprising: Join or Die - RE/Decompiled**.
+Assets are resolved beside the executable, including when a shortcut starts it
+from another working directory.
 
 Settings, keyboard/controller mappings and music preferences share
 `CONFIG/settings.ini`. The first run imports old `FONTS/settings.cfg` and

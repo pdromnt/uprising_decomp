@@ -2,10 +2,8 @@
 #include "portable_sdl.h"
 #include "portable_font.h"
 #include <SDL3/SDL_main.h>
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include <SDL3/SDL_opengl.h>
+#include "../resources/icon_rgba.inc"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -26,7 +24,7 @@ typedef struct MenuTextSurface {
 /* SDL pixels are authoritative. The RGBA surface is only a device-upload
  * staging buffer; gameplay and widgets never read or synchronize from it. */
 typedef struct MenuWindow {
-    GameAddress identity;HWND handle;HINSTANCE instance;
+    GameAddress identity;
     SDL_Window *window;SDL_GLContext context;int sdl_initialized;
     SDL_Surface *front,*back,*upload;SDL_Palette *palette;SDL_Color colors[256];
     GLuint menu_texture;unsigned width,height;int hidden,palette_valid;
@@ -38,6 +36,17 @@ extern int game_music_update(GameApplication *);
 extern void game_application_splash_end(GameApplication *);
 extern int game_application_level_graphics_end(GameApplication *);
 extern int game_application_level_graphics_begin(GameApplication *);
+/* Legacy consumers see the same outer-window rectangle, derived from SDL. */
+static int window_bounds(MenuWindow *w,GameMemory *m){
+    int x,y,width,height,top,left,bottom,right;
+    if(!SDL_GetWindowPosition(w->window,&x,&y) || !SDL_GetWindowSize(w->window,&width,&height) ||
+       !SDL_GetWindowBordersSize(w->window,&top,&left,&bottom,&right))return 0;
+    game_memory_write_u32(m,w->identity+0x58,(uint32_t)(x-left));
+    game_memory_write_u32(m,w->identity+0x5c,(uint32_t)(y-top));
+    game_memory_write_u32(m,w->identity+0x60,(uint32_t)(width+left+right));
+    game_memory_write_u32(m,w->identity+0x64,(uint32_t)(height+top+bottom));
+    return !m->fault;
+}
 static MenuTextSurface *text_surface_find(MenuWindow *,GameAddress);
 static int present_windowed_front(MenuWindow *);
 
@@ -114,7 +123,7 @@ int game_menu_pointer_capture(GameApplication *a,int enabled){
 /*418f20: publish the loop's owned termination flag once. */
 int game_level_request_end(GameApplication *a){
     if(game_memory_read_u32(&a->memory,0x5ac970))return !a->memory.fault;
-    if(!a->menu_window || !a->menu_window->handle)return 0;
+    if(!a->menu_window || !a->menu_window->window)return 0;
     game_memory_write_u32(&a->memory,0x5ac970,1);
     return !a->memory.fault;
 }
@@ -148,10 +157,7 @@ int game_menu_pump_events(GameApplication *a,int deliver_input){
             if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
         case SDL_EVENT_WINDOW_MOVED:
-            {RECT bounds;
-             if(!GetWindowRect(w->handle,&bounds))return 0;
-             game_memory_write_u32(&a->memory,w->identity+0x58,(uint32_t)bounds.left);
-             game_memory_write_u32(&a->memory,w->identity+0x5c,(uint32_t)bounds.top);}
+            if(!window_bounds(w,&a->memory))return 0;
             if(!game_menu_pointer_capture(a,w->pointer_capture_requested))return 0;
             break;
         case SDL_EVENT_WINDOW_EXPOSED:
@@ -164,7 +170,8 @@ int game_menu_pump_events(GameApplication *a,int deliver_input){
     }
     return game_music_update(a) && !a->memory.fault;
 }
-void *game_menu_window_handle(GameApplication *a) {return a->menu_window?a->menu_window->handle:NULL;}
+/* Windows-only debugger compatibility; shipping services use SDL_Window. */
+void *game_menu_window_handle(GameApplication *a) {return a->menu_window?SDL_GetPointerProperty(SDL_GetWindowProperties(a->menu_window->window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,NULL):NULL;}
 SDL_Window *game_menu_sdl_window(GameApplication *a){return a->menu_window?a->menu_window->window:NULL;}
 static void display_unfinished(GameApplication *a,const char *kind,uint32_t identity) {
     char message[112];snprintf(message,sizeof(message),"%s requires native reconstruction: %08x",kind,(unsigned)identity);
@@ -255,17 +262,13 @@ int game_level_viewport_position(GameApplication *a,uint32_t output[2]){
     output[0]=result.x;output[1]=result.y;return !a->memory.fault;
 }
 int game_menu_window_mode_restore(GameApplication *a){
-    MenuWindow *w=a->menu_window;GameMemory *m=&a->memory;RECT bounds;unsigned i;
+    MenuWindow *w=a->menu_window;GameMemory *m=&a->memory;unsigned i;
     if(!w || !game_menu_pointer_capture(a,0))return 0;
     while(w->text_surfaces)if(!game_menu_text_surface_release(a,w->text_surfaces->identity))return 0;
     window_surfaces_release(w);w->width=640;w->height=480;
     if(!create_surfaces(w)){window_surfaces_release(w);return 0;}
-    if(!GetWindowRect(w->handle,&bounds))return 0;
     game_memory_write_u32(m,w->identity+0x4c,640);game_memory_write_u32(m,w->identity+0x50,480);
-    game_memory_write_u32(m,w->identity+0x58,(uint32_t)bounds.left);game_memory_write_u32(m,w->identity+0x5c,(uint32_t)bounds.top);
-    game_memory_write_u32(m,w->identity+0x60,(uint32_t)(bounds.right-bounds.left));
-    game_memory_write_u32(m,w->identity+0x64,(uint32_t)(bounds.bottom-bounds.top));
-    for(i=0;i<2;++i)game_memory_write_u32(m,w->identity+0x44+i*4,0);
+    if(!window_bounds(w,m))return 0;    for(i=0;i<2;++i)game_memory_write_u32(m,w->identity+0x44+i*4,0);
     for(i=0;i<4;++i)game_memory_write_u32(m,w->identity+0x68+i*4,0);
     game_memory_write_u32(m,w->identity+0x128,w->identity+0x128);game_memory_write_u32(m,w->identity+0x12c,w->identity+0x12c);
     game_memory_write_u32(m,w->identity+0x138,640);game_memory_write_u32(m,w->identity+0x13c,480);
@@ -291,16 +294,16 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
 /* 004aa780/004ab2f0/004aac70/004ab800: SDL window with borrowed Windows services.
  * Hidden execution uses actual indexed offscreen surfaces and the same C draw
  * consumers; it neither changes the desktop mode nor creates a visible window. */
-GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigned width,unsigned height) {
-    MenuWindow *w;RECT bounds;
+GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigned height) {
+    MenuWindow *w;
     GameMemory *m=&a->memory;GameAddress p;
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
     p=scene_projection_storage_allocate(0x140u,"portable menu window");
     if(!p){free(w);return 0;}
-    w->identity=p;w->instance=instance;w->width=width;w->height=height;a->menu_window=w;
+    w->identity=p;w->width=width;w->height=height;a->menu_window=w;
     w->isolated_pointer[0]=(int32_t)(width/2);w->isolated_pointer[1]=(int32_t)(height/2);
-    w->hidden=GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)!=0;
+    w->hidden=SDL_getenv("UPRISING_RECOMP_HEADLESS")!=NULL;
 
     SDL_SetMainReady();
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
@@ -318,12 +321,10 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
       * performance runs: desktop occlusion can affect presentation cost. */
      if(!SDL_GetWindowBordersSize(w->window,&top,&left,NULL,NULL) ||
         !SDL_SetWindowPosition(w->window,left,top))goto fail;}
-    w->handle=SDL_GetPointerProperty(SDL_GetWindowProperties(w->window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,NULL);
-    if(!w->handle || !game_menu_window_resources_begin(a))goto fail;
-    if(!SDL_StartTextInput(w->window))goto fail;
-    SendMessageA(w->handle,WM_SETICON,ICON_BIG,(LPARAM)LoadIconA(instance,MAKEINTRESOURCEA(UPRISING_ICON_ID)));
-    SendMessageA(w->handle,WM_SETICON,ICON_SMALL,(LPARAM)LoadImageA(instance,
-        MAKEINTRESOURCEA(UPRISING_ICON_ID),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_SHARED));
+    if(!game_menu_window_resources_begin(a) || !SDL_StartTextInput(w->window))goto fail;
+    {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
+     if(!icon)goto fail;
+     int ok=SDL_SetWindowIcon(w->window,icon);SDL_DestroySurface(icon);if(!ok)goto fail;}
     w->context=SDL_GL_CreateContext(w->window);if(!w->context)goto fail;
     SDL_GL_SetSwapInterval(0);
     game_application_splash_end(a);
@@ -331,10 +332,7 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
     /* Stable owner/member IDs replace the original handle publications. */
     game_memory_write_u32(m,p,p);game_memory_write_u32(m,p+0x54u,1);
     game_memory_write_u32(m,p+0x4cu,width);game_memory_write_u32(m,p+0x50u,height);
-    if(!GetWindowRect(w->handle,&bounds))goto fail;
-    game_memory_write_u32(m,p+0x58u,(uint32_t)bounds.left);game_memory_write_u32(m,p+0x5cu,(uint32_t)bounds.top);
-    game_memory_write_u32(m,p+0x60u,(uint32_t)(bounds.right-bounds.left));
-    game_memory_write_u32(m,p+0x64u,(uint32_t)(bounds.bottom-bounds.top));
+    if(!window_bounds(w,m))goto fail;
     game_memory_write_u32(m,p+0x124u,p+0x124u);game_memory_write_u32(m,p+0x128u,p+0x128u);
     game_memory_write_u32(m,p+0x12cu,p+0x12cu);
     game_memory_write_u32(m,p+0x138u,width);game_memory_write_u32(m,p+0x13cu,height);

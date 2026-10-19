@@ -25,10 +25,10 @@ void game_application_splash_end(GameApplication *a){
 void game_application_asset_shutdown(GameApplication *a){game_application_splash_end(a);}
 /* Bootstrap uses the first archive match and its existing bounded DIB parser.
  * SDL owns the temporary software window; it never changes a display mode. */
-int game_application_asset_bootstrap(GameApplication *a,const char *command){
+int game_application_asset_bootstrap(GameApplication *a){
     char archive[260],resource[260];ResourceBlob blob={0};AssetBitmap bitmap;
     uint8_t encoded[1028];size_t written;MenuSplash *splash=NULL;SDL_Surface *image=NULL,*front;
-    unsigned x,y;int found,ok=1;(void)command;
+    unsigned x,y;int found,ok=1;
     if(a->menu_splash)return 0;
     if(!splash_name(&a->memory,0x59735c,archive) || !splash_name(&a->memory,0x59736c,resource))return 0;
     found=resource_blob_open_named(archive,resource,&blob,NULL);if(!found)return 1;

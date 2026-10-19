@@ -10,8 +10,6 @@ const AssetBitmap *game_movie_decoder_frame(GameMovieDecoder *);
 int game_movie_decoder_ready(GameMovieDecoder *);
 int game_movie_decoder_decode(GameMovieDecoder *,int *last,int *palette_changed);
 void game_movie_decoder_volume(GameMovieDecoder *,uint32_t);
-int game_menu_media_root(GameApplication *,char *,size_t);
-int game_menu_media_available(GameApplication *);
 int game_menu_movie_path(GameApplication *,const char *,char *,size_t);
 GameAddress game_menu_movie_create(GameApplication *,const char *,uint32_t,uint32_t);
 int game_menu_movie_play(GameApplication *,GameAddress);

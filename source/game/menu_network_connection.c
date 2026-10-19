@@ -5,7 +5,6 @@
 extern int game_menu_demo_start(GameApplication *,unsigned);
 extern int game_menu_parameters_reset(GameApplication *);
 extern int game_menu_request(GameApplication *,GameAddress,uint32_t,uint32_t,uint32_t);
-extern int game_menu_media_available(GameApplication *);
 extern int game_menu_register_observer(GameApplication *,GameAddress,uint32_t,uint32_t);
 extern int game_menu_unregister_tick_method(GameApplication *,GameAddress,uint32_t);
 static int sessions(GameApplication *,GameAddress);
@@ -111,7 +110,6 @@ int game_menu_network_connection_action(GameApplication *a,uint32_t method,GameA
     }
     if(method!=0x474310 && method!=0x4743e0)return 0;
     if(method==0x4743e0 && get(a,0x597084,0)) {
-        if(!game_menu_media_available(a))return game_menu_sound(a,148);
         put(a,0x597084,0,0);
     }
     if(method==0x4743e0 && !game_menu_widget_enable(a,receiver,0))return 0;

@@ -1,5 +1,5 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,28 +7,17 @@
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
 
-/*5617a0: C-locale uppercase is byte arithmetic; a non-default locale uses
- * native Win32 mapping on full-width buffers. The original retains input on
- * allocation/mapping failure; a bounded destination rejects expansion. */
-int game_menu_locale_uppercase(GameApplication *a,char *value,size_t capacity) {
-    uint32_t locale=game_memory_read_u32(&a->memory,0x5a1eb0);char *mapped;int count;size_t i;
+/* Shipping strings use the original byte encoding and C-locale case mapping.
+ * No live writer selects the obsolete Win32 LCID route. */
+int game_menu_locale_uppercase(GameApplication *a,char *value,size_t capacity){
+    size_t i;
     if(a->memory.fault || !value || !capacity || !memchr(value,0,capacity))return 0;
-    if(!locale) {
-        for(i=0;value[i];++i)if(value[i]>='a' && value[i]<='z')value[i]=(char)(value[i]-'a'+'A');
-        return 1;
-    }
-    count=LCMapStringA((LCID)locale,LCMAP_UPPERCASE,value,-1,NULL,0);
-    if(!count)return 1;
-    if((size_t)count>capacity)return 0;
-    mapped=malloc((size_t)count);if(!mapped)return 1;
-    if(LCMapStringA((LCID)locale,LCMAP_UPPERCASE,value,-1,mapped,count))memcpy(value,mapped,(size_t)count);
-    free(mapped);return 1;
-}
-
-/* Native constructor/consumer/destructor contracts for 004aa780/004ccbf0/
+    for(i=0;value[i];++i)if(value[i]>='a' && value[i]<='z')value[i]=(char)(value[i]-'a'+'A');
+    return 1;
+}/* Native constructor/consumer/destructor contracts for 004aa780/004ccbf0/
  * 0048fe60, presentation, script selection and the level/game route. They are
  * intentionally link blockers until their real algorithms are connected. */
-extern GameAddress game_menu_window_construct(GameApplication *, void *, unsigned, unsigned);
+extern GameAddress game_menu_window_construct(GameApplication *, unsigned, unsigned);
 extern GameAddress game_menu_controller_construct(GameApplication *);
 extern GameAddress game_menu_event_construct(GameApplication *, unsigned);
 extern int game_menu_resources_begin(GameApplication *);
@@ -138,7 +127,7 @@ int game_menu_transition_notify(GameApplication *app){
     int ok=game_menu_pump_events(app,0);game_input_devices_discard(app);return ok;
 }
 /* 00538b40: pump SDL events and drive the existing menu/game owners. */
-int game_application_menu_loop(GameApplication *app, void *instance, const char *level) {
+int game_application_menu_loop(GameApplication *app,const char *level) {
     GameMemory *m = &app->memory;
     GameAddress window = 0, controller = 0, event = 0;
     unsigned request;
@@ -150,7 +139,7 @@ int game_application_menu_loop(GameApplication *app, void *instance, const char 
     int background_windowed=windowed_setting && !strcmp(windowed_setting,"1");
     const char *stage = "window construction";
 
-    window = game_menu_window_construct(app, instance, 640u, 480u);
+    window = game_menu_window_construct(app,640u,480u);
     if (!window) goto done;
     game_memory_write_u32(m, 0x59d4bcu, window);
     stage = "controller construction";
@@ -183,7 +172,7 @@ int game_application_menu_loop(GameApplication *app, void *instance, const char 
 pump:
     stage = "message/frame pump";
     while (!m->fault && !game_memory_read_u32(m, 0x59d4c8u)) {
-        DWORD frame_started=(uint32_t)SDL_GetTicks();
+        uint32_t frame_started=(uint32_t)SDL_GetTicks();
 
         if(!game_menu_pump_events(app,1)){stage="event delivery";goto done;}
         /* Network handshakes and the guarded windowed profile keep their menu
@@ -213,7 +202,7 @@ pump:
                     int32_t wait;
                     if(animation!=paced_drawer)drawer_deadline=now+17u;
                     wait=(int32_t)(drawer_deadline-now);
-                    if(wait>0)SDL_Delay((DWORD)wait);
+                    if(wait>0)SDL_Delay((uint32_t)wait);
                     now=(uint32_t)SDL_GetTicks();
                     if((int32_t)(now-drawer_deadline)>17)drawer_deadline=now;
                     drawer_deadline+=17u;
@@ -237,7 +226,7 @@ pump:
              * Include controller/presentation time, including nested gameplay,
              * and never accumulate missed frames after a slow operation. */
             if(!m->fault && !game_memory_read_u32(m,0x59d4c8u)) {
-                DWORD elapsed=(uint32_t)SDL_GetTicks()-frame_started;
+                uint32_t elapsed=(uint32_t)SDL_GetTicks()-frame_started;
                 if(elapsed<17u)SDL_Delay(17u-elapsed);
             }
         }else if(!m->fault && !game_memory_read_u32(m,0x59d4c8u))

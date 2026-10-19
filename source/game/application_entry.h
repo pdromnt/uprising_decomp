@@ -39,21 +39,14 @@ typedef struct GameApplication {
 int game_application_main(GameApplication *, int argc, char **argv);
 int game_application_load_blob(GameApplication *,const char *,ResourceBlob *);
 
-/* Unreconstructed connected services are deliberately unresolved at link time.
- * These are native contracts, never guest-ABI calls or successful stubs. */
-/* Full-width platform module owner; windowed validation verifies its local
- * wrapper configuration before any graphics entry point can run. */
-int game_application_platform_start(GameApplication *, void *instance,
-    const char *command_line, int show);
+/* Native application/platform contracts; no guest ABI or module handles. */
+int game_application_platform_start(GameApplication *,const char *executable);
 int game_application_platform_stop(GameApplication *);
 int game_application_services_initialize(GameApplication *, unsigned, unsigned);
 int game_application_options_initialize(GameApplication *);
-int game_application_menu_loop(GameApplication *, void *instance,
-    const char *level);
+int game_application_menu_loop(GameApplication *,const char *level);
 void game_application_services_release(GameApplication *);
 void game_application_services_dispose(GameApplication *);
-void *game_application_instance(GameApplication *);
-const char *game_application_command_line(GameApplication *);
 void game_application_sleep(GameApplication *, unsigned milliseconds);
 int game_application_directory(GameApplication *, const char *);
 int game_application_output_directory(GameApplication *,const char *);
@@ -61,8 +54,7 @@ int game_application_error(GameApplication *, const char *, const char *);
 int game_application_timed_message_bytes(GameApplication *,const uint8_t *,size_t,int32_t seconds);
 void game_application_log(GameApplication *, const char *, const char *);
 int game_application_calendar(GameApplication *, int32_t calendar[9]);
-void game_application_registry_prepare(GameApplication *);
-int game_application_startup(GameApplication *, int show);
+int game_application_startup(GameApplication *);
 int game_application_initialize_globals(GameApplication *);
 int game_application_shutdown_globals(GameApplication *);
 #endif

@@ -1,5 +1,5 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+
+
 #include "menu_movie.h"
 #include "sound_platform.h"
 #include "../third_party/libsmacker/smacker.h"
@@ -145,23 +145,11 @@ void game_movie_decoder_volume(GameMovieDecoder *d,uint32_t value){
     if(volume< -10000)volume=-10000;
     for(i=0;i<7;++i)if(d->audio[i] && sound_platform_command(d->audio[i],SOUND_BUFFER_VOLUME,(uint32_t)volume))d->failed=1;
 }
-int game_menu_media_root(GameApplication *a,char *output,size_t capacity) {
-    char drives[256],label[256];const char *drive;DWORD length=GetLogicalDriveStringsA(sizeof(drives),drives);(void)a;
-    if(!output || !capacity || !length || length>=sizeof(drives))return 0;
-    for(drive=drives;*drive;drive+=strlen(drive)+1) {
-        if(GetDriveTypeA(drive)!=DRIVE_CDROM || !GetVolumeInformationA(drive,label,sizeof(label),NULL,NULL,NULL,NULL,0) || _stricmp(label,"Uprising"))continue;
-        if(strlen(drive)>=capacity)return 0;
-        memcpy(output,drive,strlen(drive)+1);return 1;
-    }
-    output[0]=0;return 0;
-}
-int game_menu_media_available(GameApplication *a){char root[256];return game_menu_media_root(a,root,sizeof(root));}
-int game_menu_movie_path(GameApplication *a,const char *name,char *output,size_t capacity) {
-    ResourceFile *file;char root[256];int size;
+/* Release data is beside the executable; no drive-letter or CD-label probing. */
+int game_menu_movie_path(GameApplication *a,const char *name,char *output,size_t capacity){
+    ResourceFile *file;int size;(void)a;
     if(!name || !output || !capacity)return 0;
-    size=snprintf(output,capacity,"video\\%s",name);if(size<0 || (size_t)size>=capacity)return 0;
-    file=resource_file_open(output);if(file){resource_file_close(file);return 1;}
-    if(!game_menu_media_root(a,root,sizeof(root)))return 0;
-    size=snprintf(output,capacity,"%svideo\\%s",root,name);if(size<0 || (size_t)size>=capacity)return 0;
-    file=resource_file_open(output);if(!file)return 0;resource_file_close(file);return 1;
+    size=snprintf(output,capacity,"VIDEO/%s",name);if(size<0 || (size_t)size>=capacity)return 0;
+    file=resource_file_open(output);if(!file)return 0;
+    resource_file_close(file);return 1;
 }

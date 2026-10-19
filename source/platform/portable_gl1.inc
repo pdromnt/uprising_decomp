@@ -52,7 +52,7 @@ typedef struct Gl1Device {
     char sky_name[128];
     GLuint sky_layers[3];
     unsigned sky_triangles;
-    DWORD sky_tick;
+    uint32_t sky_tick;
     int sky_loaded,sky_active,fog_pending;
     float sky_yaw,sky_horizon,sky_yaw_scale,sky_offset,sky_depth;
     float fog_color[4];

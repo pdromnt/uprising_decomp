@@ -2,22 +2,16 @@
 
 - Continue manual campaign/tutorial progression, mission cycling, crowded combat,
   mission exit, menus and multiplayer checks; fix concrete reports.
-- Validate complete x64 gameplay/audio and later other architectures/platforms.
-- Finish the remaining SDL3/platform-service migration.
-  Windows/events, menu surfaces/palette, fonts, splash, GL-context/timing and
-  physical input and audio/music ownership have migrated. Font/pointer visuals
-  and SDL keyboard/mouse were manually accepted. Controller/haptic hardware is
-  pending, including Xbox Series Bluetooth detection with the TOU-derived SDL
-  endpoint fix. Check new audio levels, voices, movie sync, music controls and reload
-  cleanup manually. Legacy I-FORCE support is removed; SDL joystick/haptics remain.
-  ENet replaces DirectPlay; validate separate-machine discovery, four players,
-  abrupt disconnect/reconnect, mission cycles and congested links manually.
-  Next: remaining Windows services.
-- After the SDL3 migration, remove legacy code and dependencies that are no longer
-  used.
+- Validate complete x64 gameplay/audio; other platforms/architectures are deferred.
+- Check physical controller/haptics, including Xbox Series Bluetooth detection.
+- Listen for audio levels/voices/loops, movie sync, track controls and reload cleanup.
+- Validate ENet on separate machines: discovery, four players, abrupt loss/reconnect,
+  repeated missions and congested links. Mixed x86/x64 host migration has passed
+  same-machine integration; this does not establish broader network acceptance.
+- Remove unused legacy code/dependencies after the SDL3/platform migration.
+  Small Windows file-attribute and CRT cwd/durability adapters remain deliberate.
 - Once the SDL3 build is stable, add FSR upscaling.
 - Select a license for project-authored code.
-- Later cleanup: better module boundaries, descriptive fields and layout cleanup.
-  Preserve behavior first.
+- Later: better module boundaries, descriptive fields and layout cleanup.
 
 Previously accepted gameplay fixes are not reopened without new evidence.

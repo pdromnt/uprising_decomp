@@ -36,6 +36,15 @@ conventions to fill a missing function.
 snapshot, not another live simulation copy. The campaign catalog is compiled C
 content in `game/campaign_catalog_data.inc`.
 
+SDL handles the application entry, executable base path, dialogs, window bounds,
+icons, directory enumeration and file replacement/removal. Registry/OS-version
+and CD-drive probes are retired; movies use packaged `VIDEO/` assets. Icon pixels
+are embedded from the existing ICO; the Windows executable resource is retained.
+Settings flush to disk before same-directory replacement. Small conditional CRT
+adapters retain working-directory setup and durable FILE flushing; a Windows
+hidden/system-attribute query preserves the original save/level-list exclusions.
+The HWND property accessor remains only for existing Windows debugger fixtures.
+
 CMake lists all shipping translation units explicitly. CPU/generated instruction
 execution and oracle sources are absent from the build.
 
@@ -85,4 +94,4 @@ initial host uses UDP 2302; migrated hosts/other peers use their bound UDP ports
 `UPRISING_RECOMP_NETWORK_ADDRESS` can direct discovery to a hostname/IPv4 address.
 The optional `UPRISING_NETWORK_LOBBY=host:name` launch intent hosts a native session;
 the old external DirectPlay lobby ABI is retired. Neither is required for menu play.
-Next: remaining Windows services.
+Next: unused legacy cleanup and stabilization. Other platforms remain unvalidated.

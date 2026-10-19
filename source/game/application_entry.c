@@ -50,14 +50,11 @@ int game_application_main(GameApplication *app, int argc, char **argv) {
         else game_application_log(app, "unknown command: \"%s\"\n", arg);
     }
     game_memory_write_u32(m, 0x624f8cu, 0u);
-    if (!game_application_directory(app, "scrshts") &&
-        game_memory_read_u32(m, 0x5a1c5cu) == 2u)
+    if (!game_application_directory(app, "scrshts"))
         return game_application_error(app, "couldn't create directory", "slick");
     if (!game_application_options_initialize(app)) return application_failure(app,"options");
     if (!game_application_calendar(app, calendar)) return application_failure(app,"calendar");
-    game_application_registry_prepare(app);
-    if (!game_application_menu_loop(app, game_application_instance(app),
-            level)) return application_failure(app,"menu/level loop");
+    if (!game_application_menu_loop(app,level)) return application_failure(app,"menu/level loop");
     game_application_services_release(app);
     return m->fault ? 1 : 0;
 }

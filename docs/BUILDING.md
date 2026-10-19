@@ -29,6 +29,7 @@ Local builds use uprising.exe (x86) and uprising64.exe (x64). CI passes `-Execut
 
 The build is incremental, uses at most four compiler processes, and does not copy
 assets. Per-architecture caches are in `source/build/windows-32` and `windows-64`.
+Run local x86/x64 configurations sequentially; they share dependency download caches.
 The `.rc` is compiled to `uprising.res` and a matching COFF object before linking.
 Do not commit generated resources or binaries.
 

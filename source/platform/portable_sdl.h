@@ -4,8 +4,7 @@
 #include <SDL3/SDL.h>
 #include "application_entry.h"
 
-/* SDL owns the window. Remaining Windows services borrow its HWND through
- * game_menu_window_handle until their individual backend migrations. */
+/* Platform services borrow SDL's native window/context owners. */
 SDL_Window *game_menu_sdl_window(GameApplication *application);
 SDL_GLContext game_menu_gl_context(GameApplication *application);
 int game_menu_game_palette(GameApplication *,const uint32_t[256]);

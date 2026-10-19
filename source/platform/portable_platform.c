@@ -1,8 +1,11 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "recyclable_records.h"
-#define WIN32_LEAN_AND_MEAN
+
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
-#include <windows.h>
+#include <SDL3/SDL_opengl.h>
 #include "game_initial_data.h"
 #include "application_config.h"
 #include <stdio.h>
@@ -10,7 +13,12 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+#ifdef _WIN32
 #include <io.h>
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
 #include "application_entry.h"
 #include "application_archives.h"
 #include "menu_widgets.h"
@@ -38,7 +46,24 @@
 #include "level_scene_render.h"
 #include "game_text_rasterizer.h"
 #include "ui_geometry.h"
-extern void *game_menu_window_handle(GameApplication *);
+/* CRT-only durability/cwd adapters. File operations and paths use SDL; game
+ * asset readers retain their existing FILE ownership and shared working root. */
+static int asset_directory(const char *path){
+#ifdef _WIN32
+    wchar_t *wide=(wchar_t *)SDL_iconv_string("UTF-16LE","UTF-8",path,strlen(path)+1);
+    int ok=wide && !_wchdir(wide);SDL_free(wide);return ok;
+#else
+    return !chdir(path);
+#endif
+}
+static int durable_file(FILE *file){
+    if(fflush(file))return 0;
+#ifdef _WIN32
+    return !_commit(_fileno(file));
+#else
+    return !fsync(fileno(file));
+#endif
+}
 
 typedef enum RenderColorMode { RENDER_COLOR_VERTEX,RENDER_COLOR_CONSTANT,RENDER_COLOR_TEXTURE,RENDER_COLOR_INVERSE_TEXTURE } RenderColorMode;
 typedef enum RenderAlphaMode { RENDER_ALPHA_ZERO,RENDER_ALPHA_VERTEX,RENDER_ALPHA_TEXTURE,RENDER_ALPHA_CONSTANT } RenderAlphaMode;
@@ -52,8 +77,7 @@ typedef struct ArchiveFile {ResourceFile *file;GameAddress identity;struct Archi
 typedef struct RenderPixelView {void *pixels;uint32_t stride;} RenderPixelView;
 typedef struct PortablePlatform {
     int isolated_input;
-    HINSTANCE instance;
-    char *command;
+    char *executable;
     FILE *log;
     char *user_directory;
     GameConfig *configuration;
@@ -89,7 +113,7 @@ int game_application_file_path(GameApplication *app,const char *name,int write,c
     return size>=0 && (size_t)size<capacity;
 }
 int game_application_file_delete(GameApplication *app,const char *name) {
-    char path[4128];return game_application_file_path(app,name,1,path,sizeof(path)) && DeleteFileA(path);
+    char path[4128];return game_application_file_path(app,name,1,path,sizeof(path)) && SDL_RemovePath(path);
 }
 /*00531980/CopyFileA: preserve overwrite and the caller's ignored failure.
  * All streams remain native full-width objects and close on every exit. */
@@ -146,11 +170,11 @@ int game_application_ui_begin(GameApplication *app) {
     PortablePlatform *p=app->platform;
     if(!p || p->renderer_initialized)return 0;
     /*Rendering requires an explicitly windowed native display. */
-    if(GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)){
+    if(SDL_getenv("UPRISING_RECOMP_HEADLESS")){
         game_application_log(app,"%s\n","HEADLESS_NATIVE_DISPLAY_DISABLED: windowed rendering required");
         return 0;
     }
-    if(!GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))return 0;
+    if(!SDL_getenv("UPRISING_RECOMP_WINDOWED"))return 0;
     return gl1_create(app,p);
 }
 
@@ -158,7 +182,7 @@ int game_application_ui_begin(GameApplication *app) {
 int game_application_level_graphics_begin(GameApplication *a) {
     PortablePlatform *p=a->platform;uint8_t fog[64];uint32_t palette[256];
     float density;uint32_t bits=0x37fba882;unsigned i;char diagnostic[160];
-    if(GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)){
+    if(SDL_getenv("UPRISING_RECOMP_HEADLESS")){
         game_application_log(a,"%s\n","HEADLESS_NATIVE_DISPLAY_DISABLED: windowed rendering required");
         return 0;
     }
@@ -168,7 +192,7 @@ int game_application_level_graphics_begin(GameApplication *a) {
     }
     /* Borrow the explicit SDL owner; foreground discovery is unnecessary. */
     if(!gl1_open(game_menu_sdl_window(a))){
-        snprintf(diagnostic,sizeof(diagnostic),"native OpenGL window open failed: owner=%p",game_menu_window_handle(a));game_application_log(a,"%s\n",diagnostic);return 0;
+        snprintf(diagnostic,sizeof(diagnostic),"native OpenGL window open failed: owner=%p",(void*)game_menu_sdl_window(a));game_application_log(a,"%s\n",diagnostic);return 0;
     }
     p->window_opened=1;p->capture_attempted=0;memcpy(&density,&bits,sizeof(density));
     gl1_fog_generate(fog,density);
@@ -230,35 +254,24 @@ extern int game_menu_level_surface_flip(GameApplication *);
 /* Opt-in evidence from the actual front buffer. Pixel views are borrowed only
  * until unmap; capture does not own another presentation surface. */
 static void capture_game_frame(GameApplication *a,unsigned buffer){
-    PortablePlatform *p=a->platform;char directory[MAX_PATH],path[MAX_PATH+32];DWORD length;
-    RenderPixelView info={0};BITMAPFILEHEADER header={0};BITMAPINFOHEADER bitmap={0};
-    uint32_t width,height,row_bytes,x,y;uint8_t *row=NULL;FILE *file=NULL;int ok=0,locked=0;
+    PortablePlatform *p=a->platform;const char *directory=SDL_getenv("UPRISING_RECOMP_CAPTURE_DIR");
+    char path[4128];RenderPixelView view={0};SDL_Surface *borrowed=NULL,*image=NULL;
+    uint32_t width,height;int ok=0,locked=0;
     if(p->capture_attempted)return;
-    p->capture_attempted=1;
-    length=GetEnvironmentVariableA("UPRISING_RECOMP_CAPTURE_DIR",directory,sizeof(directory));
-    if(!length || length>=sizeof(directory))return;
+    p->capture_attempted=1;if(!directory || !*directory)return;
     width=game_memory_read_u32(&a->memory,0x627928);height=game_memory_read_u32(&a->memory,0x62792c);
     if(a->memory.fault || !width || !height || width>16384 || height>16384)goto done;
-
-    if(!gl1_map_pixels(0,buffer,&info))goto done;
-    locked=1;
-    if(!info.pixels || info.stride<width*2)goto done;
-    row_bytes=(width*3+3)&~3u;row=calloc(row_bytes,1);if(!row)goto done;
-    snprintf(path,sizeof(path),"%s/native-%s-frame.bmp",directory,buffer?"before-text":"game");file=fopen(path,"wb");if(!file)goto done;
-    header.bfType=0x4d42;header.bfOffBits=sizeof(header)+sizeof(bitmap);header.bfSize=header.bfOffBits+row_bytes*height;
-    bitmap.biSize=sizeof(bitmap);bitmap.biWidth=(LONG)width;bitmap.biHeight=(LONG)height;bitmap.biPlanes=1;bitmap.biBitCount=24;
-    if(fwrite(&header,1,sizeof(header),file)!=sizeof(header) || fwrite(&bitmap,1,sizeof(bitmap),file)!=sizeof(bitmap))goto done;
-    for(y=height;y>0;y--){const uint8_t *pixels=(const uint8_t *)info.pixels+(size_t)(y-1)*info.stride;
-        for(x=0;x<width;x++){unsigned color=pixels[x*2]|((unsigned)pixels[x*2+1]<<8);
-            row[x*3]=(uint8_t)((color&31)*255/31);row[x*3+1]=(uint8_t)(((color>>5)&63)*255/63);row[x*3+2]=(uint8_t)((color>>11)*255/31);}
-        if(fwrite(row,1,row_bytes,file)!=row_bytes)goto done;
-    }ok=1;
+    if(!gl1_map_pixels(0,buffer,&view))goto done;
+    locked=1;if(!view.pixels || view.stride<width*2 || view.stride>INT32_MAX)goto done;
+    borrowed=SDL_CreateSurfaceFrom((int)width,(int)height,SDL_PIXELFORMAT_RGB565,view.pixels,(int)view.stride);
+    if(!borrowed || !(image=SDL_ConvertSurface(borrowed,SDL_PIXELFORMAT_RGB24)))goto done;
+    if(snprintf(path,sizeof(path),"%s/native-%s-frame.bmp",directory,buffer?"before-text":"game")>=(int)sizeof(path))goto done;
+    ok=SDL_SaveBMP(image,path);
 done:
-    if(file && fclose(file))ok=0;
-    free(row);if(locked && !gl1_unmap_pixels())ok=0;
+    SDL_DestroySurface(image);SDL_DestroySurface(borrowed);
+    if(locked && !gl1_unmap_pixels())ok=0;
     game_application_log(a,"native frame capture: %s\n",ok?"saved":"FAILED");
-}
-/*5189a0: present the active native display lane and capture its front buffer. */
+}/*5189a0: present the active native display lane and capture its front buffer. */
 int game_application_frame_present(GameApplication *a){
     if(!game_level_screen_present(a,1) || !game_menu_level_surface_flip(a))return 0;
     capture_game_frame(a,0);return 1;
@@ -269,7 +282,7 @@ extern int game_menu_accelerated_text_end(GameApplication *);
 int game_application_glyph_begin(GameApplication *a,GameTextTarget *target,int32_t *fallback){
     PortablePlatform *p=a->platform;GameMemory *m=&a->memory;RenderPixelView info={0};
     uint32_t height=game_memory_read_u32(m,0x62792c);
-    if(p && GetEnvironmentVariableA("UPRISING_RECOMP_CAPTURE_BEFORE_TEXT",NULL,0))capture_game_frame(a,1);
+    if(p && SDL_getenv("UPRISING_RECOMP_CAPTURE_BEFORE_TEXT"))capture_game_frame(a,1);
     if(!game_memory_read_u32(m,0x5840f0)){
         GameUiRect clip;uint32_t v;int32_t *fields[4]={&clip.left,&clip.top,&clip.right,&clip.bottom};
         static const GameAddress addresses[4]={0x59d450,0x59d458,0x59d454,0x59d45c};unsigned i;
@@ -636,7 +649,7 @@ int game_application_projected_end(GameApplication *a,ProjectedQueueKind kind){
  * Definitions must be ordinary native code before this target can link. */
 
 
-extern int game_application_asset_bootstrap(GameApplication *, const char *);
+extern int game_application_asset_bootstrap(GameApplication *);
 extern void game_application_asset_shutdown(GameApplication *);
 extern void game_application_window_shutdown(GameApplication *);
 extern int game_level_display_masks_release(GameApplication *);
@@ -767,10 +780,10 @@ int game_application_config_flush(GameApplication *app){
     if(snprintf(temporary,sizeof(temporary),"%s.tmp",p->configuration_path)>=(int)sizeof(temporary))return 0;
     file=fopen(temporary,"wb");if(!file)return 0;
     ok=game_config_write(p->configuration,file);
-    if(ok && _commit(_fileno(file)))ok=0;
+    if(ok && !durable_file(file))ok=0;
     if(fclose(file))ok=0;
-    if(!ok || !MoveFileExA(temporary,p->configuration_path,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
-        DeleteFileA(temporary);return 0;
+    if(!ok || !SDL_RenamePath(temporary,p->configuration_path)){
+        SDL_RemovePath(temporary);return 0;
     }
     game_config_saved(p->configuration);p->configuration_pending=0;return 1;
 }
@@ -778,7 +791,7 @@ static int configuration_begin(GameApplication *app){
     PortablePlatform *p=app->platform;char directory[4128];FILE *file;int loaded=0;
     p->configuration=game_config_create();if(!p->configuration)return 0;
     if(snprintf(directory,sizeof(directory),"%s/CONFIG",p->user_directory)>=(int)sizeof(directory))return 0;
-    if(!CreateDirectoryA(directory,NULL) && GetLastError()!=ERROR_ALREADY_EXISTS)return 0;
+    if(!SDL_CreateDirectory(directory))return 0;
     if(snprintf(p->configuration_path,sizeof(p->configuration_path),"%s/settings.ini",directory)>=(int)sizeof(p->configuration_path))return 0;
     file=fopen(p->configuration_path,"rb");
     if(file){loaded=game_config_read(p->configuration,file);fclose(file);if(!loaded)return 0;}
@@ -802,45 +815,26 @@ static int configuration_begin(GameApplication *app){
     p->configuration_ready=game_config_set_number(p->configuration,"configuration","version",1);
     return p->configuration_ready;
 }
-int game_application_platform_start(GameApplication *app, void *instance,
-    const char *command, int show) {
-    const char *stage = "platform allocation";
-    PortablePlatform *platform = calloc(1, sizeof(*platform));
-    if (!platform) return 0;
-    app->platform = platform;
-    {const char *isolated=getenv("UPRISING_RECOMP_ISOLATED_INPUT");
+int game_application_platform_start(GameApplication *app,const char *executable) {
+    const char *stage="platform allocation",*base=SDL_GetBasePath(),*directory=SDL_getenv("UPRISING_USER_DIRECTORY");
+    PortablePlatform *platform=calloc(1,sizeof(*platform));
+    if(!platform)return 0;
+    app->platform=platform;
+    {const char *isolated=SDL_getenv("UPRISING_RECOMP_ISOLATED_INPUT");
      platform->isolated_input=isolated && !strcmp(isolated,"1");}
-    platform->instance = instance;
-    platform->command = malloc(strlen(command) + 1u);
-    if (!platform->command) goto fail;
-    strcpy(platform->command, command);
-    {
-        DWORD size=GetEnvironmentVariableA("UPRISING_USER_DIRECTORY",NULL,0);
-        if(size) {
-            if(size>4096u) goto fail;
-            platform->user_directory=malloc(size);
-            if(!platform->user_directory || !GetEnvironmentVariableA("UPRISING_USER_DIRECTORY",platform->user_directory,size)) goto fail;
-        }
-    }
-    if(!platform->user_directory){
-        char executable[4096],*slash;DWORD n=GetModuleFileNameA(instance,executable,sizeof(executable));
-        if(!n || n>=sizeof(executable) || !(slash=strrchr(executable,'\\')))goto fail;
-        *slash=0;
-        if(!SetCurrentDirectoryA(executable))goto fail;
-        platform->user_directory=malloc(strlen(executable)+1);
-        if(!platform->user_directory)goto fail;
-        strcpy(platform->user_directory,executable);
-    }
-    /* A normal double-click is interactive and windowed. Validation overrides
-     * remain explicit; no flag or launcher is needed for safe desktop use. */
-    if(!GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0) &&
-       !GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))
-        SetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED","1");
-    if(GetEnvironmentVariableA("UPRISING_RECOMP_WINDOWED",NULL,0))
-        SetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_WINDOWED_DDRAW","1");
+    if(!base || !executable || !*executable)goto fail;
+    platform->executable=SDL_strdup(executable);if(!platform->executable)goto fail;
+    if(!directory || !*directory)directory=base;
+    if(strlen(directory)>4095)goto fail;
+    platform->user_directory=SDL_strdup(directory);if(!platform->user_directory)goto fail;
+    /* Resolve assets once, even when a shortcut/debugger starts elsewhere.
+     * All writes still use the independently owned user-data directory. */
+    if(!asset_directory(base))goto fail;
+    if(!SDL_getenv("UPRISING_RECOMP_HEADLESS") && !SDL_getenv("UPRISING_RECOMP_WINDOWED"))
+        SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"UPRISING_RECOMP_WINDOWED","1",false);
     if(!configuration_begin(app))goto fail;
-    if(GetEnvironmentVariableA("UPRISING_USER_DIRECTORY",NULL,0) ||
-       GetEnvironmentVariableA("UPRISING_RECOMP_NATIVE_OBSERVE",NULL,0)){
+    if(SDL_getenv("UPRISING_USER_DIRECTORY") ||
+       SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE")){
         char log_path[4128];
         if(game_application_file_path(app,"uprising-portable.log",1,log_path,sizeof(log_path)))platform->log=fopen(log_path,"w");
     }
@@ -856,7 +850,7 @@ int game_application_platform_start(GameApplication *app, void *instance,
     stage = "global constructors";
     if (!game_application_initialize_globals(app)) goto fail;
     stage = "platform startup";
-    if (!game_application_startup(app, show)) goto fail;
+    if (!game_application_startup(app)) goto fail;
     return 1;
 fail:
     fprintf(stderr,"native startup failed: %s; memory fault=%d at %08lx size=%lu\n",
@@ -899,8 +893,8 @@ int game_application_platform_stop(GameApplication *app) {
         game_config_free(platform->configuration);
         while(platform->archives)(void)game_application_archive_close(app,platform->archives->identity);
         if (platform->log) fclose(platform->log);
-        free(platform->command);
-        free(platform->user_directory);
+        SDL_free(platform->executable);
+        SDL_free(platform->user_directory);
         free(platform);
     }
     SDL_Quit();
@@ -919,80 +913,40 @@ ResourceFile *game_application_bindings_file(GameApplication *app,int write) {
     return resource_file_open("FONTS/keymap.cfg");
 }
 
-int game_application_startup(GameApplication *app, int show) {
-    PortablePlatform *platform = app->platform;
-    char executable[260];
-    DWORD length, version = GetVersion();
-    GameMemory *m = &app->memory;
-    (void)show;
-    game_memory_write_u32(m, 0x5a1c68u, version >> 16);
-    game_memory_write_u32(m, 0x5a1c5cu, VER_PLATFORM_WIN32_NT);
-    game_memory_write_u32(m, 0x5a1c74u, (version >> 8) & 255u);
-    game_memory_write_u32(m, 0x5a1c70u, version & 255u);
-    game_memory_write_u32(m, 0x5a1c6cu,
-        ((version & 255u) << 8) + ((version >> 8) & 255u));
-    if (!game_application_directory(app, "saves") &&
-        game_memory_read_u32(m, 0x5a1c5cu) == 2u) return 0;
-    if (!GetSystemMetrics(SM_MOUSEPRESENT)) {
-        game_application_error(app, "A mouse is required to play Uprising.", "Uprising");
-        return 0;
-    }
-    game_memory_write_u32(m, 0x597084u, 0u);
-    /* Retail 00505685 jumps unconditionally over the old CD retry loop. */
-    length = GetModuleFileNameA(platform->instance, executable, sizeof(executable));
-    if (!length || length >= sizeof(executable)) return 0;
-    if (!game_memory_write(m, 0x5eff38u, executable, length + 1u) ||
-        !game_application_asset_bootstrap(app, platform->command)) return 0;
-    /*00540590 reserved the optional guest heap used by53ff70/540170. Native
-     *records, images and models already allocate through their existing owned
-     *stores. Shipping has no guest allocator or arena consumers; reserving a
-     *second15MiB heap would create an unused competing allocation owner. */
+int game_application_startup(GameApplication *app) {
+    PortablePlatform *platform=app->platform;GameMemory *m=&app->memory;
+    size_t length=strlen(platform->executable);
+    if(!game_application_directory(app,"saves"))return 0;
+    game_memory_write_u32(m,0x597084u,0u);
+    /* This bounded path is retained for the menu's read-only executable probe;
+     * no module, OS-version or registry state participates in game startup. */
+    if(length>=260 || !game_memory_write(m,0x5eff38u,platform->executable,length+1u) ||
+       !game_application_asset_bootstrap(app))return 0;
     return !m->fault;
-}
-void *game_application_instance(GameApplication *app) {
-    return ((PortablePlatform *)app->platform)->instance;
-}
-int game_application_audio_muted(GameApplication *app) {
+}int game_application_audio_muted(GameApplication *app) {
     (void)app;
-    return GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)!=0 ||
-        GetEnvironmentVariableA("UPRISING_RECOMP_MUTE",NULL,0)!=0;
-}
-const char *game_application_command_line(GameApplication *app) {
-    return ((PortablePlatform *)app->platform)->command;
+    return SDL_getenv("UPRISING_RECOMP_HEADLESS")!=0 ||
+        SDL_getenv("UPRISING_RECOMP_MUTE")!=0;
 }
 void game_application_sleep(GameApplication *app, unsigned milliseconds) {
     (void)app; SDL_Delay(milliseconds);
 }
-int game_application_directory(GameApplication *app, const char *path) {
-    DWORD attributes;
-    PortablePlatform *platform=app?app->platform:NULL;
+int game_application_directory(GameApplication *app,const char *path){
     char resolved[4128];
-    /*Startup's saves/scrshts directories must match the actual output-file
-     *owner. Creating them in the asset working directory strands isolated
-     *campaign saves even though ordinary root-level save files succeed. */
-    if(platform && platform->user_directory){
-        if(!game_application_file_path(app,path,1,resolved,sizeof(resolved)))return 0;
-        path=resolved;
-    }
-    if (CreateDirectoryA(path, NULL)) return 1;
-    if (GetLastError() != ERROR_ALREADY_EXISTS) return 0;
-    attributes = GetFileAttributesA(path);
-    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    return game_application_file_path(app,path,1,resolved,sizeof(resolved)) && SDL_CreateDirectory(resolved);
 }
-int game_application_error(GameApplication *app, const char *message, const char *title) {
-    if(GetEnvironmentVariableA("UPRISING_RECOMP_HEADLESS",NULL,0)){
+int game_application_error(GameApplication *app,const char *message,const char *title){
+    if(SDL_getenv("UPRISING_RECOMP_HEADLESS") || game_application_isolated_input(app)){
         fprintf(stderr,"%s: %s\n",title?title:"native game",message?message:"");fflush(stderr);
         if(app && app->platform)game_application_log(app,"%s\n",message?message:"");
         return 0;
     }
-    MessageBoxA(NULL, message, title, 0);return 0;
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,title?title:"Uprising",message?message:"",game_menu_sdl_window(app));
+    return 0;
 }
 int game_application_output_directory(GameApplication *app,const char *path){
-    char resolved[4128];
-    return game_application_file_path(app,path,1,resolved,sizeof(resolved)) &&
-        (CreateDirectoryA(resolved,NULL)!=0 || GetLastError()==ERROR_ALREADY_EXISTS);
-}
-void game_application_log(GameApplication *app, const char *format, const char *argument) {
+    return game_application_directory(app,path);
+}void game_application_log(GameApplication *app, const char *format, const char *argument) {
     FILE *log = ((PortablePlatform *)app->platform)->log;
     if (log) {fprintf(log, format, argument);fflush(log);}
 }
@@ -1007,16 +961,4 @@ int game_application_calendar(GameApplication *app, int32_t calendar[9]) {
     calendar[6] = date->tm_wday; calendar[7] = date->tm_yday;
     calendar[8] = date->tm_isdst;
     return 1;
-}
-void game_application_registry_prepare(GameApplication *app) {
-    static const char *names[] = {"Software", "Microsoft", "Windows", "CurrentVersion"};
-    HKEY key = HKEY_LOCAL_MACHINE, next = NULL;
-    unsigned index;
-    (void)app;
-    for (index = 0; index < sizeof(names)/sizeof(names[0]); ++index) {
-        if (RegOpenKeyExA(key, names[index], 0, KEY_ALL_ACCESS, &next) != ERROR_SUCCESS) break;
-        if (key != HKEY_LOCAL_MACHINE) RegCloseKey(key);
-        key = next;
-    }
-    if (key != HKEY_LOCAL_MACHINE) RegCloseKey(key);
 }

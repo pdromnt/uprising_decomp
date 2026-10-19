@@ -90,7 +90,7 @@ static int gl1_sky_begin(const GameSkyFrame *frame){
     fov=2*atanf(frame->center[0]/g->projection_scale);if(!(fov>0.01f))fov=6.28318530718f*0.22f;
     g->sky_yaw_scale=(g->width/256.0f)*6.28318530718f/fov;
     g->sky_offset=isfinite(frame->speed) && fabsf(frame->speed)<=1000?
-        (float)(DWORD)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000:0;
+        (float)(uint32_t)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000:0;
     glPushAttrib(GL_CURRENT_BIT|GL_ENABLE_BIT|GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_TEXTURE_BIT|GL_SCISSOR_BIT);
     glDepthMask(GL_FALSE);glEnable(GL_DEPTH_TEST);glDisable(GL_CULL_FACE);glDisable(GL_ALPHA_TEST);glDisable(GL_FOG);
     glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
@@ -218,7 +218,7 @@ static int gl1_remote_sky(const GameRemoteSkyFrame *frame){
     scale=isfinite(frame->scale) && frame->scale>1 && frame->scale<=100000?frame->scale:width*0.596f;
     fov=2*atanf(width*0.5f/scale);if(!(fov>0.01f))fov=6.28318530718f*0.22f;
     u0=-frame->yaw*(width/256)*6.28318530718f/fov;u1=u0+width/256;
-    if(isfinite(frame->speed) && fabsf(frame->speed)<=1000)offset=(float)(DWORD)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000;
+    if(isfinite(frame->speed) && fabsf(frame->speed)<=1000)offset=(float)(uint32_t)((uint32_t)SDL_GetTicks()-g->sky_tick)*frame->speed/100000;
     g->projection_center=(bounds[0]+bounds[2])*0.5f;g->projection_scale=scale;
     glEnable(GL_SCISSOR_TEST);glScissor(bounds[0],g->height-bounds[3],(int)width,(int)height);
     glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_CULL_FACE);glDisable(GL_FOG);glDisable(GL_BLEND);

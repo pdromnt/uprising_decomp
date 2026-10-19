@@ -1,0 +1,16 @@
+# AMD FidelityFX SDK v1.1.4. Upstream bytes stay checksum-pinned in the build cache.
+set(FSR3_PROBE_REVISION c6efa6bf7f2027b3ec94f28578bb5965eabb9e55)
+set(FSR3_PROBE_SOURCES
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_autogen_reactive_pass.glsl|95991f97c70409cd2783ce7b6866d1fd318e8751c774e1aef6b55f3e470bd81f
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_callbacks_glsl.h|875c2b8d8df93716fb46271886c768a9ef40c5ccc11ade39397952b4a4e54321
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_common.h|4898aa014fef875d3644b9b3bed03f31a963349e17ad553198f87ae8af82cb3f
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_resources.h|10c6f7619a6c1ff9983fdff9bac565789b1cda52f97ef60b491498223e7b7097
+    sdk/include/FidelityFX/gpu/ffx_core.h|e439aa5f516b2d2ebf070ff1d24561f04fa5f00262a2e4f760764a7d07de7997
+    sdk/include/FidelityFX/gpu/ffx_common_types.h|a19560f837c09f0c990e98b5925b731135d908e372af41c5895cbfa70cc9e5c8
+    sdk/include/FidelityFX/gpu/ffx_core_cpu.h|bdb58574cf3ba80803c4198b4661e3a1cd63c877d59833f22bf15962b164a7fe
+    sdk/include/FidelityFX/gpu/ffx_core_glsl.h|01afe5b65549b2c0951b494ca4bf570ee2aa89a64344e4c7d98ef86e6613ab42
+    sdk/include/FidelityFX/gpu/ffx_core_hlsl.h|98722d4b1331c437f5aee645e6f12ed722b721f2ffcb0ec523ee817857f394c7
+    sdk/include/FidelityFX/gpu/ffx_core_gpu_common.h|0e3c50cb0b4592c051d87e028a1dfa54fbd097942ebb3146964db801dec095d0
+    sdk/include/FidelityFX/gpu/ffx_core_gpu_common_half.h|d10466cbf027c8c23858a25f8e8cbbbf521d29f373db663c9354221651e9a498
+    sdk/include/FidelityFX/gpu/ffx_core_portability.h|a7c3a1c213ec083bec401181036cffe7a222af2c430c0bab6bd8c14e83e8a567
+)

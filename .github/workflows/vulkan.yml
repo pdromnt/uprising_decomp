@@ -1,0 +1,86 @@
+name: Vulkan and FSR3 experiment
+on:
+  push:
+    branches: [FSR3]
+    paths-ignore: ['**/*.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vulkan-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  probe:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86
+            runner: windows-2022
+            arch: Win32
+          - platform: windows-x64
+            runner: windows-2022
+            arch: x64
+          - platform: windows-arm64
+            runner: windows-11-arm
+            arch: ARM64
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos-arm64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Windows shader compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path source/build -Force | Out-Null
+          $zip=Join-Path $PWD 'source/build/glslang.zip'
+          Invoke-WebRequest 'https://github.com/KhronosGroup/glslang/releases/download/16.6.0/glslang-16.6.0-windows-x86_64-release.zip' -OutFile $zip
+          if((Get-FileHash $zip).Hash -ne '82BF434E69B9BB4829DE7E2B4BC2C5E7A7861E53D66CF75E5CC70F5F694A8D9B'){throw 'glslang checksum mismatch'}
+          Expand-Archive $zip source/build/glslang
+          (Join-Path $PWD 'source/build/glslang/bin') >> $env:GITHUB_PATH
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config build-essential glslang-tools \
+            libvulkan1 mesa-vulkan-drivers vulkan-validationlayers xvfb \
+            libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+            libdrm-dev libgbm-dev libudev-dev
+      - name: macOS shader compiler
+        if: runner.os == 'macOS'
+        run: brew install glslang
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: cmake -S source -B source/build/vulkan-native -A ${{ matrix.arch }} -DUPRISING_VULKAN_PROBE_ONLY=ON
+      - name: Configure Unix
+        if: runner.os != 'Windows'
+        run: cmake -S source -B source/build/vulkan-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DUPRISING_VULKAN_PROBE_ONLY=ON
+      - name: Compile native probe and AMD shader
+        run: cmake --build source/build/vulkan-native --config Release --parallel 2
+      - name: Linux software-driver execution with validation
+        if: runner.os == 'Linux'
+        env:
+          SDL_VIDEODRIVER: x11
+        run: xvfb-run -a source/build/vulkan-native/bin/uprising_vulkan_probe --validation
+      - name: Collect developer probe
+        shell: pwsh
+        run: |
+          $stage='source/build/probe-package'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item source/build/vulkan-native/bin/* $stage
+          Copy-Item source/third_party/FSR3-LICENSE.txt,source/third_party/SDL3-LICENSE.txt,docs/FSR3.md $stage
+          Copy-Item source/build/dependencies/vulkan-headers-src/LICENSE.md "$stage/Vulkan-Headers-LICENSE.md"
+          Copy-Item source/build/dependencies/vulkan-headers-src/LICENSES $stage -Recurse
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vulkan-probe-${{ matrix.platform }}
+          path: source/build/probe-package/*
+          if-no-files-found: error
+          retention-days: 7

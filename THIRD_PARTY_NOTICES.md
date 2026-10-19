@@ -45,3 +45,10 @@ AMD FidelityFX Super Resolution 1 shader headers are bundled unmodified from
 GPUOpen-Effects/FidelityFX-FSR revision `a21ffb8f6c13233ba336352bdff293894c706575`.
 Copyright (c) 2021 Advanced Micro Devices, Inc. Used under the MIT license in
 `source/third_party/fsr/LICENSE.txt`, included as `FSR-LICENSE.txt` in packages.
+
+The optional Vulkan/FSR3 developer probe uses unmodified AMD FidelityFX SDK
+v1.1.4 shader sources at revision `c6efa6bf7f2027b3ec94f28578bb5965eabb9e55`,
+downloaded into the build cache with per-file SHA256 checks. Their MIT license is
+in `source/third_party/FSR3-LICENSE.txt`. Vulkan headers v1.3.296 come from Khronos,
+under their upstream Apache-2.0/MIT terms. Developer probe artifacts include
+these notices; the released OpenGL game does not link this experimental target.

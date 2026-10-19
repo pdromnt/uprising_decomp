@@ -14,6 +14,8 @@ this is still a decompilation, not a new engine.
 Most of the game runs fine, but it is still under heavy testing and may have
 crashes that have not yet been found.
 
+The project has no official Discord server or subreddit. Please use the repository's Issues and Pull Requests for collaboration.
+
 ## Running
 
 Launch `uprising.exe` on Windows, `uprising` on Linux or `Uprising.app` on macOS;

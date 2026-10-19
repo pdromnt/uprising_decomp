@@ -98,6 +98,18 @@ typedef struct PortablePlatform {
 
 #include "portable_gl1.inc"
 
+int game_application_capture_png(GameApplication *app,const char *path){
+    PortablePlatform *p=app->platform;RenderPixelView pixels={0};SDL_Surface *image;int ok;
+    if(!p || !p->window_opened || !path || !gl1_map_pixels(0,0,&pixels))return 0;
+    image=SDL_CreateSurfaceFrom((int)gl1_current->width,(int)gl1_current->height,
+        SDL_PIXELFORMAT_RGB565,pixels.pixels,(int)pixels.stride);
+    ok=image && SDL_SavePNG(image,path);
+    SDL_DestroySurface(image);
+    if(!gl1_unmap_pixels())ok=0;
+    if(!ok)game_application_log(app,"PNG screenshot failed: %s\n",SDL_GetError());
+    return ok;
+}
+
 /* Native file operations share the application's isolated user-data owner.
  * Directory enumeration uses that same saves directory as archive loading. */
 int game_application_file_path(GameApplication *app,const char *name,int write,char *path,size_t capacity) {

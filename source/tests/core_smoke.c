@@ -1,5 +1,6 @@
 #include "game_memory.h"
 #include "host_file.h"
+#include "player_attachment.h"
 #include "game_initial_data.h"
 #include "render_texture_cache.h"
 #include "ui_geometry.h"
@@ -682,7 +683,31 @@ static int producer_deploy(void *c,GameAddress root,GameAddress o,const float p[
     ProducerProbe *probe=c;(void)root;(void)o;(void)p;++probe->deployed;return 1;
 }
 static int producer_recycle(void *c,GameAddress o){ProducerProbe *probe=c;(void)o;++probe->recycled;return 1;}
+typedef struct HealthDropProbe {unsigned calls;int accepted,ok;} HealthDropProbe;
+static int health_drop_request(void *context,GameAddress parent,GameAddress motion,int *accepted){
+    HealthDropProbe *probe=context;++probe->calls;
+    if(parent!=0x1234u || motion!=0x5678u)return 0;
+    *accepted=probe->accepted;return probe->ok;
+}
 int main(void) {
+    {
+        PlayerAttachmentState state={0};PlayerAttachmentFrame frame={0};GameMemory memory={0};
+        HealthDropProbe probe={0,0,1};PlayerAttachmentServices services={0};
+        state.kind=PLAYER_SCENE_COMMAND;state.parent=0x1234;state.motion=0x5678;state.quantity=2;
+        services.context=&probe;services.command=health_drop_request;
+        CHECK(player_attachment_update(&memory,&state,&frame,&services)==1);
+        CHECK(probe.calls==1 && state.quantity==2 && !state.stream_cookie);
+        probe.ok=0;CHECK(player_attachment_update(&memory,&state,&frame,&services)==-1);
+        CHECK(state.quantity==2 && !state.stream_cookie);
+        probe.ok=probe.accepted=1;
+        CHECK(player_attachment_update(&memory,&state,&frame,&services)==3);
+        CHECK(state.quantity==1 && state.stream_cookie==1);
+        CHECK(player_attachment_update(&memory,&state,&frame,&services)==1 && probe.calls==3);
+        state.stream_cookie=0; /*The existing button-release consumer clears this. */
+        CHECK(player_attachment_update(&memory,&state,&frame,&services)==3 && state.quantity==0);
+        state.stream_cookie=0;
+        CHECK(player_attachment_update(&memory,&state,&frame,&services)==0 && probe.calls==4);
+    }
     {
         FILE *file=fopen("HostFileCase.tmp","wb");char path[128];
         CHECK(file!=NULL);CHECK(fputs("case",file)>=0);CHECK(!fclose(file));

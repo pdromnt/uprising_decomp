@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <limits.h>
 
 typedef struct PlayerPlacement {GameApplication *app;GameAddress object;} PlayerPlacement;
 static uint32_t get(GameApplication *a,GameAddress p){return game_memory_read_u32(&a->memory,p);}
@@ -330,8 +332,16 @@ static int child_notify(void *context,GameAddress parent,uint16_t heading){
     SoundPlaybackRequest request={sound,(float)(x*x+z*z),1,0,0,0};
     return !a->memory.fault && game_menu_sound_play(a,&request);
 }
+extern int game_level_root_spawn(GameApplication *,GameAddress,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,int *);
+static int child_command(void *context,GameAddress parent,GameAddress motion,int *accepted){
+    GameApplication *a=context;GameAddress owner=get(a,0x5f0210+(get(a,parent+20)&63u)*4u);
+    long double radius=real(a,motion+0x1c);uint32_t maximum;
+    maximum=!isfinite(radius) || radius<(long double)INT64_MIN || radius>=(long double)INT64_MAX?
+        0x80000000u:(uint32_t)(int64_t)radius;
+    return !a->memory.fault && game_level_root_spawn(a,owner,1,128,get(a,motion+0x24),maximum,1,get(a,motion+0x14),accepted);
+}
 static PlayerAttachmentServices child_services(GameApplication *a){
-    PlayerAttachmentServices services={a,child_available,child_emit,child_notify,child_environment,child_last_round};
+    PlayerAttachmentServices services={a,child_available,child_emit,child_notify,child_environment,child_last_round,child_command};
     return services;
 }
 int game_level_player_attachment_submit(GameApplication *a,GameAddress child,const float position[3],const PlayerAttachmentFrame *frame){
@@ -378,9 +388,10 @@ static int child_weapon_fire(void *context,GameMemory *memory,GameAddress weapon
     GameApplication *a=context;PlayerAttachmentState *state=player_scene_children_attachment(weapon);
     PlayerAttachmentFrame frame={0};unsigned i;int status;
     if(memory!=&a->memory || !state)return 0;
-    /*572e38 selects43cc40 (returns0) and43cc50 (empty). This command
-     *attachment intentionally has no projectile-fire behavior in retail. */
-    if(state->kind==PLAYER_SCENE_COMMAND){if(result)*result=0;return 1;}
+    if(state->kind==PLAYER_SCENE_COMMAND){
+        status=game_level_player_attachment_update(a,weapon,&frame);
+        if(status<0)return 0;if(result)*result=(uint32_t)status;return 1;
+    }
     /*43c5f0/43b710/43bab0 recover orientation before entering the child
      *scheduler. Every remaining callback here consumes ordinary C data. */
     for(i=0;i<12u;i++)frame.world_matrix[i]=real(a,matrix+i*4u);

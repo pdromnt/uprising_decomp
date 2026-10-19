@@ -48,6 +48,7 @@ typedef struct PlayerAttachmentServices {
     int (*environment)(void *, GameAddress parent, PlayerSceneChildKind,
         PlayerAttachmentEnvironment *);
     int (*last_round)(void *, PlayerSceneChildKind, uint32_t tick);
+    int (*command)(void *, GameAddress parent, GameAddress motion, int *accepted);
 } PlayerAttachmentServices;
 
 typedef struct PlayerAttachmentStats {

@@ -32,7 +32,8 @@ keyboard/controller bindings and music preferences use `CONFIG/settings.ini`.
 On macOS, user data lives in `~/uprising/`, including
 `~/uprising/CONFIG/settings.ini`, so replacing the app preserves it.
 Legacy `FONTS/settings.cfg` and `FONTS/keymap.cfg` are imported on first use when
-present. Saves and screenshots are separate user data.
+present. Saves and screenshots are separate user data. Screenshots are saved as
+PNG files in `scrshts/` under the user-data directory.
 
 Options → Graphics → **ADVANCED** provides:
 

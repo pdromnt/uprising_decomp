@@ -1,7 +1,7 @@
 # Remaining work
 
-- Validate the new native CI packages on Windows ARM64, Linux x64/ARM64 and
-  macOS ARM64, then collect gameplay/input/audio results on those systems.
+- Collect manual gameplay results on Windows ARM64 and Linux x64; extend the
+  confirmed macOS ARM64 and CM5/Linux ARM64 runs to longer sessions and reloads.
 - Fix concrete gameplay, menu, mission-transition and performance reports from
   continued play. Use the focused checklist in [Manual testing](MANUAL_TESTING.md).
 - Broaden coverage on older GPUs and physical controllers/haptics, and exercise

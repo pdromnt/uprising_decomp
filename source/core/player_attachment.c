@@ -255,7 +255,19 @@ int player_attachment_update(GameMemory *memory, PlayerAttachmentState *state,
     uint16_t angles[3];
     if (!memory || !state || !frame || !s) return -1;
     ++stats.updates;
-    if (state->kind == PLAYER_SCENE_COMMAND || !state->quantity) return 0;
+    /*43cab0 is the command's firing slot.43cc40/43cc50 are its empty
+     *angle/submission slots, not the trigger action. Release clears the latch. */
+    if (state->kind == PLAYER_SCENE_COMMAND) {
+        int accepted=0;
+        if(state->stream_cookie)return 1;
+        if(!state->quantity)return 0;
+        if(!s->command || !s->command(s->context,state->parent,state->motion,&accepted))return -1;
+        if(!accepted)return 1;
+        state->stream_cookie=1;--state->quantity;
+        ++stats.emitted;++stats.consumed;
+        return 3;
+    }
+    if (!state->quantity) return 0;
     if ((int32_t)(state->last_tick + frame->motion_delay) > (int32_t)frame->tick ||
         (frame->parent_flags & 0x200000u)) {
         if (state->kind <= PLAYER_SCENE_DERIVED_SPATIAL)

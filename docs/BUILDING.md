@@ -13,7 +13,8 @@ The first configure downloads checksum-pinned SDL 3.4.16 and FreeType 2.14.3;
 subsequent builds reuse their shared source caches. Both are linked statically,
 with no additional DLL installation or launch flags. Windows, menu surfaces,
 font rendering, physical input and OpenGL contexts now use portable services.
-Audio, optional legacy I-FORCE effects and networking still have Windows backends.
+Audio/music also use SDL3 with the bundled stb_vorbis decoder. Optional legacy
+I-FORCE effects and networking still have Windows backends.
 The assets include `FONTS/LiberationSans-Regular.ttf` and its license in addition
 to the original fonts; keep the complete FONTS directory with the executable.
 
@@ -35,11 +36,11 @@ CTest. The build script also checks the linked symbols and native OpenGL identit
 
 Required assets beside the output are `uprising.cln`, `FONTS/`, `GRIDS/`, `VIDEO/`
 and `Music/`. No original EXE, Glide, DirectDraw proxy, Smacker DLL or VXD is a
-shipping dependency. Music currently retains a separate Windows CD/OGG adapter;
-see the README. Do not package retail assets without permission.
+shipping dependency. OGG music needs no external codec DLLs or separate INI.
+Do not package retail assets without permission.
 
-`source/scripts/package-release.ps1` packages the EXE, game data, notices and x86
-music adapter. It excludes source code, build output, user settings and saves.
+`source/scripts/package-release.ps1` packages the EXE, game data and notices.
+It excludes source code, build output, user settings and saves.
 Each architecture package contains `uprising.exe`.
 
 For a release, push the desired tag, then open Actions → Build release → Run

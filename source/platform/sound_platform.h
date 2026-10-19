@@ -10,8 +10,8 @@ GameAddress sound_platform_create_buffer(GameAddress,const SoundWave *);
 GameAddress sound_platform_duplicate(GameAddress,GameAddress);
 int sound_platform_release_buffer(GameAddress);
 int sound_platform_release_device(GameAddress);
-void *sound_platform_device_acquire(GameAddress); /*Full-width COM reference; caller releases. */
-void sound_platform_device_release_native(void *);
+void sound_platform_master_volume(uint32_t);
+uint32_t sound_platform_master_volume_read(void);
 int32_t sound_platform_status(GameAddress,uint32_t *);
 int32_t sound_platform_position(GameAddress,uint32_t *);
 int32_t sound_platform_format(GameAddress,uint32_t *,uint16_t *);

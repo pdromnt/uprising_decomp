@@ -23,6 +23,10 @@ and a way to relink with a modified library where required.
 application identification. It is original game artwork, not project-authored
 art. Its presence does not grant redistribution permission.
 
-Original game data, historical TXT documentation and the existing x86 Windows
-OGG music adapter are included. Their ownership and licenses are separate from
-the reconstructed code.
+stb_vorbis 1.22 by Sean Barrett is bundled unmodified from nothings/stb commit
+`2c980bb59875b0d32144a71867fbdebb2f77cd20`. It is used under the MIT option of
+its dual MIT/public-domain license. See `source/third_party/stb-LICENSE.txt`,
+also included in binary packages.
+
+Original game data and historical TXT documentation retain their separate
+ownership and licenses.

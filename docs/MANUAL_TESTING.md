@@ -5,6 +5,9 @@ Back up saves and `CONFIG/settings.ini` before destructive experiments.
 
 - Start without flags; check icon/title, music and sound. Change a setting and
   binding, exit and restart. Confirm one CONFIG file restores them.
+- After the SDL audio migration, listen for effect/voice pitch and looping,
+  movie synchronization, music track changes/shuffle and separate music/effects
+  sliders. Check both builds; mute, change missions and exit during busy audio.
 - Font/pointer visuals were accepted before the SDL input change. Recheck
   aiming, weapon/building lists, bindings, pause/focus release and resume with
   the new input backend. If available, check joystick axes, hats, buttons,

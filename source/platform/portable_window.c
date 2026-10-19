@@ -2,10 +2,8 @@
 #include "portable_sdl.h"
 #include "portable_font.h"
 #include <SDL3/SDL_main.h>
-#include <SDL3/SDL_system.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <mmsystem.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <stdlib.h>
@@ -36,7 +34,7 @@ typedef struct MenuWindow {
     GameMenuFonts *fonts;MenuTextSurface *text_surfaces;
     void *frame_pixels,*text_lock_pixels;
 } MenuWindow;
-extern int game_menu_music_notify(GameApplication *,uint32_t,uintptr_t);
+extern int game_music_update(GameApplication *);
 extern void game_application_splash_end(GameApplication *);
 extern int game_application_level_graphics_end(GameApplication *);
 extern int game_application_level_graphics_begin(GameApplication *);
@@ -125,16 +123,6 @@ static void acquire_input(GameApplication *a) {
     if(!game_menu_input_acquire(a,0) || !game_menu_input_acquire(a,1) ||
        (game_memory_read_u32(&a->memory,0x604768u) && !game_menu_input_acquire(a,2)))a->memory.fault=1;
 }
-/* Only the not-yet-migrated MCI service consumes native messages.
- * SDL owns dispatch, focus, exposure, close and the lifetime of its HWND. */
-static bool SDLCALL window_message_hook(void *userdata,MSG *message){
-    GameApplication *a=userdata;
-    if(!a->menu_window || message->hwnd!=a->menu_window->handle)return true;
-    if(message->message==MM_MCINOTIFY && game_memory_read_u32(&a->memory,0x59d828u)){
-        if(!game_menu_music_notify(a,(uint32_t)message->wParam,(uintptr_t)message->lParam))a->memory.fault=1;
-    }
-    return true;
-}
 int game_menu_pump_events(GameApplication *a,int deliver_input){
     SDL_Event event;MenuWindow *w=a->menu_window;unsigned drained=0;
     if(!w || !w->window)return 0;
@@ -173,7 +161,7 @@ int game_menu_pump_events(GameApplication *a,int deliver_input){
         if(deliver_input && game_memory_read_u32(&a->memory,0x6270f4) &&
            !game_menu_event_forward(a,&event))return 0;
     }
-    return !a->memory.fault;
+    return game_music_update(a) && !a->memory.fault;
 }
 void *game_menu_window_handle(GameApplication *a) {return a->menu_window?a->menu_window->handle:NULL;}
 SDL_Window *game_menu_sdl_window(GameApplication *a){return a->menu_window?a->menu_window->window:NULL;}
@@ -289,7 +277,6 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
     game_application_force_feedback_close(a,1);game_input_devices_end(a);
     while(w->text_surfaces)game_menu_text_surface_release(a,w->text_surfaces->identity);
     window_surfaces_release(w);SDL_DestroySurface(w->upload);game_menu_window_resources_end(a);
-    SDL_SetWindowsMessageHook(NULL,NULL);
     if(w->context){
         if(SDL_GL_MakeCurrent(w->window,w->context) && w->menu_texture)glDeleteTextures(1,&w->menu_texture);
         SDL_GL_DestroyContext(w->context);
@@ -332,7 +319,6 @@ GameAddress game_menu_window_construct(GameApplication *a,void *instance,unsigne
         !SDL_SetWindowPosition(w->window,left,top))goto fail;}
     w->handle=SDL_GetPointerProperty(SDL_GetWindowProperties(w->window),SDL_PROP_WINDOW_WIN32_HWND_POINTER,NULL);
     if(!w->handle || !game_menu_window_resources_begin(a))goto fail;
-    SDL_SetWindowsMessageHook(window_message_hook,a);
     if(!SDL_StartTextInput(w->window))goto fail;
     SendMessageA(w->handle,WM_SETICON,ICON_BIG,(LPARAM)LoadIconA(instance,MAKEINTRESOURCEA(UPRISING_ICON_ID)));
     SendMessageA(w->handle,WM_SETICON,ICON_SMALL,(LPARAM)LoadImageA(instance,

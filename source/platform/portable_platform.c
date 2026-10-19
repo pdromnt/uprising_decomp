@@ -980,6 +980,7 @@ int game_application_platform_stop(GameApplication *app) {
     game_menu_images_dispose(app);
     if(app->memory.data)(void)game_level_display_masks_release(app);
     game_input_devices_end(app);
+    {extern void game_music_shutdown(GameApplication *);game_music_shutdown(app);}
     sound_platform_shutdown();
     render_runtime_pools_release();
     render_arena_release();

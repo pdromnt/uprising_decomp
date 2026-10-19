@@ -49,7 +49,8 @@ static int movie_audio(GameMovieDecoder *d){
             !pcm_append(pcm+i,smk_get_audio(d->codec,(unsigned char)i),smk_get_audio_size(d->codec,(unsigned char)i)))goto done;
         if(frame+1<d->frame_count)status=smk_next(d->codec);
     }
-    if(!game_application_audio_muted(d->app)){
+    /* Muted devices still own real PCM/cursors; the mixer guarantees silence. */
+    {
         bank=game_memory_read_u32(&d->app->memory,0x628a90);
         device=bank?game_memory_read_u32(&d->app->memory,bank+0x45c):0;
         if(!device || d->app->memory.fault)goto done;
@@ -131,7 +132,7 @@ int game_movie_decoder_decode(GameMovieDecoder *d,int *last,int *changed){
     memcpy(d->palette,palette,sizeof(palette));d->palette_valid=1;
     if(!d->started){
         d->started=1;d->started_at=game_menu_milliseconds(d->app);
-        if(!game_application_audio_muted(d->app))for(i=0;i<7;++i)if(d->audio[i] &&
+        for(i=0;i<7;++i)if(d->audio[i] &&
             sound_platform_command(d->audio[i],SOUND_BUFFER_PLAY,0)){d->failed=1;return 0;}
     }
     ++d->next_frame;*last=d->next_frame==d->frame_count;return 1;

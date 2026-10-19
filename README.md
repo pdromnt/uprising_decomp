@@ -2,7 +2,7 @@
 
 A behavior-focused reconstruction of **Uprising: Join or Die**, the 1997 game
 developed by Cyclone Studios. This project does not claim ownership of the
-original game, artwork, music or other assets. Game data and the existing Windows OGG music adapter are included alongside the source.
+original game, artwork, music or other assets. Game data is included alongside the source.
 
 The shipping target runs ordinary C with native OpenGL rendering. It does not
 execute generated x86 instructions, use a CPU/x87 interpreter, load Glide, or read
@@ -26,11 +26,10 @@ Settings, keyboard/controller mappings and music preferences share
 `FONTS/keymap.cfg` if present. Later runs use the
 new file. Saves and screenshots remain separate user data.
 
-The existing Windows music adapter uses `WINMM.dll`, `libogg-0.dll`,
-`libvorbis-0.dll`, `libvorbisfile-3.dll` and its `winmm.ini`. These dependencies
-are included for the x86 build. Its INI belongs to
-that external adapter; game preferences are in `CONFIG/`. Audio backend replacement
-is future work.
+SDL3 plays effects/movie audio and streams the OGG tracks in `Music/` on both
+architectures. The old music DLLs and `winmm.ini` are no longer required.
+Music/effects volume and track preferences use `CONFIG/settings.ini`; volume
+controls affect the game, leaving desktop volume alone.
 
 ## Building
 

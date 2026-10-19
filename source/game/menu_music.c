@@ -95,7 +95,8 @@ int game_menu_music_stop(GameApplication *a,GameAddress p) {
     put(a,p,0x590,0);state=get(a,p,0);
     if(state==0x20e || state==0x211) {
         code=game_music_device_stop(a,get(a,p,0x18));put(a,p,0x74,code);
-        if(code){error(a,p,code);put(a,p,0,0x20d);}
+        if(code)error(a,p,code);
+        put(a,p,0,0x20d);
     }
     return !a->memory.fault;
 }

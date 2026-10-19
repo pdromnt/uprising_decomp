@@ -61,6 +61,11 @@ Saved bindings and joystick ranges remain stable. Focus loss publishes releases;
 the game loop consumes input and advances simulation in the same iteration.
 The former DirectInput service and Windows keyboard/focus hooks are removed.
 
-MCI/DirectSound, optional legacy I-FORCE effects and DirectPlay still use Windows
-services. The native SDL message hook remains only for MCI notification. Next:
-audio/music, remaining legacy hardware services and network transport.
+`platform/sound_platform.c` mixes owned PCM clips with independent voice cursors
+through SDL3. Duplicate voices share immutable clips. `portable_music.c` streams
+OGG with stb_vorbis and reports completion to the existing playlist on the main
+thread. App-local music/effects gains replace system volume manipulation.
+DirectSound, MCI/AUX/WAVE audio calls and the native SDL message hook are removed.
+
+Optional legacy I-FORCE effects and DirectPlay still use Windows services.
+Next: remaining legacy hardware services and network transport.

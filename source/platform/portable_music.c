@@ -1,91 +1,108 @@
 #include "portable_sdl.h"
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <mmsystem.h>
+#include "menu_music.h"
 #include <stdio.h>
 #include <string.h>
-#include "menu_music.h"
-extern void *game_menu_window_handle(GameApplication *);
+#define STB_VORBIS_NO_PUSHDATA_API
+#define STB_VORBIS_NO_INTEGER_CONVERSION
+#include "../third_party/stb_vorbis.c"
 extern int game_application_audio_muted(GameApplication *);
 
-/* MCI scalar device IDs are genuine native IDs. HWND, parameter pointers and
- * retry timer IDs stay full width and never enter legacy record fields. */
-static struct {GameApplication *app;UINT_PTR retry;} music_retry;
-/* Original 0063c750 GetTickCount import, shared by UI/game timing callers. */
-uint32_t game_menu_milliseconds(GameApplication *a){(void)a;return (uint32_t)(uint32_t)SDL_GetTicks();}
-uint32_t game_music_device_open(GameApplication *a,uint32_t *device,uint32_t *volume) {
-    MCI_OPEN_PARMSA open;MCI_SET_PARMS set;MCI_GETDEVCAPS_PARMS caps;MCI_GENERIC_PARMS close;
-    uint32_t code;memset(&open,0,sizeof(open));open.lpstrDeviceType="cdaudio";
-    *device=0;*volume=0;code=mciSendCommandA(0,MCI_OPEN,MCI_OPEN_TYPE,(DWORD_PTR)&open);
-    if(code)return code;
-    memset(&set,0,sizeof(set));set.dwTimeFormat=MCI_FORMAT_TMSF;
-    code=mciSendCommandA(open.wDeviceID,MCI_SET,MCI_SET_TIME_FORMAT,(DWORD_PTR)&set);
-    if(!code) {
-        memset(&caps,0,sizeof(caps));caps.dwItem=MCI_GETDEVCAPS_DEVICE_TYPE;
-        code=mciSendCommandA(open.wDeviceID,MCI_GETDEVCAPS,MCI_GETDEVCAPS_ITEM|MCI_WAIT,(DWORD_PTR)&caps);
-        if(!code && caps.dwReturn!=MCI_DEVTYPE_CD_AUDIO)code=MCIERR_DEVICE_TYPE_REQUIRED;
+/* The menu's track IDs remain stable; there is no CD device or MCI command
+ * execution. Decoder/file/stream ownership stays in this one platform object. */
+static struct {
+    GameApplication *app;SDL_AudioStream *stream;stb_vorbis *decoder;
+    uint32_t samples[100],rates[100],last,track,volume;int initialized,playing,finished,retry;
+    uint64_t retry_at;uint64_t decoded_frames;
+} music={.volume=65535};
+uint32_t game_menu_milliseconds(GameApplication *a){(void)a;return (uint32_t)SDL_GetTicks();}
+static void SDLCALL music_callback(void *context,SDL_AudioStream *stream,int additional,int total){
+    float pcm[4096];stb_vorbis_info info;(void)context;(void)total;
+    if(!music.decoder || !music.playing)return;
+    info=stb_vorbis_get_info(music.decoder);
+    while(additional>0){int frames=additional/(int)(sizeof(float)*info.channels);
+        int decoded;if(frames<1)frames=1;if(frames>2048)frames=2048;
+        decoded=stb_vorbis_get_samples_float_interleaved(music.decoder,info.channels,pcm,frames*info.channels);
+        if(!decoded){music.playing=0;music.finished=stb_vorbis_get_error(music.decoder)?-1:1;break;}
+        music.decoded_frames+=(unsigned)decoded;
+        if(!SDL_PutAudioStreamData(stream,pcm,decoded*info.channels*(int)sizeof(float))){music.playing=0;music.finished=-1;break;}
+        additional-=decoded*info.channels*(int)sizeof(float);
     }
-    if(!code) {
-        memset(&set,0,sizeof(set));
-        code=mciSendCommandA(open.wDeviceID,MCI_SET,MCI_SET_DOOR_CLOSED|MCI_SET_AUDIO,(DWORD_PTR)&set);
-    }
-    if(!code && game_application_audio_muted(a)) {
-        memset(&set,0,sizeof(set));set.dwAudio=MCI_SET_AUDIO_ALL;
-        code=mciSendCommandA(open.wDeviceID,MCI_SET,MCI_SET_AUDIO|MCI_SET_OFF,(DWORD_PTR)&set);
-    }
-    if(code){
-        memset(&close,0,sizeof(close));
-        if(mciSendCommandA(open.wDeviceID,MCI_CLOSE,MCI_WAIT,(DWORD_PTR)&close))*device=open.wDeviceID;
-        return code; /* A failed close still has an explicit owner to retry. */
-    }
-    memset(&caps,0,sizeof(caps));caps.dwItem=MCI_GETDEVCAPS_CAN_EJECT;
-    if(!mciSendCommandA(open.wDeviceID,MCI_GETDEVCAPS,MCI_GETDEVCAPS_ITEM|MCI_WAIT,(DWORD_PTR)&caps))*volume=(uint32_t)caps.dwReturn;
-    *device=open.wDeviceID;(void)a;return 0;
 }
-uint32_t game_music_device_status(GameApplication *a,uint32_t device,uint32_t item,uint32_t track,uint32_t *value) {
-    MCI_STATUS_PARMS status;uint32_t code;memset(&status,0,sizeof(status));status.dwItem=item;status.dwTrack=track;
-    code=mciSendCommandA(device,MCI_STATUS,MCI_STATUS_ITEM|MCI_WAIT|(track?MCI_TRACK:0),(DWORD_PTR)&status);
-    *value=(uint32_t)status.dwReturn;(void)a;return code;
+static void stop_track(void){
+    SDL_AudioStream *stream=music.stream;
+    if(stream){SDL_PauseAudioStreamDevice(stream);SDL_LockAudioStream(stream);}
+    music.playing=music.finished=0;
+    if(music.decoder){stb_vorbis_close(music.decoder);music.decoder=NULL;}
+    if(stream){SDL_UnlockAudioStream(stream);SDL_DestroyAudioStream(stream);music.stream=NULL;}
 }
-uint32_t game_music_device_play(GameApplication *a,uint32_t device,uint32_t first,uint32_t last,int has_last) {
-    /* Some CD/MCI drivers accept SET_AUDIO OFF but still play audibly. Muted
-     * validation must never issue PLAY; stop any previously started track too. */
+uint32_t game_music_device_open(GameApplication *a,uint32_t *device,uint32_t *volume){
+    unsigned i;char path[64];int error;*device=*volume=0;
+    if(music.app && music.app!=a)return 1;
+    if(music.app)game_music_device_close(a,1);
+    music.app=a;music.last=0;memset(music.samples,0,sizeof(music.samples));memset(music.rates,0,sizeof(music.rates));
+    for(i=2;i<100;++i){stb_vorbis *decoder;stb_vorbis_info info;
+        snprintf(path,sizeof(path),"Music/Track%02u.ogg",i);decoder=stb_vorbis_open_filename(path,&error,NULL);if(!decoder)continue;
+        info=stb_vorbis_get_info(decoder);
+        if(info.channels>=1 && info.channels<=2 && info.sample_rate){
+            music.samples[i]=stb_vorbis_stream_length_in_samples(decoder);music.rates[i]=info.sample_rate;
+            if(music.samples[i])music.last=i;}
+        stb_vorbis_close(decoder);
+    }
+    if(!music.initialized){if(!SDL_InitSubSystem(SDL_INIT_AUDIO)){music.app=NULL;return 1;}music.initialized=1;}
+    *device=1;*volume=1;return 0;
+}
+uint32_t game_music_device_status(GameApplication *a,uint32_t device,uint32_t item,uint32_t track,uint32_t *value){
+    uint32_t seconds;(void)a;*value=0;if(device!=1 || !music.app)return 1;
+    switch(item){
+    case 1:if(track>=100 || !music.rates[track])return 1;
+        seconds=music.samples[track]/music.rates[track];*value=(seconds/60)|((seconds%60)<<8);break;
+    case 3:*value=music.last;break;
+    case 4:if(music.stream)SDL_LockAudioStream(music.stream);*value=music.playing?0x20e:0x20d;
+        if(music.stream)SDL_UnlockAudioStream(music.stream);
+        break;
+    case 5:case 7:*value=music.last!=0;break;
+    case 0x4001:*value=track<100 && music.samples[track]?0x440:0;break;
+    default:return 1;
+    }return 0;
+}
+uint32_t game_music_device_play(GameApplication *a,uint32_t device,uint32_t first,uint32_t last,int has_last){
+    char path[64];int error;stb_vorbis_info info;SDL_AudioSpec format;(void)last;(void)has_last;
+    if(device!=1 || music.app!=a || first>=100 || !music.samples[first])return 1;
+    stop_track();snprintf(path,sizeof(path),"Music/Track%02u.ogg",first);
+    music.decoder=stb_vorbis_open_filename(path,&error,NULL);if(!music.decoder)return 1;
+    info=stb_vorbis_get_info(music.decoder);
+    if(info.channels<1 || info.channels>2 || !info.sample_rate || info.sample_rate>384000){stop_track();return 1;}
+    format.format=SDL_AUDIO_F32;format.channels=info.channels;format.freq=info.sample_rate;
+    music.stream=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&format,music_callback,NULL);
+    if(!music.stream){stop_track();return 1;}
+    music.track=first;music.decoded_frames=0;music.playing=1;
     if(game_application_audio_muted(a)){
-        static int reported;
-        if(!reported){fputs("native CD music: playback suppressed (muted)\n",stderr);reported=1;}
-        return game_music_device_stop(a,device);
-    }
-    MCI_PLAY_PARMS play;memset(&play,0,sizeof(play));play.dwCallback=(DWORD_PTR)game_menu_window_handle(a);
-    play.dwFrom=first;play.dwTo=last;
-    return mciSendCommandA(device,MCI_PLAY,MCI_NOTIFY|MCI_FROM|(has_last?MCI_TO:0),(DWORD_PTR)&play);
+        static int reported;if(!reported){fputs("native CD music: playback suppressed (muted)\n",stderr);reported=1;}}
+    SDL_SetAudioStreamGain(music.stream,game_application_audio_muted(a)?0:music.volume/65535.0f);
+    if(!SDL_ResumeAudioStreamDevice(music.stream)){stop_track();return 1;}return 0;
 }
-uint32_t game_music_device_stop(GameApplication *a,uint32_t device) {
-    MCI_GENERIC_PARMS p;memset(&p,0,sizeof(p));(void)a;
-    return mciSendCommandA(device,MCI_STOP,MCI_WAIT,(DWORD_PTR)&p);
+uint32_t game_music_device_stop(GameApplication *a,uint32_t device){if(device!=1 || music.app!=a)return 1;
+    stop_track();return 0;}
+uint32_t game_music_device_close(GameApplication *a,uint32_t device){
+    if(device!=1 || music.app!=a)return 1;
+    stop_track();
+    if(music.initialized){SDL_QuitSubSystem(SDL_INIT_AUDIO);music.initialized=0;}
+    music.app=NULL;music.last=music.track=0;music.retry=0;return 0;
 }
-uint32_t game_music_device_close(GameApplication *a,uint32_t device) {
-    MCI_GENERIC_PARMS p;memset(&p,0,sizeof(p));(void)a;
-    return mciSendCommandA(device,MCI_CLOSE,MCI_WAIT,(DWORD_PTR)&p);
-}
-void game_music_device_error(uint32_t code,char *text,size_t capacity) {
-    if(!capacity)return;
-    if(!mciGetErrorStringA(code,text,(UINT)capacity))lstrcpynA(text,"Unknown MCI error",(int)capacity);
-}
-/* The original worker retries at 500ms. Run its ordinary algorithm on the
- * window thread, so authoritative records need no racing state copies. */
-static void CALLBACK retry_music(HWND window,UINT message,UINT_PTR timer,DWORD time) {
-    (void)window;(void)message;(void)time;
-    if(music_retry.app && music_retry.retry==timer && game_menu_music_refresh(music_retry.app)) {
-        KillTimer(NULL,timer);music_retry.retry=0;
-    }
-}
-int game_music_worker_start(GameApplication *a) {
-    if(music_retry.retry)return music_retry.app==a;
-    music_retry.app=a;music_retry.retry=SetTimer(NULL,0,500,retry_music);
-    if(!music_retry.retry){music_retry.app=NULL;return 0;}return 1;
-}
-void game_music_worker_join(GameApplication *a) {
-    if(music_retry.app!=a)return;
-    if(music_retry.retry)KillTimer(NULL,music_retry.retry);
-    music_retry.retry=0;music_retry.app=NULL;
+void game_music_shutdown(GameApplication *a){if(music.app==a)(void)game_music_device_close(a,1);}
+void game_music_device_error(uint32_t code,char *text,size_t capacity){snprintf(text,capacity,"SDL/OGG playback error %u: %s",code,SDL_GetError());}
+void game_music_volume(uint32_t value){music.volume=value&65535;
+    if(music.stream)SDL_SetAudioStreamGain(music.stream,game_application_audio_muted(music.app)?0:music.volume/65535.0f);}
+uint32_t game_music_volume_read(void){return music.volume;}
+int game_music_worker_start(GameApplication *a){if(music.app && music.app!=a)return 0;music.retry=1;music.retry_at=SDL_GetTicks()+500;return 1;}
+void game_music_worker_join(GameApplication *a){if(music.app==a)music.retry=0;}
+/* Only the window thread touches menu records. Audio callbacks publish a scalar
+ * completion under SDL's stream lock; playlist changes happen here. */
+int game_music_update(GameApplication *a){
+    int finished=0;
+    if(music.app!=a)return 1;
+    if(music.stream){SDL_LockAudioStream(music.stream);finished=music.finished;music.finished=0;SDL_UnlockAudioStream(music.stream);}
+    if(finished && !game_menu_music_notify(a,finished>0?1:8,1))return 0;
+    if(music.retry && SDL_GetTicks()>=music.retry_at){music.retry_at=SDL_GetTicks()+500;if(game_menu_music_refresh(a))music.retry=0;}
+    return !a->memory.fault;
 }

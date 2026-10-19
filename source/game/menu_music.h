@@ -10,6 +10,7 @@ uint32_t game_music_device_close(GameApplication *,uint32_t device);
 void game_music_device_error(uint32_t,char *,size_t);
 int game_music_worker_start(GameApplication *);
 void game_music_worker_join(GameApplication *);
+void game_music_shutdown(GameApplication *);
 int game_menu_music_refresh(GameApplication *);
 int game_menu_music_action(GameApplication *,uint32_t,uint32_t);
 int game_menu_music_title(GameApplication *,char *,size_t);

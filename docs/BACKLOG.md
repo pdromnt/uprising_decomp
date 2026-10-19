@@ -2,12 +2,10 @@
 
 - Continue manual campaign/tutorial progression, mission cycling, crowded combat,
   mission exit, menus and multiplayer checks; fix concrete reports.
-- Validate complete x64 gameplay/audio; other platforms/architectures are deferred.
-- Check physical controller/haptics, including Xbox Series Bluetooth detection.
-- Listen for audio levels/voices/loops, movie sync, track controls and reload cleanup.
-- Validate ENet on separate machines: discovery, four players, abrupt loss/reconnect,
-  repeated missions and congested links. Mixed x86/x64 host migration has passed
-  same-machine integration; this does not establish broader network acceptance.
+- Validate complete x64 gameplay; other platforms/architectures are deferred.
+- Audio is user-confirmed working. Controller and multiplayer are accepted for
+  now on existing local checks. Physical controller/haptics/Bluetooth and ENet
+  separate-machine/four-player/loss/reconnect checks are deferred, not verified.
 - SDL3 legacy cleanup is integrated. Remove further dead code when concrete
   dependencies establish it is unused; broad cleanup is deferred. Small Windows
   file-attribute and CRT cwd/durability adapters remain deliberate.

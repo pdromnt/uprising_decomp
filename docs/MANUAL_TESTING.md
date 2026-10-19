@@ -1,11 +1,15 @@
 # Manual acceptance
 
+Audio is user-confirmed working. Controller and multiplayer are accepted for now
+on local test evidence; physical hardware and separate-machine checks below are
+deferred follow-up, not blockers or claims of verified hardware/remote behavior.
+
 Use one windowed session and a stable executable name/path for firewall rules.
 Back up saves and `CONFIG/settings.ini` before destructive experiments.
 
 - Start without flags; check icon/title, music and sound. Change a setting and
   binding, exit and restart. Confirm one CONFIG file restores them.
-- After the SDL audio migration, listen for effect/voice pitch and looping,
+- When audio changes or a new report warrants it, listen for effect/voice pitch and looping,
   movie synchronization, music track changes/shuffle and separate music/effects
   sliders. Check both builds; mute, change missions and exit during busy audio.
   Check thumb clicks, dragging outside the window and changing focus during a

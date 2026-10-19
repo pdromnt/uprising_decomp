@@ -255,6 +255,9 @@ int game_level_strategic_present(GameApplication *a){
     if(!rectangle(a,get(a,0x6025f8),get(a,0x602604),get(a,0x602600),get(a,0x6025fc),110) || !rectangle(a,get(a,0x602688),get(a,0x602694),get(a,0x602690),get(a,0x60268c),110) ||
        !rectangle(a,get(a,0x6024f0)-1,get(a,0x6024f4)-1,get(a,0x6024f8)+1,get(a,0x6024fc)+1,0) || !rectangle(a,180,22,195,28,105))return 0;
     if(!game_level_frame_004d89e0(a,get(a,0x5960f0)))return 0;
+    /* Begin temporal scene inputs after monitor artwork, before its sky. This
+     * also initializes the active camera's jitter before masked sky sampling. */
+    if(!game_application_scene_depth(a,1))return 0;
     /*The preserved overlay seeds the monitor's glass after the native tiled
      * artwork and before world submission. Use the active remote
      * camera's actual11-bit heading, not the main camera or a CPU stack hook. */
@@ -267,7 +270,7 @@ int game_level_strategic_present(GameApplication *a){
         sky.scale=real(a,0x6290f4);sky.speed=real(a,0x626d50);
         if(a->memory.fault || !game_application_remote_sky(a,&sky))return 0;
     }
-    if(!game_application_scene_depth(a,1) || !game_level_world_render(a,get(a,0x6252f8)) || !game_level_colored_render(a,get(a,0x59626c)) ||
+    if(!game_level_world_render(a,get(a,0x6252f8)) || !game_level_colored_render(a,get(a,0x59626c)) ||
        !game_level_projected_render(a,PROJECTED_PLAIN) || !game_level_projected_render(a,PROJECTED_TEXTURED) || !game_level_projected_render(a,PROJECTED_ALPHA) ||
        !game_application_scene_depth(a,0) || !game_level_frame_004d9570(a))return 0;
     if(selected){

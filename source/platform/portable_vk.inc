@@ -236,9 +236,9 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
     g->locked=1;g->write_lock=write;g->lock_buffer=buffer;info->pixels=g->lfb;info->stride=g->width*2;return 1;
 }
 static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,float r,float b,float z,float u0,float v0,float u1,float v1,float alpha,uint32_t flags){
-    VulkanDrawVertex v[6]={0};unsigned i;const unsigned corner[6]={0,1,2,0,2,3};
+    VulkanDrawVertex v[6]={0};unsigned i;int ok;const unsigned corner[6]={0,1,2,0,2,3};
     if(!d->recording && !vulkan_draw_resume(d))return 0;
-    d->capture_depth=0; /* Sky and screen quads do not own world depth. */
+    d->capture_depth=0; /* Sky contributes color, never solid world depth. */
     for(i=0;i<6;i++){unsigned c=corner[i];int right=c==1 || c==2,bottom=c>=2;
         v[i].position[0]=right?r:l;v[i].position[1]=bottom?b:t;v[i].position[2]=z;
         v[i].uv[0]=right?u1:u0;v[i].uv[1]=bottom?v1:v0;v[i].uv[2]=1;
@@ -246,7 +246,9 @@ static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,flo
     }
     d->material.color_mode=texture?4:1;d->material.alpha_mode=texture?4:3;d->material.fog_mode=0;d->material.chroma=0;
     d->material.alpha_function=4;d->material.alpha_reference=0;
-    return vulkan_draw_triangles(d,v,6,texture,flags);
+    /* Only layered normal/remote sky uses this helper. Capture its color and
+     * jitter without inventing solid geometry depth or motion for the sky. */
+    d->capture_scene=1;ok=vulkan_draw_triangles(d,v,6,texture,flags);d->capture_scene=0;return ok;
 }
 static int vk1_unmap(void){
     Gl1Device *g=gl1_current;VulkanDraw *d=g->vulkan->frame+(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;

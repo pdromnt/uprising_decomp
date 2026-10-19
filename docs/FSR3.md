@@ -20,7 +20,8 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
    positions now produce vectors for terrain and stable owned-model vertices,
    including camera/object motion and owned clipping-edge provenance.
    Reversed-infinite perspective depth and opt-in scene jitter are connected.
-   Complete particle/discontinuity coverage and jittered sky/color separation.
+   Scene-only color and jittered layered skies are connected. Complete
+   particle/discontinuity coverage and post-upscale composition.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -112,20 +113,36 @@ coverage. Unknown point particles reject history rather than inventing vectors.
 Priva's actual claim/power-up/O-return/citadel-camera/shutdown route also passed,
 including normalized native point RGB. Its fixture now uses native pixel views;
 the comparator's point check remains, with a Vulkan submission check added.
-Particle quality, same-owner camera discontinuities, composition masks and complete
-UI/color separation still need coverage. No temporal upscaler is enabled yet.
+Particle quality, same-owner camera discontinuities, composition masks and final
+post-upscale UI composition still need coverage. No temporal upscaler is enabled yet.
 
-Per-batch projection snapshots apply subpixel jitter only to world geometry;
+Per-batch projection snapshots apply subpixel jitter to world geometry and skies;
 motion subtracts the current raster jitter and history keeps original positions.
 `UPRISING_VULKAN_JITTER=1` enables an eight-phase Halton[2,3] sequence at the
 current 1:1 render size. Default is off until temporal reconstruction can resolve
-it. Sky jitter, final scene/UI color separation, variable-resolution phase counts
+it. Final post-upscale composition, variable-resolution phase counts
 and FSR dispatch metadata still need integration. GPU checks cover depth scaling,
 clamping, alternating jitter, actual shifted coverage, unchanged HUD and vectors;
 x86/x64 core checks cover sequence bounds and wrapping. Live jitter-enabled
 Training1 readback preserved every depth/motion byte across HUD rendering.
 Jitter-enabled Training1 movement/fire/save/reload/shutdown and Erudara
 O-view/mask/rotation/return checks passed. Full temporal image quality is unproved.
+
+A separate owned RGBA8 scene target now receives world geometry and layered
+normal/remote skies, with the same depth, alpha, blending and monitor mask tests
+as final color. Artwork/text never write it, including artwork drawn before the
+O-view monitor. Scene color clears with temporal inputs, survives flush/resume,
+and remains byte-identical through later HUD draws. The O-view scope now begins
+before masked sky submission, so it uses the active camera's jitter. Sky color
+is captured without inventing solid sky depth/motion; sky history quality still
+needs work. Four color attachments fit Vulkan's baseline attachment limit.
+GPU fixtures check masked sky jitter, blend/occlusion, UI exclusion and resumed
+reset. Live Training1 checks all 1,228,800 scene bytes before/after HUD; Erudara
+readback verifies nonempty scene color with no artwork outside the monitor.
+The scene-color candidate also passed jitter-enabled Training1 movement/fire/
+save/reload/shutdown and Priva claim/power-up/O-return/citadel-camera/shutdown.
+This is the scene input for future FSR, not completed upscaling or a separate
+output-resolution HUD compositor.
 
 Local Windows x64: the existing Graphics drawer regression passed three cycles.
 Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
@@ -146,7 +163,7 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with clipping/coverage. New projection CI
+Six-platform application CI passed with projection/jitter. New scene-color CI
 and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 

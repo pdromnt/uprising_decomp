@@ -226,6 +226,48 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
            !pixel(rgba,8,8,0,255,0) || !pixel(rgba,9,8,255,0,0)){ok=0;goto done;}
         printf("VULKAN_PROJECTION_PASS reversed_infinite_depth=checked jitter_coverage=checked unjittered_vectors=checked hud=checked snapshots=checked\n");
     }
+    {
+        uint8_t scene[64*64*4];float depths[64*64],motion[64*64*4];unsigned i;
+        const float black[4]={0,0,0,1};VulkanDrawVertex point={0};
+        if(!vulkan_draw_projection(&draw,1,1,0.375f,-0.25f) || !vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.capture_depth=draw.capture_scene=0;
+        draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        if(!draw_quad(&draw,0,0,64,64,0,0,1,0,1,NULL,0)){ok=0;goto done;}
+        /* Masked sky color is captured independently of artwork, with jitter,
+         * while sky depth/motion remain at their cleared background values. */
+        draw.capture_scene=1;draw.mask_texture=&texture;draw.material.mask_enabled=1;
+        draw.material.mask_bounds[0]=draw.material.mask_bounds[1]=0;
+        draw.material.mask_bounds[2]=draw.material.mask_bounds[3]=64;
+        if(!draw_quad(&draw,0,0,64,64,0.8f,0,0,1,1,NULL,0)){ok=0;goto done;}
+        if(vulkan_draw_reset_reciprocal_depth(&draw)){fprintf(stderr,"Vulkan scene: accepted reset after sky submission\n");ok=0;goto done;}
+        draw.capture_scene=0;draw.mask_texture=NULL;draw.material.mask_enabled=0;
+        draw.capture_depth=1;
+        if(!draw_quad(&draw,8,8,24,24,0.4f,0,0,1,1,NULL,3) ||
+           !draw_quad(&draw,8,8,24,24,0.2f,1,0,0,0.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND) ||
+           !draw_quad(&draw,8,8,24,24,0.9f,0,1,0,1,NULL,3) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_resume(&draw)){ok=0;goto done;}
+        draw.capture_depth=0;
+        if(!draw_quad(&draw,0,0,32,32,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !vulkan_draw_read_scene(&draw,scene,sizeof(scene)) ||
+           !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths)) ||
+           !vulkan_draw_read_motion(&draw,motion,sizeof(motion)) ||
+           !pixel(rgba,8,8,255,255,255) || !pixel(scene,8,8,128,0,128) ||
+           !pixel(scene,2,2,0,0,255) || !pixel(scene,48,48,0,0,0) ||
+           depths[2+2*64]!=0 || motion[(2+2*64)*4+2]!=0 || motion[(2+2*64)*4+3]!=1){ok=0;goto done;}
+        if(!vulkan_draw_resume(&draw) || !vulkan_draw_reset_reciprocal_depth(&draw) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) || !pixel(rgba,8,8,255,255,255) ||
+           !vulkan_draw_read_scene(&draw,scene,sizeof(scene))){ok=0;goto done;}
+        for(i=0;i<sizeof(scene);i++)if(scene[i]){fprintf(stderr,"Vulkan scene: stale resumed color\n");ok=0;goto done;}
+        if(!vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        point.position[0]=50.75f;point.position[1]=8.75f;point.color[0]=point.color[3]=1;point.uv[2]=1;
+        draw.capture_scene=1;
+        if(!vulkan_draw_points(&draw,&point,1,NULL,0)){ok=0;goto done;}
+        draw.capture_scene=0;point.color[0]=0;point.color[1]=1;
+        if(!vulkan_draw_points(&draw,&point,1,NULL,0) || !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !vulkan_draw_read_scene(&draw,scene,sizeof(scene)) || !pixel(rgba,50,8,0,255,0) ||
+           !pixel(scene,50,8,0,0,0) || !pixel(scene,51,8,255,0,0)){ok=0;goto done;}
+        printf("VULKAN_SCENE_COLOR_PASS sky_jitter=checked mask=checked blend=checked occlusion=checked ui_excluded=checked resume_reset=checked\n");
+    }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
 }

@@ -3,6 +3,7 @@
 #include "render_arena.h"
 #include "render_runtime_pools.h"
 #include "render_runtime_projection.h"
+#include "asset_bitmap.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,26 +22,26 @@ int game_level_world_surface_release(GameApplication *a){
     for(i=0;i<5;++i)put(a,table_globals[i],0);
     return !a->memory.fault;
 }
-/*4d78f0: original fixed256x256 BGR source and RGB565 decode, followed by
- *the same native surface topology already used by the preserved hybrid. */
-int game_level_world_load(GameApplication *a,GameAddress name){
-    ResourceFile *file=NULL;ResourceBlob blob={0};AssetTexture image={0};MaterialValue texture={0};
-    SceneSurface *surface=NULL;char path[512];unsigned i;int ok=0;
+/* Keep the existing surface topology/texture owner, initialized from the same
+ * BMP fallback as the layered renderer. The obsolete TempSky TGA is not needed. */
+int game_level_world_load(GameApplication *a){
+    ResourceBlob blob={0};AssetBitmap bitmap={0};AssetTexture image={0};MaterialValue texture={0};
+    const int32_t rect[4]={0,0,256,256};SceneSurface *surface=NULL;unsigned i;int ok=0;
     if(!game_level_world_surface_release(a))return 0;
-    for(i=0;i<sizeof(path);++i){path[i]=(char)game_memory_read_u8(&a->memory,name+i);if(!path[i])break;}
-    if(i==sizeof(path) || a->memory.fault)goto done;
-    file=resource_file_open(path);if(!file)goto done;
-    blob.size=18u+256u*256u*3u;blob.data=malloc(blob.size);
+    if(!game_application_load_blob(a,"GRIDS/skies/tempsky.bmp",&blob) ||
+       !asset_bitmap8_parse(&blob,&bitmap) || bitmap.width!=256 || bitmap.height!=256)goto done;
+    image.width=image.height=image.render_width=image.render_height=256;
+    image.aspect=3;image.format=10;image.size=256u*256u*2u;image.pixels=malloc(image.size);
     surface=calloc(1,sizeof(*surface));
-    if(!blob.data || !surface || resource_file_read(file,blob.data,blob.size)!=blob.size ||
-       !asset_texture_rgb565(&blob,&image) || !scene_surface_initialize(surface) ||
+    if(!image.pixels || !surface || !asset_bitmap_blit_rgb565(&bitmap,rect,rect,
+       image.pixels,image.size,256,256,512,0,0,0) || !scene_surface_initialize(surface) ||
        !game_model_texture_take(a,&image,0,&texture))goto done;
     if(!scene_surface_take_texture(surface,texture.backend_handle,release_texture,a))goto done;
     texture.backend_handle=0;a->memory.surface=surface;surface=NULL;
     for(i=0;i<5;++i)put(a,table_globals[i],a->memory.surface->address[i]);
     ok=!a->memory.fault;
 done:
-    if(file)resource_file_close(file);free(blob.data);asset_texture_release(&image);
+    resource_blob_release(&blob);asset_texture_release(&image);
     if(texture.backend_handle)(void)game_model_texture_release(a,texture.backend_handle);
     if(surface){scene_surface_release(surface);free(surface);}
     if(!ok)(void)game_level_world_surface_release(a);return ok;

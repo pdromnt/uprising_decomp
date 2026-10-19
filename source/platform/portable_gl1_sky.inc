@@ -51,10 +51,16 @@ static void gl1_sky_select(const char *name){
     snprintf(path,sizeof(path),"GRIDS/skies/%s%s",name,strrchr(name,'.')?"":".bmp");
     g->sky_loaded=gl1_sky_load(0,path);
     snprintf(base,sizeof(base),"%s",name);extension=strrchr(base,'.');if(extension)*extension=0;
+    /* Some original training names have no loose layered replacement. Keep
+     * the established TempSky fallback instead of suppressing sky and fog. */
+    if(!g->sky_loaded){
+        g->sky_loaded=gl1_sky_load(0,"GRIDS/skies/tempsky.bmp");
+        if(g->sky_loaded)snprintf(base,sizeof(base),"tempsky");
+    }
     snprintf(path,sizeof(path),"GRIDS/skies/%s2.bmp",base);(void)gl1_sky_load(1,path);
     snprintf(path,sizeof(path),"GRIDS/skies/%st.bmp",base);(void)gl1_sky_load(2,path);
     g->sky_tick=(uint32_t)SDL_GetTicks();g->fog_pending=g->sky_loaded;
-    snprintf(message,sizeof(message),"native OpenGL1 sky %s: base=%d detail=%d horizon=%d\n",name,g->sky_loaded,g->sky_layers[1]!=0,g->sky_layers[2]!=0);
+    snprintf(message,sizeof(message),"native OpenGL1 sky %s [%s]: base=%d detail=%d horizon=%d\n",name,base,g->sky_loaded,g->sky_layers[1]!=0,g->sky_layers[2]!=0);
     game_application_log(g->application,"%s",message);
 }
 static void gl1_level_fog(int enabled){

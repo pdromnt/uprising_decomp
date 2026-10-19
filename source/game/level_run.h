@@ -54,7 +54,7 @@ int game_level_root_pickup_create(GameApplication *,GameAddress,int falling,cons
     uint32_t minimum,uint32_t maximum,uint32_t variant,uint32_t payload,GameAddress *);
 int game_level_scene_property(GameApplication *,GameAddress,GameAddress method,uint32_t *);
 int game_level_progress_end(GameApplication *);
-int game_level_world_load(GameApplication *,GameAddress name); /*4d78f0*/
+int game_level_world_load(GameApplication *); /*4d78f0*/
 int game_level_restore_runtime(GameApplication *,GameAddress archive); /*45a9a0*/
 int game_level_network_synchronize(GameApplication *,int host); /*5491e0/549400*/
 int game_level_game_loop(GameApplication *); /*417590*/

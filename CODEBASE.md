@@ -52,6 +52,8 @@ DirectDraw loader or GDI text/surface path. `platform/portable_font.c` uses
 FreeType with the two original fonts and Liberation Sans in place of Arial;
 verified advances/line metrics retain existing layout. Glyph rasterization may
 differ. `core/ui_geometry.c` owns bounded keyed/mirrored indexed copies.
+Missing mission sky images use the TempSky BMP layers, including fog setup;
+surface initialization also uses the BMP and no longer reads `tempsky.tga`.
 
 `platform/portable_input_devices.c` owns SDL keyboard/mouse queues, saved scan-ID
 translation, fractional relative motion, joystick sampling and periodic haptics.

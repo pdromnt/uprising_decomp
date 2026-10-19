@@ -114,7 +114,7 @@ int game_level_run(GameApplication *a) {
     stage="geometry finalization";if(!game_level_geometry_finalize(a))goto done;
     stage="display retirement";if(!game_level_display_end(a))goto done;
     stage="display initialization";if(!game_level_display_begin(a))goto done;
-    stage="world loading";if(!game_level_world_load(a,0x583b34))goto done;
+    stage="world loading";if(!game_level_world_load(a))goto done;
     stage="display transition";
     {GameUiFrameOps ops={a,mask,present,palette,fullscreen};
         if(!game_ui_frame_run(m,get(a,0x597f88)?GAME_UI_FRAME_PALETTE_TRANSITION:GAME_UI_FRAME_CLEAR,&ops))goto done;}

@@ -8,7 +8,13 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
-set(SDL_RENDER OFF CACHE BOOL "" FORCE)
+# Cocoa and Wayland implement window surfaces through SDL's texture renderer.
+# The startup splash uses a window surface even though gameplay uses native GL.
+if(WIN32)
+    set(SDL_RENDER OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_RENDER ON CACHE BOOL "" FORCE)
+endif()
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(SDL3
     URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz

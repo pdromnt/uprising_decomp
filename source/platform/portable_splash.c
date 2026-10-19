@@ -3,6 +3,7 @@
 #include "portable_input_devices.h"
 #include <SDL3/SDL_main.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "asset_bitmap.h"
 #include "scene_projection_storage.h"
 
@@ -28,7 +29,7 @@ void game_application_asset_shutdown(GameApplication *a){game_application_splash
 int game_application_asset_bootstrap(GameApplication *a){
     char archive[260],resource[260];ResourceBlob blob={0};AssetBitmap bitmap;
     uint8_t encoded[1028];size_t written;MenuSplash *splash=NULL;SDL_Surface *image=NULL,*front;
-    unsigned x,y;int found,ok=1;
+    unsigned x,y;int found,ok=1;const char *stage="startup bitmap";
     if(a->menu_splash)return 0;
     if(!splash_name(&a->memory,0x59735c,archive) || !splash_name(&a->memory,0x59736c,resource))return 0;
     found=resource_blob_open_named(archive,resource,&blob,NULL);if(!found)return 1;
@@ -39,9 +40,12 @@ int game_application_asset_bootstrap(GameApplication *a){
     splash->identity=scene_projection_storage_allocate(4,"SDL startup window");if(!splash->identity){ok=0;goto done;}
     SDL_SetMainReady();SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
     SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE,"0");
+    stage="SDL video initialization";
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO)){ok=0;goto done;}splash->video=1;
+    stage="splash window creation";
     splash->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)bitmap.width,(int)bitmap.height,SDL_WINDOW_BORDERLESS|SDL_WINDOW_HIDDEN);
     if(!splash->window){ok=0;goto done;}
+    stage="splash image creation";
     image=SDL_CreateSurface((int)bitmap.width,(int)bitmap.height,SDL_PIXELFORMAT_RGBA32);
     if(!image){ok=0;goto done;}
     for(y=0;y<bitmap.height;++y)for(x=0;x<bitmap.width;++x){
@@ -53,10 +57,12 @@ int game_application_asset_bootstrap(GameApplication *a){
         }
         pixel[0]=(uint8_t)(color>>16);pixel[1]=(uint8_t)(color>>8);pixel[2]=(uint8_t)color;pixel[3]=255;
     }
+    stage="splash window surface/presentation";
     front=SDL_GetWindowSurface(splash->window);
     if(!front || !SDL_BlitSurface(image,NULL,front,NULL) || !SDL_ShowWindow(splash->window) || !SDL_UpdateWindowSurface(splash->window)){ok=0;goto done;}
     a->menu_splash=splash;game_memory_write_u32(&a->memory,0x624f88,splash->identity);
  done:
+    if(!ok)fprintf(stderr,"startup splash failed: %s; SDL: %s\n",stage,SDL_GetError());
     SDL_DestroySurface(image);resource_blob_release(&blob);
     if(splash && a->menu_splash!=splash)splash_release(splash);
     return ok && !a->memory.fault;

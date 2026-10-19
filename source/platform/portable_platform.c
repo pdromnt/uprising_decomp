@@ -940,11 +940,14 @@ ResourceFile *game_application_bindings_file(GameApplication *app,int write) {
 int game_application_startup(GameApplication *app) {
     PortablePlatform *platform=app->platform;GameMemory *m=&app->memory;
     size_t length=strlen(platform->executable);
-    if(!game_application_directory(app,"saves"))return 0;
+    if(!game_application_directory(app,"saves")){
+        fprintf(stderr,"startup saves directory failed: %s; SDL: %s\n",platform->user_directory,SDL_GetError());return 0;
+    }
     game_memory_write_u32(m,0x597084u,0u);
     /* This bounded path is retained for the menu's read-only executable probe;
      * no module, OS-version or registry state participates in game startup. */
-    if(length>=260 || !game_memory_write(m,0x5eff38u,platform->executable,length+1u) ||
+    if(length>=260){fprintf(stderr,"startup executable path exceeds the legacy 259-byte limit\n");return 0;}
+    if(!game_memory_write(m,0x5eff38u,platform->executable,length+1u) ||
        !game_application_asset_bootstrap(app))return 0;
     return !m->fault;
 }int game_application_audio_muted(GameApplication *app) {

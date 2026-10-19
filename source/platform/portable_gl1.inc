@@ -21,6 +21,7 @@ typedef struct Gl1Texture {
     uint8_t *pixels;
     struct Gl1Texture *next;
     void *vulkan_texture;
+    uint8_t *vulkan_pixels;
     unsigned native_tile;int ui_tile;
 } Gl1Texture;
 typedef struct Gl1Device {

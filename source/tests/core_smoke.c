@@ -1,4 +1,5 @@
 #include "game_memory.h"
+#include "game_text_rasterizer.h"
 #include "host_file.h"
 #include "player_attachment.h"
 #include "game_initial_data.h"
@@ -689,7 +690,42 @@ static int health_drop_request(void *context,GameAddress parent,GameAddress moti
     if(parent!=0x1234u || motion!=0x5678u)return 0;
     *accepted=probe->accepted;return probe->ok;
 }
+static int check_sparse_text_lock(void){
+    GameMemory memory;GameTextTarget target={0};uint32_t range[2]={UINT32_MAX,0};
+    uint8_t *state=calloc(1,0x240000);uint8_t pixels[32*16*2],reference[sizeof(pixels)];
+    unsigned i,pass;
+    CHECK(state);game_memory_initialize(&memory,state,0x400000,0x240000);
+    /* A synthetic five-row glyph with clipping, background and two writes in
+     * one borrowed lock. Tracking must change neither pixels nor text state. */
+    for(i=0;i<25;i++)game_memory_write_u8(&memory,0x575c40+i,(uint8_t)(i%2));
+    game_memory_write_u8(&memory,0x59d448,1);
+    game_memory_write_u8(&memory,0x5ad3a8+6,255);
+    game_memory_write_u32(&memory,0x59d46c,1);
+    game_memory_write_u32(&memory,0x59d450,3);game_memory_write_u32(&memory,0x59d454,19);
+    game_memory_write_u32(&memory,0x59d458,2);game_memory_write_u32(&memory,0x59d45c,12);
+    target.pixels=pixels;target.pixel_bytes=sizeof(pixels);target.stride=32;target.rgb565=1;
+    for(pass=0;pass<2;pass++){
+        for(i=0;i<sizeof(pixels);i+=2){pixels[i]=0x1f;pixels[i+1]=0xf8;}
+        target.written_range=pass?range:NULL;
+        game_memory_write_u32(&memory,0x62970c,1);game_memory_write_u32(&memory,0x629708,1);
+        game_text_rasterize_bytes(&memory,(const uint8_t *)"AA",3,&target,20);
+        game_memory_write_u32(&memory,0x62970c,12);game_memory_write_u32(&memory,0x629708,8);
+        game_text_rasterize_bytes(&memory,(const uint8_t *)"A",2,&target,20);
+        CHECK(!memory.fault);
+        if(!pass)memcpy(reference,pixels,sizeof(pixels));
+    }
+    CHECK(!memcmp(reference,pixels,sizeof(pixels)) && range[0]<range[1] && range[1]<=32*16);
+    for(i=0;i<32*16;i++)if(pixels[i*2]!=0x1f || pixels[i*2+1]!=0xf8)CHECK(i>=range[0] && i<range[1]);
+    range[0]=UINT32_MAX;range[1]=0;
+    game_text_rasterize_bytes(&memory,(const uint8_t *)"",1,&target,20);
+    CHECK(!memory.fault && range[0]==UINT32_MAX && range[1]==0);
+    target.pixel_bytes=1;
+    game_text_rasterize_bytes(&memory,(const uint8_t *)"A",2,&target,20);
+    CHECK(memory.fault && range[0]==UINT32_MAX && range[1]==0);
+    free(state);return 0;
+}
 int main(void) {
+    CHECK(check_sparse_text_lock()==0);
     {
         PlayerAttachmentState state={0};PlayerAttachmentFrame frame={0};GameMemory memory={0};
         HealthDropProbe probe={0,0,1};PlayerAttachmentServices services={0};

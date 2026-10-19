@@ -317,7 +317,15 @@ int game_application_glyph_begin(GameApplication *a,GameTextTarget *target,int32
     if(!info.pixels || !info.stride || info.stride>INT32_MAX || (info.stride&1) || !height ||
        (uint64_t)info.stride*height>SIZE_MAX){fprintf(stderr,"native text backend: invalid LFB pixels=%p stride=%u height=%u\n",info.pixels,info.stride,height);goto fail;}
     memset(target,0,sizeof(*target));target->pixels=info.pixels;target->pixel_bytes=(size_t)info.stride*height;
-    target->stride=(int32_t)(info.stride/2);target->rgb565=1;*fallback=20;return 1;
+    target->stride=(int32_t)(info.stride/2);target->rgb565=1;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(gl1_current->vulkan){
+        Vk1Device *v=gl1_current->vulkan;
+        v->written_range[0]=UINT32_MAX;v->written_range[1]=0;v->track_text=1;
+        target->written_range=v->written_range;
+    }
+#endif
+    *fallback=20;return 1;
 fail:
     if(p->text_pixels_locked){gl1_unmap_pixels();p->text_pixels_locked=0;}
     gl1_depth_mode(2);gl1_depth_func(3);gl1_depth_mask(1);return 0;

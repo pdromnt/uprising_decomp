@@ -48,7 +48,7 @@ checks occlusion, projective UV division, transparent cutouts, blending and HUD
 ordering over three frames, then presents that rendered image through a reusable
 aspect-preserving swapchain, including a forced rebuild. Command buffers and
 texture descriptors are released after use. This parity path is synchronous;
-The current parity path is synchronous; frame overlap and complete rendering
+frame overlap and complete rendering
 parity remain ahead. Samplers use the selected base LOD, matching the comparator's
 non-mipmapped minification. Original mip bytes remain owned by the shared cache.
 
@@ -76,13 +76,22 @@ The existing Training1 1,740-frame movement/fire/weapon/save/reload/shutdown che
 passed with exact saved position/ammo restored. Erudara's 320-frame O-view check
 passed remote sky/mask, camera rotation, return to tank, pause and window restore.
 These establish exercised routes, not complete visual equivalence or performance
-acceptance. A matched stationary Training1 sample without GDB measured about
-53 FPS Vulkan versus 141 FPS stable OpenGL after fixing repeated texture uploads
-and per-pixel glyph vertex initialization. Performance remains an explicit
-blocker before temporal work; retain the OpenGL release. The bounded timed samples
+acceptance. Matched 15-second stationary Training1 samples without GDB now measure
+about 149 FPS Vulkan versus 136 FPS stable OpenGL on RTX4060Ti (640x480,
+windowed/muted/isolated), up from ~53 FPS Vulkan. Profiling found texture comparisons
+reading mapped upload memory and full-frame scratch scans for individual strings.
+Texture comparisons now use an owned CPU cache; glyph writes report their actual
+pixel span and retire only that scratch span. Texture uploads remain unchanged.
+The lower HUD capture is pixel-identical before/after; animated scene/sky pixels
+still differ. Sparse-text checks pass on x86/x64, including clipping, multiple
+strings, empty writes and rejected out-of-bounds writes. Gameplay/reload and O-view
+checks passed again; O-view now waits for real camera-sector coverage before
+returning, retaining every acceptance assertion. This removes the measured
+stationary regression, not the need for broader view/scene performance comparisons.
+Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed before the level extension. Its new run and
-validation-layer coverage of level rendering remain pending, as do native Apple
+Six-platform application CI passed with the level extension. CI for these latest
+performance changes and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
 Windows/Linux use the installed Vulkan driver/loader. macOS explicitly requires

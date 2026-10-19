@@ -8,6 +8,8 @@ typedef struct Vk1Device {
     uint32_t tile_buckets[1024],tile_count;
     uint64_t frames,submissions,uploads,atlas_uploads;
     Uint64 frame_start;
+    uint32_t written_range[2];
+    int track_text,scratch_clean;
 } Vk1Device;
 static VulkanDraw *vk1_back(void){return &gl1_current->vulkan->frame[gl1_current->back];}
 static int vk1_flush(VulkanDraw *d,int resume){
@@ -40,6 +42,7 @@ static void vk1_texture_release(Gl1Texture *texture){
     if(!vk1_flush(vk1_back(),0))vk1_back()->recording=0;
     vulkan_draw_texture_destroy(&gl1_current->vulkan->frame[0],texture->vulkan_texture);
     free(texture->vulkan_texture);texture->vulkan_texture=NULL;
+    free(texture->vulkan_pixels);texture->vulkan_pixels=NULL;
 }
 static void vk1_sky_release(void){
     Gl1Device *g=gl1_current;unsigned i;if(!vk1_flush(vk1_back(),0))return;
@@ -85,7 +88,7 @@ static void vk1_refresh(Gl1Texture *texture){
      * consumes the selected base LOD. Retain all original mip bytes in staging. */
     g->chroma_enabled=0;gl1_convert(texture,texture->pixels,texture->width*texture->height,g->rgba);g->chroma_enabled=chroma;
     if(t && t->image.image && t->width==texture->width && t->height==texture->height &&
-       !memcmp(t->upload.mapping,g->rgba,(size_t)texture->width*texture->height*4))goto current;
+       texture->vulkan_pixels && !memcmp(texture->vulkan_pixels,g->rgba,(size_t)texture->width*texture->height*4))goto current;
     if(!vk1_flush(g->vulkan->frame,0) || !vk1_flush(g->vulkan->frame+1,0))return;
     g->vulkan->uploads++;
     if(!t){t=calloc(1,sizeof(*t));if(!t){gl1_fail("Vulkan texture owner");return;}texture->vulkan_texture=t;}
@@ -93,6 +96,15 @@ static void vk1_refresh(Gl1Texture *texture){
     if(!t->image.image){
         if(!vulkan_draw_texture_create(owner,t,g->rgba,texture->width,texture->height,1,1)){gl1_fail("Vulkan texture creation");return;}
     }else if(!vulkan_draw_texture_update(owner,t,g->rgba,(size_t)texture->width*texture->height*4)){gl1_fail("Vulkan texture update");return;}
+    {
+        /* Upload heaps may be write-combined: reading them for every palette
+         * comparison is prohibitively slow on discrete GPUs. Keep this cache
+         * in ordinary CPU memory and retire it with the texture owner. */
+        size_t bytes=(size_t)texture->width*texture->height*4;
+        uint8_t *pixels=realloc(texture->vulkan_pixels,bytes);
+        if(!pixels){gl1_fail("Vulkan texture comparison cache");return;}
+        texture->vulkan_pixels=pixels;memcpy(pixels,g->rgba,bytes);
+    }
 current:
     texture->palette_generation=g->palette_generation;texture->chroma_enabled=g->chroma_enabled;texture->chroma=g->chroma;texture->dirty=0;
     texture->ncc_table=g->ncc_selected;texture->ncc_generation=g->ncc_generation[g->ncc_selected];
@@ -172,11 +184,13 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
     Gl1Device *g=gl1_current;unsigned i;VulkanDraw *d;
     if(!gl1_ready() || !info || g->locked || buffer>1)return 0;
     d=g->vulkan->frame+(buffer?g->back:g->front);
-    if(write){for(i=0;i<g->width*g->height;i++)g->lfb[i]=0xf81f;}
+    g->vulkan->track_text=0;
+    if(write){if(!g->vulkan->scratch_clean)for(i=0;i<g->width*g->height;i++)g->lfb[i]=0xf81f;}
     else{
         if(!vk1_flush(d,0) || !vulkan_draw_readback(d,g->rgba,(size_t)g->width*g->height*4))return 0;
         for(i=0;i<g->width*g->height;i++){const uint8_t *p=g->rgba+i*4;g->lfb[i]=(uint16_t)((p[0]>>3)<<11|(p[1]>>2)<<5|(p[2]>>3));}
     }
+    g->vulkan->scratch_clean=0;
     g->locked=1;g->write_lock=write;g->lock_buffer=buffer;info->pixels=g->lfb;info->stride=g->width*2;return 1;
 }
 static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,float r,float b,float z,float u0,float v0,float u1,float v1,float alpha,uint32_t flags){
@@ -196,10 +210,14 @@ static int vk1_unmap(void){
     static const unsigned corner[6]={0,1,2,0,2,3};
     if(!g->locked)return 0;
     if(g->write_lock){
-        for(y=0;y<g->height;y++)for(x=0;x<g->width;x++)if(g->lfb[(size_t)y*g->width+x]!=0xf81f){
+        unsigned first=0,end=g->width*g->height;
+        if(g->vulkan->track_text){first=g->vulkan->written_range[0];end=g->vulkan->written_range[1];}
+        if(first>=end){g->vulkan->scratch_clean=1;g->locked=0;return 1;}
+        for(i=first;i<end;i++)if(g->lfb[i]!=0xf81f){
+            x=i%g->width;y=i/g->width;
             if(x<left)left=x;if(x>=right)right=x+1;if(y<top)top=y;if(y>=bottom)bottom=y+1;
         }
-        if(left==g->width){g->locked=0;return 1;}
+        if(left==g->width){g->vulkan->scratch_clean=1;g->locked=0;return 1;}
         if(!d->recording && !vulkan_draw_resume(d))return 0;
         /* Convert opaque RGB565 ink runs directly to native rectangles. This
          * preserves the existing bounded text lock without a texture upload,
@@ -218,6 +236,11 @@ static int vk1_unmap(void){
             }
             if(!vulkan_draw_triangles(d,vertex,6,NULL,0))return 0;x=end;
         }
+        /* Retire exactly the written scratch span after its vertices were copied.
+         * Generic pixel locks still scan the complete buffer; glyph locks report
+         * their validated writes, including multiple strings and clipped text. */
+        for(i=first;i<end;i++)g->lfb[i]=0xf81f;
+        g->vulkan->scratch_clean=1;
     }
     g->locked=0;return 1;
 }

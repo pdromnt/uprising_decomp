@@ -71,6 +71,10 @@ static void text_write_pixel(GameMemory *memory, const GameTextTarget *target,
         if(memory->fault)return;
         target->pixels[offset]=(uint8_t)packed;
         if(bytes==2)target->pixels[offset+1]=(uint8_t)(packed>>8);
+        if(target->written_range){
+            if(pixel<target->written_range[0])target->written_range[0]=pixel;
+            if(pixel>=target->written_range[1])target->written_range[1]=pixel+1;
+        }
         return;
     }
     if (!target->rgb565) {

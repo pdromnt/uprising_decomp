@@ -11,6 +11,9 @@ typedef struct GameTextTarget {
      * Legacy/oracle targets leave these zero; no host pointer enters base. */
     uint8_t *pixels;
     size_t pixel_bytes;
+    /* Optional borrowed [first, end) pixel range for a sparse native lock.
+     * The lock owner initializes it to {UINT32_MAX, 0}. */
+    uint32_t *written_range;
 } GameTextTarget;
 
 uint32_t game_text_rasterize(GameMemory *memory, GameAddress text,

@@ -573,6 +573,9 @@ int game_menu_draw_bitmap(GameApplication *a,const AssetBitmap *image,const Game
         if(!game_application_glyph_begin(a,&target,&fallback))return 0;
         ok=target.rgb565 && target.stride>0 && asset_bitmap_blit_rgb565(image,src,dst,target.pixels,target.pixel_bytes,
             game_memory_read_u32(&a->memory,0x627928),game_memory_read_u32(&a->memory,0x62792c),(size_t)target.stride*2u,transparent,key,0);
+        /* The bitmap blitter owns its clipping; retain the complete lock range
+         * for this non-glyph writer, including a partially failed blit. */
+        if(target.written_range){target.written_range[0]=0;target.written_range[1]=(uint32_t)(target.pixel_bytes/2);}
         ended=game_application_glyph_end(a);return ok && ended && !a->memory.fault;
     }
     return w && draw_bitmap_surface(a,w->back,w->width,w->height,image,source,destination,transparent,key,0);
@@ -727,7 +730,14 @@ int game_menu_text_surface_draw(GameApplication *a,GameAddress identity,const Ga
                 uint8_t *out=target.pixels+(size_t)y*target.stride*2;
                 for(x=destination->left<0?0:destination->left;x<destination->right && (uint32_t)x<wide;++x){
                     uint8_t value=row[source->left+((int64_t)x-destination->left)*sx/dx];uint16_t packed=colors[value];
-                    if(!transparent || value!=p->key){out[x*2]=(uint8_t)packed;out[x*2+1]=(uint8_t)(packed>>8);}
+                    if(!transparent || value!=p->key){
+                        uint32_t pixel=(uint32_t)y*(uint32_t)target.stride+(uint32_t)x;
+                        out[x*2]=(uint8_t)packed;out[x*2+1]=(uint8_t)(packed>>8);
+                        if(target.written_range){
+                            if(pixel<target.written_range[0])target.written_range[0]=pixel;
+                            if(pixel>=target.written_range[1])target.written_range[1]=pixel+1;
+                        }
+                    }
                 }
             }
             ok=1;

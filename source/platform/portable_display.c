@@ -17,11 +17,12 @@ struct GameDisplay {
     DisplayMode modes[96];int mode_count;
     SDL_DisplayMode **fullscreen_modes;
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
-    int open,focus,armed,mouse_x,mouse_y;Uint64 deadline;
+    int open,focus,armed,mouse_x,mouse_y,countdown_pixels;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
     DisplayFsr fsr;
 };
 typedef struct GameDisplay GameDisplay;
+static void display_redraw(GameDisplay *d){game_memory_write_u32(&d->application->memory,0x58fd3cu,1);}
 
 void game_display_viewport(int width,int height,int sw,int sh,int r[4]){
     r[0]=r[1]=0;r[2]=width;r[3]=height;
@@ -78,15 +79,24 @@ static void display_restore(GameDisplay *d){
         DisplayOptions recovery={640,480,0,0};(void)display_set(d,recovery);
     }
     d->deadline=0;d->draft=d->active;display_modes(d);
+    display_redraw(d);
 }
 static void display_close(GameDisplay *d){
     if(d->deadline)display_restore(d);
     d->open=0;d->armed=-1;
+    display_redraw(d);
     (void)game_menu_input_acquire(d->application,0);(void)game_menu_input_acquire(d->application,1);
 }
 void game_display_tick(GameApplication *a){
     GameDisplay *d=a->display;
-    if(d && d->deadline && SDL_GetTicks()>=d->deadline)display_restore(d);
+    if(d && d->deadline){
+        Uint64 now=SDL_GetTicks();
+        if(now>=d->deadline)display_restore(d);
+        else {
+            int pixels=(int)(300*(d->deadline-now)/20000);
+            if(pixels!=d->countdown_pixels){d->countdown_pixels=pixels;display_redraw(d);}
+        }
+    }
 }
 static int display_configure(GameDisplay *d,DisplayOptions options){
     GameConfig *c=game_application_config(d->application);
@@ -128,7 +138,7 @@ void game_display_end(GameApplication *a){
 }
 void game_display_graphics_drawer(GameApplication *a,int x,int y,int visible,int enabled){
     GameDisplay *d=a->display;if(!d)return;
-    d->drawer_x=x+330;d->drawer_y=y+3;d->drawer_visible=visible;if(enabled>=0)d->drawer_enabled=enabled;
+    d->drawer_x=x+305;d->drawer_y=y+3;d->drawer_visible=visible;if(enabled>=0)d->drawer_enabled=enabled;
     if(!visible && d->open)display_close(d);
 }
 static int inside(int x,int y,int left,int top,int width,int height){return x>=left && y>=top && x<left+width && y<top+height;}
@@ -143,6 +153,7 @@ static int display_hit(GameDisplay *d,int x,int y){
 }
 static void display_action(GameDisplay *d,int action,int direction){
     int index;
+    display_redraw(d);
     if(action>=8 && action<=10){action-=8;direction=-1;}
     if(action>=0 && action<=2)d->focus=action;
     switch(action){
@@ -182,6 +193,7 @@ int game_display_event(GameApplication *a,const SDL_Event *event){
         p[1]=(int32_t)(event->type==SDL_EVENT_MOUSE_MOTION?event->motion.y:event->button.y);
         if(!game_menu_pointer_from_client(a,p))return d->open;
         x=p[0];y=p[1];d->mouse_x=x;d->mouse_y=y;hit=display_hit(d,x,y);
+        if(d->drawer_visible)display_redraw(d);
         if(event->type==SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button==SDL_BUTTON_LEFT && (d->open || hit==7)){
             d->armed=hit;return 1;
         }
@@ -192,6 +204,7 @@ int game_display_event(GameApplication *a,const SDL_Event *event){
     }
     if(d->open && event->type==SDL_EVENT_KEY_DOWN){
         SDL_Scancode key=event->key.scancode;if(event->key.repeat)return 1;
+        display_redraw(d);
         if(key==SDL_SCANCODE_ESCAPE)display_action(d,d->deadline?6:4,1);
         else if(key==SDL_SCANCODE_TAB || key==SDL_SCANCODE_DOWN || key==SDL_SCANCODE_UP){
             int first=d->deadline?5:0,count=d->deadline?2:5;

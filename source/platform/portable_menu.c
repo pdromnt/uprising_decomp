@@ -6,6 +6,7 @@
 #include "application_entry.h"
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
+#include "menu_movie.h"
 
 /* Shipping strings use the original byte encoding and C-locale case mapping.
  * No live writer selects the obsolete Win32 LCID route. */
@@ -178,10 +179,12 @@ pump:
         /* Network handshakes and the guarded windowed profile keep their menu
          * owners running without stealing desktop focus. Physical events and
          * device polling remain focus-gated; activation still releases devices.
-         * The ordinary inactive profile sleeps until a message instead of
-         * busy-spinning while its controller is deliberately suspended. */
+         * Movies keep decoding/presenting against their audio clock even when
+         * inactive, avoiding a catch-up burst on focus return. Other inactive
+         * menus sleep instead of busy-spinning. */
         if (game_memory_read_u32(m, 0x6270f4u) ||
-            game_memory_read_u32(m, 0x5eff04u) || background_windowed) {
+            game_memory_read_u32(m, 0x5eff04u) || background_windowed ||
+            game_menu_movies_playing(app)) {
             if (game_memory_read_u32(m, 0x6270f4u) &&
                 game_memory_read_u32(m, event + 0x3cu) == 5u &&
                 !game_menu_input_poll(app, window)) {stage="input poll";goto done;}

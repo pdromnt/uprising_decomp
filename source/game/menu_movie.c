@@ -57,6 +57,12 @@ int game_menu_movie_tick(GameApplication *a,GameAddress p) {
     if(get(a,p,0xd4) && game_movie_decoder_ready(movie->decoder))dirty(a,p);
     return !a->memory.fault;
 }
+int game_menu_movies_playing(GameApplication *a) {
+    GameMenuMovie *movie;
+    for(movie=a->menu_movies;movie;movie=movie->next)
+        if(get(a,movie->identity,0xd4))return 1;
+    return 0;
+}
 /*0040a980/0040aad0: decode into the one native frame buffer, update palette
  * only on codec changes, present the actual frame and invoke its native completion
  * callback. Source orientation avoids a second flip/copy buffer each frame. */

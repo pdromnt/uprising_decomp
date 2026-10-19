@@ -15,6 +15,7 @@ GameAddress game_menu_movie_create(GameApplication *,const char *,uint32_t,uint3
 int game_menu_movie_play(GameApplication *,GameAddress);
 int game_menu_movie_volume(GameApplication *,GameAddress,uint32_t);
 int game_menu_movie_tick(GameApplication *,GameAddress);
+int game_menu_movies_playing(GameApplication *);
 int game_menu_movie_draw(GameApplication *,GameAddress,const GameUiRect *);
 int game_menu_movie_destroy(GameApplication *,GameAddress);
 void game_menu_movies_dispose(GameApplication *);

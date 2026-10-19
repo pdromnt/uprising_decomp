@@ -316,11 +316,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
        !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1))goto fail;
     w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
     if(!w->window)goto fail;
-    {int top,left;
-     /* Preserve the previous outer-window origin, including for matched
-      * performance runs: desktop occlusion can affect presentation cost. */
-     if(!SDL_GetWindowBordersSize(w->window,&top,&left,NULL,NULL) ||
-        !SDL_SetWindowPosition(w->window,left,top))goto fail;}
+    {SDL_DisplayID primary=SDL_GetPrimaryDisplay();
+     if(!primary || !SDL_SetWindowPosition(w->window,SDL_WINDOWPOS_CENTERED_DISPLAY(primary),
+         SDL_WINDOWPOS_CENTERED_DISPLAY(primary)))goto fail;}
     if(!game_menu_window_resources_begin(a) || !SDL_StartTextInput(w->window))goto fail;
     {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
      if(!icon)goto fail;
@@ -340,6 +338,12 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     if(!w->context)goto fail;
     SDL_GL_SetSwapInterval(0);
     if(!game_display_begin(a,w->window,w->fonts))goto fail;
+    /* Saved output dimensions are applied before the final startup placement. */
+    if(!(SDL_GetWindowFlags(w->window)&SDL_WINDOW_FULLSCREEN)){
+        SDL_DisplayID primary=SDL_GetPrimaryDisplay();
+        if(!primary || !SDL_SetWindowPosition(w->window,SDL_WINDOWPOS_CENTERED_DISPLAY(primary),
+            SDL_WINDOWPOS_CENTERED_DISPLAY(primary)))goto fail;
+    }
     game_application_splash_end(a);
     if(!create_surfaces(w))goto fail;
     /* Stable owner/member IDs replace the original handle publications. */

@@ -48,7 +48,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config build-essential glslang-tools \
+          sudo apt-get install -y cmake ninja-build pkg-config build-essential glslang-tools libgl1-mesa-dev \
             libvulkan1 mesa-vulkan-drivers vulkan-validationlayers xvfb \
             libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev \

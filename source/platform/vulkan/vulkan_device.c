@@ -107,6 +107,11 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
         q.queueFamilyIndex=v->family;q.queueCount=1;q.pQueuePriorities=&priority;
         d.queueCreateInfoCount=1;d.pQueueCreateInfos=&q;d.enabledExtensionCount=extension_count;d.ppEnabledExtensionNames=device_extensions;d.pNext=&enabled;
         core.independentBlend=VK_TRUE;d.pEnabledFeatures=&core;
+        core.shaderStorageImageExtendedFormats=f.features.shaderStorageImageExtendedFormats;
+        core.shaderStorageImageWriteWithoutFormat=f.features.shaderStorageImageWriteWithoutFormat;
+        core.shaderStorageImageReadWithoutFormat=f.features.shaderStorageImageReadWithoutFormat;
+        core.shaderImageGatherExtended=f.features.shaderImageGatherExtended;
+        v->fsr3_storage_supported=core.shaderStorageImageExtendedFormats && core.shaderStorageImageWriteWithoutFormat && core.shaderImageGatherExtended;
         CHECK(create_device(v->physical,&d,NULL,&v->device));
     }
     INSTANCE(v->get_device,PFN_vkGetDeviceProcAddr,"vkGetDeviceProcAddr");

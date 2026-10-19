@@ -1,16 +1,89 @@
-# AMD FidelityFX SDK v1.1.4. Upstream bytes stay checksum-pinned in the build cache.
+# AMD FidelityFX SDK v1.1.4, selected upscaler/host closure; upstream files stay in the build cache.
 set(FSR3_PROBE_REVISION c6efa6bf7f2027b3ec94f28578bb5965eabb9e55)
 set(FSR3_PROBE_SOURCES
-    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_autogen_reactive_pass.glsl|95991f97c70409cd2783ce7b6866d1fd318e8751c774e1aef6b55f3e470bd81f
-    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_callbacks_glsl.h|875c2b8d8df93716fb46271886c768a9ef40c5ccc11ade39397952b4a4e54321
-    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_common.h|4898aa014fef875d3644b9b3bed03f31a963349e17ad553198f87ae8af82cb3f
-    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_resources.h|10c6f7619a6c1ff9983fdff9bac565789b1cda52f97ef60b491498223e7b7097
-    sdk/include/FidelityFX/gpu/ffx_core.h|e439aa5f516b2d2ebf070ff1d24561f04fa5f00262a2e4f760764a7d07de7997
     sdk/include/FidelityFX/gpu/ffx_common_types.h|a19560f837c09f0c990e98b5925b731135d908e372af41c5895cbfa70cc9e5c8
     sdk/include/FidelityFX/gpu/ffx_core_cpu.h|bdb58574cf3ba80803c4198b4661e3a1cd63c877d59833f22bf15962b164a7fe
     sdk/include/FidelityFX/gpu/ffx_core_glsl.h|01afe5b65549b2c0951b494ca4bf570ee2aa89a64344e4c7d98ef86e6613ab42
-    sdk/include/FidelityFX/gpu/ffx_core_hlsl.h|98722d4b1331c437f5aee645e6f12ed722b721f2ffcb0ec523ee817857f394c7
-    sdk/include/FidelityFX/gpu/ffx_core_gpu_common.h|0e3c50cb0b4592c051d87e028a1dfa54fbd097942ebb3146964db801dec095d0
     sdk/include/FidelityFX/gpu/ffx_core_gpu_common_half.h|d10466cbf027c8c23858a25f8e8cbbbf521d29f373db663c9354221651e9a498
+    sdk/include/FidelityFX/gpu/ffx_core_gpu_common.h|0e3c50cb0b4592c051d87e028a1dfa54fbd097942ebb3146964db801dec095d0
+    sdk/include/FidelityFX/gpu/ffx_core_hlsl.h|98722d4b1331c437f5aee645e6f12ed722b721f2ffcb0ec523ee817857f394c7
     sdk/include/FidelityFX/gpu/ffx_core_portability.h|a7c3a1c213ec083bec401181036cffe7a222af2c430c0bab6bd8c14e83e8a567
+    sdk/include/FidelityFX/gpu/ffx_core.h|e439aa5f516b2d2ebf070ff1d24561f04fa5f00262a2e4f760764a7d07de7997
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1_callbacks_glsl.h|1859aa7ebdaa8ab92da5d0034d7392b6daa5eb54c8775f18b5ad622fd759513b
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1_callbacks_hlsl.h|26dc1e08945df01278e975b9baca62746967efeb2e668f7c96c41e601bd3a92c
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1_easu.h|4247ba45634dba21bf27b6d81c27ee4ce323b6978fc772f1209b2b313aab25d7
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1_rcas.h|26305f114f77faaa69e5e1eb89bf16009ac2373e96009624917aba5db645b522
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1_resources.h|df2891141e2332cf309782e9e4183bf01a7c8bd3628a5035b99838f0e7a9f0bd
+    sdk/include/FidelityFX/gpu/fsr1/ffx_fsr1.h|5d608d9d0645da03a3aa6c729c5ad990c6f222053eab850b8e218607c1baaa9d
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_accumulate.h|7212a028c6ff3ca4a76f9d62b7f64f5f5adce0f108067d8995c7bc795234afbc
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_callbacks_glsl.h|875c2b8d8df93716fb46271886c768a9ef40c5ccc11ade39397952b4a4e54321
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_callbacks_hlsl.h|85d6250e9b89d431167e98400e6e2db64227769b393c97ca6aad077581179114
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_common.h|4898aa014fef875d3644b9b3bed03f31a963349e17ad553198f87ae8af82cb3f
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_debug_view.h|51849bd2f758e2b15375c6a21633fea2f7433a19eb3d74d1d07f8ead36a695ba
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_luma_instability.h|82d13d21e161732e48b267d28906f067a8df306ead5aeeed65a1ef66b3e06003
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_luma_pyramid.h|fa6eeaf8197b214ee1853d73da3c66cd0c8fc24444a65237b0023bd68f10d887
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_prepare_inputs.h|acae0499b8805c363c105895afc28fc90e549b38c8bffdcbec1cf9e2f842abb0
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_prepare_reactivity.h|ddf7a6d9cd6e357328e972e0b654da977edcb2e337c992b06d6256eeae339e03
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_rcas.h|f1d8a9152bd3ceda8a10dafe44e0c6d27109b345fc4a5704f71c6bf23d6c5cb4
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_reproject.h|d2d01ea2f59658e5494414448f11435879bdac871c3ad7c84b951248bc223702
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_resources.h|10c6f7619a6c1ff9983fdff9bac565789b1cda52f97ef60b491498223e7b7097
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_sample.h|e8de656c71b15537ddd891b7485492b7829e6aec1dea96256fbc246c9a7c7366
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_shading_change_pyramid.h|b1e94d7cbb1b7d6e4556e4a080577a62fde07efbc8379b52223d322ed4b75912
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_shading_change.h|13e772ff9bd32244fb990704055040f8dbb945c014cc6f0fdbf553188b300e7e
+    sdk/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_upsample.h|c51f3af61b43fd779a6685202886dbb5dab3bfea989f8b5060c8c9ab4a93207b
+    sdk/include/FidelityFX/gpu/spd/ffx_spd_callbacks_glsl.h|87b1172d08d80767d91242cdb1ebc2a1127fd6e0787fa799732c8341fdf4b76e
+    sdk/include/FidelityFX/gpu/spd/ffx_spd_callbacks_hlsl.h|dafecd4a2556828fafe4a57cb542903b2782426b1850610cc42984e539804ac0
+    sdk/include/FidelityFX/gpu/spd/ffx_spd_downsample.h|985cf820915f2b36bc3cc0a5f6cbd1d56fb86e34492df06fa970b32fc48dfcac
+    sdk/include/FidelityFX/gpu/spd/ffx_spd_resources.h|b5b4eaa8cdc613ee1d3104a0be64ea4bac96afa1bffe1699ac7d0888e03a9c27
+    sdk/include/FidelityFX/gpu/spd/ffx_spd.h|d276f32ee18948cb053c991f3c8821f9664c93f12cb2483dd2978f333bca67b2
+    sdk/include/FidelityFX/host/backends/vk/ffx_vk.h|75343f8508cfa609bd79a7deddf2df572f0ff876ead8b5ddd1bd9c46f96f1459
+    sdk/include/FidelityFX/host/ffx_assert.h|d64fb7b916773d2ac96903fc699e438099b8702ecf5ce7aba051bd7e0a109ee1
+    sdk/include/FidelityFX/host/ffx_blur.h|60422a79aa766da8ad6e84e2771546dd8ef44a9fb4562c2faf0ec1b2b2618baf
+    sdk/include/FidelityFX/host/ffx_breadcrumbs.h|3e3937c5499497d3a16f7a858842e9a95015b18aa42207261349727530da70c8
+    sdk/include/FidelityFX/host/ffx_brixelizer_raw.h|83f050a38e430678d1478fcdf727518549c3f95e01796ef8acc20c0ff50e9eb7
+    sdk/include/FidelityFX/host/ffx_brixelizer.h|ad56278963aaf211a07c1e76c5e442a6d67144c3aaca3062fb3d1aae86fd8048
+    sdk/include/FidelityFX/host/ffx_brixelizergi.h|12d67ee2b705c87e777883b5888bcb8c93cbdf44d4e1bff4eaf08237632dbc63
+    sdk/include/FidelityFX/host/ffx_cacao.h|932e367523774a174078e06b11266884d1110ee0db95ec7b740b907981039ba2
+    sdk/include/FidelityFX/host/ffx_cas.h|b23f16998287cd4544c280c422e818e8f25212aef08c230d2d9baf093dd42f5b
+    sdk/include/FidelityFX/host/ffx_classifier.h|09b166c4ae8e93b6f74818ac8fe2c747933198d2038de3ad53bc28aaf62ff74b
+    sdk/include/FidelityFX/host/ffx_denoiser.h|4282c032f1a32d6b0e97c6491e47ac8843003b5cc079185a3ddf5a3712008c5e
+    sdk/include/FidelityFX/host/ffx_dof.h|b6a358cef30f9957c81890f6d1b2343a310a8796a5d732772d148e29e88ce1ef
+    sdk/include/FidelityFX/host/ffx_error.h|511ba2b3d99aaa3ac450de7c548244647df146939a7de105bd85713bde4a36c0
+    sdk/include/FidelityFX/host/ffx_frameinterpolation.h|6851204a5f5fcbb83c9aafa0830859d9e8dacbb028d3e50f8e52e3ce5ca97bbd
+    sdk/include/FidelityFX/host/ffx_fsr1.h|9e548017e56016530bee0d683f69176cc3dcd98d908da16c7ddf9cd6a0fe5691
+    sdk/include/FidelityFX/host/ffx_fsr2.h|3a1b4ec5c6aee40f49959f0043b3855e9f49b3025f8ea22a441d1347d352f307
+    sdk/include/FidelityFX/host/ffx_fsr3.h|de42c62316d63475bc2bb3c75831b4a7cf094d85450f3b39d764534038306d72
+    sdk/include/FidelityFX/host/ffx_fsr3upscaler.h|686cf613f70a1b01a9fa1302fb15f896b86cf2a68b069b3f5f2b5c0bcd9ea15b
+    sdk/include/FidelityFX/host/ffx_fx.h|af113a090b417b81b7f8a8a15a8ff0b97ff11a53efc4807fdf58f57b64c91bfd
+    sdk/include/FidelityFX/host/ffx_interface.h|0b012be0256c47663905e51fa31873f8bf2c5536c40211e1b01cf117eb5988d6
+    sdk/include/FidelityFX/host/ffx_lens.h|15ebabd198d1332e0c07bea923bf9c8f9f766880e089133fcc98b8fe514b6f46
+    sdk/include/FidelityFX/host/ffx_lpm.h|ba5c1fb27bd33228b940abcc86ef5618b692bf9d30f3b54d5f519390a89917c2
+    sdk/include/FidelityFX/host/ffx_message.h|48c125292b054be1ad208e36b24fb174a9cae80a3fd780a2cb52c4674e6bf4fe
+    sdk/include/FidelityFX/host/ffx_opticalflow.h|efe99c1a3ea28b7378ed65be369a6582bbe2eaf36d37cbd40bf740bdc224bd78
+    sdk/include/FidelityFX/host/ffx_parallelsort.h|17e0f1522e6e907e91ae873d40089e1aaf5e1f89c4e1f2b03570a7ffb04460ed
+    sdk/include/FidelityFX/host/ffx_spd.h|2b88f8aee337488e61fc936016ca6f1d6b613897ceea1091ac18dd68bb5de28f
+    sdk/include/FidelityFX/host/ffx_sssr.h|69f511c378280458928b02c1b7bfb56b7c376dc9202846ceeb20eed157da5501
+    sdk/include/FidelityFX/host/ffx_types.h|057535d46b7241bb25163a21dc4e59b0029f2d3da6a474b1c1028f921d5eb6f8
+    sdk/include/FidelityFX/host/ffx_util.h|efe50400378277356116f0a3989ec69367b08aaae65892fdf3a4cf931a4c7bb8
+    sdk/include/FidelityFX/host/ffx_vrs.h|536e0aacf8e245e772e87d5f0b33eea5482bcceb3d25e5edbf7f413757eb2abd
+    sdk/src/backends/shared/ffx_shader_blobs.h|d139f399b80ebf2f232c3fd64139edd1ea62f4d5f28ff144c3971fffdc5771a4
+    sdk/src/backends/vk/ffx_vk.cpp|9fa430949184fadb357e6949d7564cf0f8e4653ead683a99755a6f15c4a76589
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_accumulate_pass.glsl|73b5be6db479475559d2374957b2854aa6d7f7ddadba76ef5e4ed7f248ea9564
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_autogen_reactive_pass.glsl|95991f97c70409cd2783ce7b6866d1fd318e8751c774e1aef6b55f3e470bd81f
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_debug_view_pass.glsl|2ed1674f3f42316b1603111155aa042096158a646cb59117d38b6b0ec130c78b
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_luma_instability_pass.glsl|423345d36c811237af7a41ef5e6220638f5159952e90fa084aa952ddd267581b
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_luma_pyramid_pass.glsl|3e637a702c2cc6b6a222df4327a4ed565f731c6190e958e0ffec5b43741f7ea4
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_prepare_inputs_pass.glsl|bdf3b1ca0fdce968afb79f55d667960382139926eccdfdec46e08dbae3982657
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_prepare_reactivity_pass.glsl|176f6aa5f2f437487222c7fc057ce858795a6677d6ac3e937a1ce36521c6ddfc
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_rcas_pass.glsl|110b409d5e10b16e5a237c13932a707c1c07932bf790e814f1a9d76f02569ad7
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_shading_change_pass.glsl|246d24b76e292b7c8c5ba39dfc3a4dff1486701f5fccc6482284afac5a7daaf9
+    sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_shading_change_pyramid_pass.glsl|ce34582f454925499523d30d2619e19aefd8f1c091545c37d4ebd8feea91cf55
+    sdk/src/components/fsr3upscaler/ffx_fsr3upscaler_private.h|89935ce16720ce8b164538e886df29929716e947b47c72ca3243fed833286bdd
+    sdk/src/components/fsr3upscaler/ffx_fsr3upscaler.cpp|0b1f1227535971a818c6367f1c27f115db682aea4371fa0c15e8dbd3b0ba5764
+    sdk/src/shared/ffx_assert.cpp|c84efb3fe942e3c80b6a595cc68e580154d2380717a88f2ac37939e156b27952
+    sdk/src/shared/ffx_breadcrumbs_list.cpp|fbe34fcdda7db272b7cdb97619ba4d800829fcbabd42cac6e9862d7f898de14a
+    sdk/src/shared/ffx_breadcrumbs_list.h|06c6a58888cbb0d9a74b330682adf3ad0a50d4aea8bce8e69e52c2e5b9c724e6
+    sdk/src/shared/ffx_message.cpp|96c5a2d576f0688aa77249bf9a85ff8ce3e85c874ccc3d7d4201693f95818811
+    sdk/src/shared/ffx_object_management.cpp|607b93de58b16eaa891056b6664d719699c83f8ba9e039aa1a9e44fcecd1ab09
+    sdk/src/shared/ffx_object_management.h|e388d1af28f4d3f7388e524257b9692be867884cff720414031d9768995bf223
 )

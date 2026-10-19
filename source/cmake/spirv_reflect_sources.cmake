@@ -1,0 +1,5 @@
+set(SPIRV_REFLECT_SOURCES
+    spirv_reflect.c|e583f73eb45a4c98f2d102f17f6fe99c7bbd92d9b774acc5e949c02261bb909b
+    spirv_reflect.h|0168562cc4793df326d71863eb779db47997c2dd98938b4907541ce0bd8ff573
+    include/spirv/unified1/spirv.h|206606a4597149ae437a08d55432240214cc1fae863cf504b8ff0720c4f0e7f8
+)

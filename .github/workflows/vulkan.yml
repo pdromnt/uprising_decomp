@@ -83,7 +83,7 @@ jobs:
           $stage='source/build/probe-package'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           Copy-Item source/build/vulkan-native/bin/* $stage
-          Copy-Item source/third_party/FSR3-LICENSE.txt,source/third_party/SDL3-LICENSE.txt,docs/FSR3.md $stage
+          Copy-Item source/third_party/FSR3-LICENSE.txt,source/third_party/SDL3-LICENSE.txt,source/third_party/SPIRV-Reflect-LICENSE.txt,THIRD_PARTY_NOTICES.md,docs/FSR3.md $stage
           Copy-Item source/build/dependencies/vulkan-headers-src/LICENSE.md "$stage/Vulkan-Headers-LICENSE.md"
           Copy-Item source/build/dependencies/vulkan-headers-src/LICENSES $stage -Recurse
       - uses: actions/upload-artifact@v7

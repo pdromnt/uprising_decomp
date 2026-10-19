@@ -34,6 +34,7 @@ typedef struct VulkanDevice {
     PFN_vkGetPhysicalDeviceFormatProperties format_properties;
     PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug;VkDebugUtilsMessengerEXT debug;
     unsigned validation_errors;
+    int fsr3_storage_supported;
 #define DECLARE(name) PFN_vk##name name;
     VK_DEVICE_FUNCTIONS(DECLARE)
 #undef DECLARE
@@ -41,6 +42,9 @@ typedef struct VulkanDevice {
 
 typedef struct VulkanBuffer {VkBuffer buffer;VkDeviceMemory memory;VkDeviceSize size;void *mapping;int coherent;} VulkanBuffer;
 typedef struct VulkanImage {VkImage image;VkImageView view;VkDeviceMemory memory;} VulkanImage;
+#ifdef __cplusplus
+extern "C" {
+#endif
 int vulkan_device_open(VulkanDevice *,SDL_Window *,int validation);
 void vulkan_device_close(VulkanDevice *);
 int vulkan_buffer_create(VulkanDevice *,VulkanBuffer *,VkDeviceSize,VkBufferUsageFlags);
@@ -52,4 +56,7 @@ int vulkan_image_create_aspect(VulkanDevice *,VulkanImage *,VkFormat,VkImageUsag
 void vulkan_image_destroy(VulkanDevice *,VulkanImage *);
 int vulkan_command_begin(VulkanDevice *,VkCommandBuffer *);
 int vulkan_command_submit(VulkanDevice *,VkCommandBuffer,VkSemaphore,VkSemaphore);
+#ifdef __cplusplus
+}
+#endif
 #endif

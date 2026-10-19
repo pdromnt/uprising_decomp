@@ -3,7 +3,7 @@
 Branch: `FSR3`, based on `c620bc4b`. `main` remains the release/bug-fix line.
 The first playable target is Vulkan with FSR 3.1 temporal upscaling. Frame
 generation is out of scope; the existing real frame rate is sufficient.
-The game remains C. Keep any later AMD C++ host code behind a small C interface.
+The game remains C. AMD's C++ host code is isolated behind a small C interface.
 
 ## Stages and acceptance
 
@@ -33,9 +33,9 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
 ## Dependency proof
 
 Configure with `-DUPRISING_VULKAN_PROBE_ONLY=ON`, then build normally. Requires a
-native C11 toolchain and `glslang` or `glslangValidator` (override with
+native C11/C++17 toolchain and `glslang` or `glslangValidator` (override with
 `-DUPRISING_GLSLANG=/path/to/compiler`). Uses checksum-pinned Vulkan headers and
-12 upstream AMD shader/header files, not an entire SDK download. Generated files
+the selected AMD upscaler host/backend/shader closure and SPIRV-Reflect, not an entire SDK download. Generated files
 stay in the build cache. No assets, settings, saves or playable EXEs are modified.
 
 Run `bin/uprising_vulkan_probe` (`.exe` on Windows). It uses a hidden window,
@@ -44,6 +44,24 @@ shader in FP32. It checks all 64 readback pixels against the expected 0.4330127.
 `--show` briefly shows the result; `--validation` requires installed Khronos
 validation layers and fails rather than silently skipping them. Run as a normal
 console program. It captures no input and plays no sound.
+
+On 64-bit targets the probe also builds the actual upstream context/pipelines and
+dispatches three 64x64 ->128x128 frames, checking finite output, known flat color,
+sharpening, reset and context recreation. The profile is LDR/FP32, native subgroup
+width, reversed-infinite depth and low-resolution unjittered motion. Compiled
+SPIR-V supplies binding metadata through SPIRV-Reflect; unsupported permutations
+fail explicitly. The adapter resolves promoted memory-query entry points through
+SDL's loader and exposes only enabled/promoted functionality to the SDK. The
+frame-generation presenter callback is absent. Required storage-image features
+are checked. C++ is used only inside this optional SDK integration.
+
+The upstream external-resource API stores Vulkan image handles in `void*`.
+The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
+the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
+is still needed there. Local RTX4060Ti dispatch passed; full host cross-platform
+CI is pending. No local validation-layer pass is claimed. This is not yet
+in-game upscaling: scene/HUD output composition, real view metadata and camera
+resets, reactive/composition extraction, resizing and temporal quality remain.
 
 The graphics foundation now buffers projected triangles, snapshots each batch's
 texture/depth/blend state, and renders into owned RGBA/depth targets. The probe
@@ -163,7 +181,7 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with projection/jitter. New scene-color CI
+Six-platform application CI passed with scene color. New upscaler-host CI
 and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
@@ -192,14 +210,15 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   Linux x64/ARM64 software-driver execution. The buffered graphics extension also
   passed all six CI targets and both Linux validation runs. macOS/Windows ARM64 have compile evidence,
   not native GPU execution evidence.
-- One reactive-mask pass does **not** establish complete FSR upscaling, temporal
-  quality, frame generation, playable Vulkan rendering or a performance gain.
+- The upstream host now creates its context and dispatches the chosen FP32
+  profile locally. This does not establish in-game temporal quality, frame
+  generation, full shader-variant coverage or a performance gain.
 - The SDK v1.1.4 upscaler Vulkan backend already contains non-Windows paths;
-  compile its full dependency closure before claiming Linux/macOS compatibility.
+  cross-platform host build/runtime evidence is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
-- Need full upscaler shader variants/context build, driver feature/format checks,
-  KosmicKrisp native execution, and hardware coverage beyond the initial GPU.
+- Need game dispatch/composition, remaining shader variants, 32-bit safe handles,
+  KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 
 Primary references: [AMD integration](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-interpolation/),
 [pinned source](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/c6efa6bf7f2027b3ec94f28578bb5965eabb9e55),

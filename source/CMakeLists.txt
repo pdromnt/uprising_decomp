@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Uprising VERSION 0.1.0 LANGUAGES C)
+project(Uprising VERSION 0.2.0 LANGUAGES C)
 if(WIN32)
     enable_language(RC)
 endif()

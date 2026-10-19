@@ -69,6 +69,14 @@ jobs:
         env:
           SDL_VIDEODRIVER: x11
         run: xvfb-run -a source/build/vulkan-native/bin/uprising_vulkan_probe --validation
+      - name: Configure experimental game (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -S source -B source/build/vulkan-game -A ${{ matrix.arch }} -DUPRISING_EXPERIMENTAL_VULKAN=ON -DUPRISING_ASSET_DIRECTORY=${{ github.workspace }}/source/build/vulkan-game/bin -DUPRISING_EXECUTABLE_NAME=uprising
+      - name: Configure experimental game (Unix)
+        if: runner.os != 'Windows'
+        run: cmake -S source -B source/build/vulkan-game -G Ninja -DCMAKE_BUILD_TYPE=Release -DUPRISING_EXPERIMENTAL_VULKAN=ON -DUPRISING_ASSET_DIRECTORY=${{ github.workspace }}/source/build/vulkan-game/bin -DUPRISING_EXECUTABLE_NAME=uprising
+      - name: Compile experimental game integration
+        run: cmake --build source/build/vulkan-game --config Release --parallel 2
       - name: Collect developer probe
         shell: pwsh
         run: |

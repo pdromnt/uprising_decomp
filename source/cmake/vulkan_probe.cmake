@@ -1,13 +1,5 @@
-# Isolated dependency proof. It neither links nor replaces the playable game.
-FetchContent_Declare(VulkanHeaders
-    URL https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/v1.3.296
-    URL_HASH SHA256=e204e0b3c19f622d197df945737f5db913d6621830999b8578d34e80a7c90585
-    DOWNLOAD_DIR "${FETCHCONTENT_BASE_DIR}"
-    SOURCE_DIR "${FETCHCONTENT_BASE_DIR}/vulkan-headers-src"
-    SUBBUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/vulkan-headers-subbuild"
-    BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/vulkan-headers")
-FetchContent_MakeAvailable(VulkanHeaders)
-find_program(UPRISING_GLSLANG NAMES glslang glslangValidator REQUIRED)
+# Isolated dependency proof; uses the same backend as the optional game target.
+include("${CMAKE_CURRENT_LIST_DIR}/vulkan.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/fsr3_probe_sources.cmake")
 set(fsr3_source "${FETCHCONTENT_BASE_DIR}/fsr3-probe-src")
 foreach(entry IN LISTS FSR3_PROBE_SOURCES)
@@ -39,20 +31,9 @@ add_custom_command(OUTPUT "${embedded}"
         "-I${fsr3_source}/sdk/include/FidelityFX/gpu" "${shader}" -o "${spirv}"
     COMMAND "${CMAKE_COMMAND}" "-DINPUT=${spirv}" "-DOUTPUT=${embedded}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
     DEPENDS ${fsr3_dependencies} cmake/embed_spirv.cmake VERBATIM)
-set(graphics_headers)
-foreach(stage vert frag)
-    set(source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/projected.${stage}")
-    set(binary "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}.spv")
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}_spv.h")
-    add_custom_command(OUTPUT "${header}"
-        COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${source}" -o "${binary}"
-        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=projected_${stage}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        DEPENDS "${source}" cmake/embed_spirv.cmake VERBATIM)
-    list(APPEND graphics_headers "${header}")
-endforeach()
-add_executable(uprising_vulkan_probe tests/vulkan_probe.c platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c "${embedded}" ${graphics_headers})
+add_executable(uprising_vulkan_probe tests/vulkan_probe.c "${embedded}")
 target_include_directories(uprising_vulkan_probe PRIVATE platform/vulkan "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(uprising_vulkan_probe PRIVATE SDL3::SDL3-static Vulkan::Headers)
+target_link_libraries(uprising_vulkan_probe PRIVATE uprising_vulkan)
 if(NOT MSVC)
     target_compile_options(uprising_vulkan_probe PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
     target_link_libraries(uprising_vulkan_probe PRIVATE m)

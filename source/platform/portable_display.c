@@ -109,13 +109,16 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
     SDL_Color colors[4]={{0,0,0,0},{148,255,72,255},{148,157,129,255},{68,103,60,255}};
     if(!d)return 0;
     a->display=d;d->application=a;d->window=window;d->fonts=fonts;d->armed=-1;
-    d->active=(DisplayOptions){640,480,0,0,0};display_fsr_begin(&d->fsr,a);
+    d->active=(DisplayOptions){640,480,0,0,0};
+    if(!(SDL_GetWindowFlags(window)&SDL_WINDOW_VULKAN)){
+    display_fsr_begin(&d->fsr,a);
     if((SDL_GL_ExtensionSupported("GL_ARB_framebuffer_object") ||
         (SDL_GL_ExtensionSupported("GL_EXT_framebuffer_multisample") && SDL_GL_ExtensionSupported("GL_EXT_framebuffer_blit"))) &&
        (SDL_GL_GetProcAddress("glRenderbufferStorageMultisample") || SDL_GL_GetProcAddress("glRenderbufferStorageMultisampleEXT")) &&
        (SDL_GL_GetProcAddress("glBlitFramebuffer") || SDL_GL_GetProcAddress("glBlitFramebufferEXT")))
         glGetIntegerv(GL_MAX_SAMPLES,&d->aa_limit);
     if(d->aa_limit>8)d->aa_limit=8;
+    }
     d->canvas=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_RGBA32);
     d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(4);
     if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,colors,0,4) ||

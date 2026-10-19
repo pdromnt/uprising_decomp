@@ -17,6 +17,9 @@
 #include "ui_geometry.h"
 #include "gameplay_state.h"
 #include "level_world_surface.h"
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+#include "vulkan_menu.h"
+#endif
 
 typedef struct MenuTextSurface {
     GameAddress identity;SDL_Surface *surface;void *locked_pixels;
@@ -33,6 +36,9 @@ typedef struct MenuWindow {
     int pointer_capture_requested;int32_t isolated_pointer[2];
     GameMenuFonts *fonts;MenuTextSurface *text_surfaces;
     void *frame_pixels,*text_lock_pixels;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    VulkanMenu *vulkan;
+#endif
 } MenuWindow;
 extern int game_music_update(GameApplication *);
 extern void game_application_splash_end(GameApplication *);
@@ -220,6 +226,11 @@ int game_level_display_restore_menu(GameApplication *a){
 }
 int game_level_display_begin(GameApplication *a){
     MenuWindow *w=a->menu_window;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(w && w->vulkan){
+        game_application_log(a,"%s\n","VULKAN_GAMEPLAY_PENDING: level renderer is not connected; no OpenGL fallback");return 0;
+    }
+#endif
     if(!w || !w->context || w->front || w->back || w->text_surfaces){
         game_application_log(a,"%s\n","SDL display initialization has live menu surfaces or no context");return 0;
     }
@@ -291,6 +302,9 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
         if(SDL_GL_MakeCurrent(w->window,w->context) && w->menu_texture)glDeleteTextures(1,&w->menu_texture);
         SDL_GL_DestroyContext(w->context);
     }
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    vulkan_menu_close(w->vulkan);
+#endif
     if(w->window)SDL_DestroyWindow(w->window);
     if(w->sdl_initialized)SDL_QuitSubSystem(SDL_INIT_VIDEO);
     game_memory_write_u32(&a->memory,0x627068,0);game_memory_write_u32(&a->memory,0x626e78,0);
@@ -303,7 +317,10 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
 GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigned height) {
     MenuWindow *w;
     const char *stage="video initialization";
-    GameMemory *m=&a->memory;GameAddress p;
+    GameMemory *m=&a->memory;GameAddress p;int use_vulkan=0;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    {const char *renderer=SDL_getenv("UPRISING_RENDERER");use_vulkan=renderer && !strcmp(renderer,"vulkan");}
+#endif
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
     p=scene_projection_storage_allocate(0x140u,"portable menu window");
@@ -318,11 +335,11 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO))goto fail;
     w->sdl_initialized=1;
-    if(!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
+    if(!use_vulkan && (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
        !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24) || !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8) ||
-       !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1))goto fail;
-    stage="OpenGL window creation";
-    w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+       !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1)))goto fail;
+    stage=use_vulkan?"Vulkan window creation":"OpenGL window creation";
+    w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,(use_vulkan?SDL_WINDOW_VULKAN:SDL_WINDOW_OPENGL)|SDL_WINDOW_HIDDEN);
     if(!w->window)goto fail;
     {SDL_DisplayID primary=SDL_GetPrimaryDisplay();
      if(!primary || !SDL_SetWindowPosition(w->window,SDL_WINDOWPOS_CENTERED_DISPLAY(primary),
@@ -332,6 +349,15 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
      if(!icon)goto fail;
      int ok=SDL_SetWindowIcon(w->window,icon);SDL_DestroySurface(icon);if(!ok)goto fail;}
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(use_vulkan){
+        stage="Vulkan device creation";
+        w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL);
+        if(!w->vulkan)goto fail;
+        game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics; gameplay backend pending");
+    }else
+#endif
+    {
     /* Optional FSR uses modern shaders in a compatibility context. The game
      * retains its existing fixed-function path when that context is unavailable. */
     (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
@@ -347,6 +373,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     }
     if(!w->context)goto fail;
     SDL_GL_SetSwapInterval(0);
+    }
     stage="display settings";
     if(!game_display_begin(a,w->window,w->fonts))goto fail;
     /* Saved output dimensions are applied before the final startup placement. */
@@ -392,7 +419,15 @@ int game_menu_surface_prepare(GameApplication *a,int *restored){
 static int present_windowed_front(MenuWindow *w){
     int width,height;GLenum error;int drawn;
     if(!w || !w->front)return 0;
-    if(w->hidden || (SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED))return 1;
+    if(SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED)return 1;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(w->vulkan){
+        if(!w->upload)w->upload=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);
+        if(!w->upload || !SDL_BlitSurface(w->front,NULL,w->upload,NULL) || !game_display_overlay(w->application,w->upload))return 0;
+        return vulkan_menu_present(w->vulkan,w->upload);
+    }
+#endif
+    if(w->hidden)return 1;
     if(SDL_GL_GetCurrentContext()!=w->context && !SDL_GL_MakeCurrent(w->window,w->context))return 0;
     if(!SDL_GetWindowSizeInPixels(w->window,&width,&height))return 0;
     if(width<=0 || height<=0)return 1;
@@ -545,6 +580,9 @@ int game_menu_window_clear(GameApplication *a){
     MenuWindow *w=a->menu_window;int ok=1;if(!w)return 0;
     if(w->front)ok=SDL_FillSurfaceRect(w->front,NULL,0) && ok;
     if(w->back)ok=SDL_FillSurfaceRect(w->back,NULL,0) && ok;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(w->vulkan)return vulkan_menu_clear(w->vulkan) && ok;
+#endif
     if(!w->hidden && !(SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED)){
         PFNGLBINDFRAMEBUFFERPROC bind;SDL_FunctionPointer entry;GLint previous;int swapped;
         if(SDL_GL_GetCurrentContext()!=w->context && !SDL_GL_MakeCurrent(w->window,w->context))return 0;
@@ -605,6 +643,18 @@ int game_menu_frame_pixels_begin(GameApplication *a,GameMenuPixelSpan *span){
 int game_menu_frame_pixels_end(GameApplication *a){
     MenuWindow *w=a->menu_window;if(!w || !w->front || !w->frame_pixels)return 0;
     SDL_UnlockSurface(w->front);w->frame_pixels=NULL;return 1;
+}
+int game_menu_capture_png(GameApplication *a,const char *path){
+    MenuWindow *w=a->menu_window;SDL_Surface *image;int ok;
+    if(!w || !w->front || !path)return 0;
+    image=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);if(!image)return 0;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(w->vulkan)ok=vulkan_menu_readback(w->vulkan,image->pixels,(size_t)image->pitch*image->h);
+    else
+#endif
+    ok=SDL_BlitSurface(w->front,NULL,image,NULL) && game_display_overlay(a,image);
+    if(ok)ok=SDL_SavePNG(image,path);
+    SDL_DestroySurface(image);return ok;
 }
 int game_menu_text_surface_release(GameApplication *a,GameAddress identity){
     MenuWindow *w=a->menu_window;MenuTextSurface **link;if(!w)return 0;

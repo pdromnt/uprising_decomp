@@ -10,16 +10,16 @@
 #define TRY(call) do {if(!(call))goto fail;}while(0)
 
 int vulkan_draw_texture_create(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t *rgba,uint32_t width,uint32_t height,int linear,int repeat){
-    VulkanDevice *v=d->device;VulkanBuffer upload={0};VkCommandBuffer command;
+    VulkanDevice *v=d->device;
     VkSamplerCreateInfo sampler={VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     VkDescriptorSetAllocateInfo allocate={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     VkDescriptorImageInfo info;VkWriteDescriptorSet write={VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkBufferImageCopy copy={0};size_t bytes;
+    size_t bytes;
     if(d->recording || !width || !height || !rgba || width>v->properties.limits.maxImageDimension2D ||
        height>v->properties.limits.maxImageDimension2D || (uint64_t)width*height>SIZE_MAX/4)return 0;
     memset(t,0,sizeof(*t));bytes=(size_t)width*height*4;
-    TRY(vulkan_buffer_create(v,&upload,bytes,VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
-    TRY(vulkan_buffer_write(v,&upload,rgba,bytes));
+    t->width=width;t->height=height;
+    TRY(vulkan_buffer_create(v,&t->upload,bytes,VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
     TRY(vulkan_image_create(v,&t->image,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT,width,height));
     sampler.magFilter=sampler.minFilter=linear?VK_FILTER_LINEAR:VK_FILTER_NEAREST;
     sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
@@ -30,26 +30,35 @@ int vulkan_draw_texture_create(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t 
     info=(VkDescriptorImageInfo){t->sampler,t->image.view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     write.dstSet=t->descriptor;write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;write.pImageInfo=&info;
     v->UpdateDescriptorSets(v->device,1,&write,0,NULL);
+    TRY(vulkan_draw_texture_update(d,t,rgba,bytes));return 1;
+fail:
+    vulkan_draw_texture_destroy(d,t);return 0;
+}
+int vulkan_draw_texture_update(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t *rgba,size_t bytes){
+    VulkanDevice *v=d->device;VkCommandBuffer command;
+    VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkBufferImageCopy copy={0};
+    if(d->recording || !t->image.image || !rgba || bytes!=(size_t)t->width*t->height*4)return 0;
+    TRY(vulkan_buffer_write(v,&t->upload,rgba,bytes));
     TRY(vulkan_command_begin(v,&command));
-    barrier.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.oldLayout=t->initialized?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.srcAccessMask=t->initialized?VK_ACCESS_SHADER_READ_BIT:0;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
     barrier.image=t->image.image;barrier.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
-    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){width,height,1};
-    v->CmdCopyBufferToImage(command,upload.buffer,t->image.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+    v->CmdPipelineBarrier(command,t->initialized?VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT:VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){t->width,t->height,1};
+    v->CmdCopyBufferToImage(command,t->upload.buffer,t->image.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     barrier.oldLayout=barrier.newLayout;barrier.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,NULL,0,NULL,1,&barrier);
     TRY(vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE));
-    vulkan_buffer_destroy(v,&upload);return 1;
-fail:
-    vulkan_buffer_destroy(v,&upload);vulkan_draw_texture_destroy(d,t);return 0;
+    t->initialized=1;return 1;
+fail:return 0;
 }
 void vulkan_draw_texture_destroy(VulkanDraw *d,VulkanDrawTexture *t){
     VulkanDevice *v=d->device;
     if(t->descriptor)v->FreeDescriptorSets(v->device,d->descriptors,1,&t->descriptor);
     if(t->sampler)v->DestroySampler(v->device,t->sampler,NULL);
-    vulkan_image_destroy(v,&t->image);memset(t,0,sizeof(*t));
+    vulkan_image_destroy(v,&t->image);vulkan_buffer_destroy(v,&t->upload);memset(t,0,sizeof(*t));
 }
 int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t height){
     VkAttachmentDescription attachment[2]={{0}};VkAttachmentReference color={0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},depth={1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
@@ -190,6 +199,21 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
         v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     }
     TRY(vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE));
-    if(rgba)TRY(vulkan_buffer_read(v,&d->readback,rgba,(size_t)d->width*d->height*4));return 1;
+    if(rgba)TRY(vulkan_buffer_read(v,&d->readback,rgba,(size_t)d->width*d->height*4));
+    d->has_frame=1;return 1;
+fail:return 0;
+}
+int vulkan_draw_readback(VulkanDraw *d,uint8_t *rgba,size_t bytes){
+    VulkanDevice *v=d->device;VkCommandBuffer command;VkBufferImageCopy copy={0};
+    VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    if(d->recording || !d->has_frame || !rgba || bytes<(size_t)d->width*d->height*4)return 0;
+    TRY(vulkan_command_begin(v,&command));
+    copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){d->width,d->height,1};
+    v->CmdCopyImageToBuffer(command,d->color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,d->readback.buffer,1,&copy);
+    host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    host.srcQueueFamilyIndex=host.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;host.buffer=d->readback.buffer;host.size=VK_WHOLE_SIZE;
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    TRY(vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE));
+    return vulkan_buffer_read(v,&d->readback,rgba,(size_t)d->width*d->height*4);
 fail:return 0;
 }

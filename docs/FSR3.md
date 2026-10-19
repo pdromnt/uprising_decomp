@@ -50,6 +50,26 @@ aspect-preserving swapchain, including a forced rebuild. Command buffers and
 texture descriptors are released after use. This parity path is synchronous;
 frame overlap, game integration, full material modes and mip chains remain ahead.
 
+## Experimental application menu
+
+`-DUPRISING_EXPERIMENTAL_VULKAN=ON` builds the optional game integration. Set
+`UPRISING_RENDERER=vulkan` to select it; otherwise the OpenGL comparator remains
+available. Build to `source/build/vulkan-game/bin`, not the root release output.
+Set `UPRISING_ASSET_DIRECTORY` to the existing game directory and
+`UPRISING_USER_DIRECTORY` to an isolated test directory. No asset copies are needed.
+
+The existing indexed menu surface, fonts and widgets feed a persistent RGBA
+texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
+Menu readback/PNG capture is supported. Advanced FSR/MSAA controls remain disabled
+in this WIP backend. Entering a level fails explicitly until the world renderer is
+connected; it never creates an OpenGL context behind the Vulkan selection.
+
+Local Windows x64: the existing Graphics drawer regression passed three cycles.
+Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
+closed normally. Runs were windowed, muted and isolated; stable EXEs were untouched.
+Six-platform CI now also compiles this application integration; execution outside
+the local Windows GPU and validation-layer coverage of the menu remain pending.
+
 Windows/Linux use the installed Vulkan driver/loader. macOS explicitly requires
 KosmicKrisp, Apple Silicon and macOS 26+, with a developer Vulkan SDK for now:
 
@@ -70,8 +90,8 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
 - Local Windows x64/RTX4060Ti: reactive-mask numeric check and swapchain present
   passed. Khronos validation layers were unavailable locally, so no validation
   pass is claimed. Initial six-target CI passed, including validation-enabled
-  Linux x64/ARM64 software-driver execution. The new graphics extension passed
-  locally; its six-target CI is pending. macOS/Windows ARM64 have compile evidence,
+  Linux x64/ARM64 software-driver execution. The buffered graphics extension also
+  passed all six CI targets and both Linux validation runs. macOS/Windows ARM64 have compile evidence,
   not native GPU execution evidence.
 - One reactive-mask pass does **not** establish complete FSR upscaling, temporal
   quality, frame generation, playable Vulkan rendering or a performance gain.

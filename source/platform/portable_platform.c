@@ -100,7 +100,9 @@ typedef struct PortablePlatform {
 
 int game_application_capture_png(GameApplication *app,const char *path){
     PortablePlatform *p=app->platform;RenderPixelView pixels={0};SDL_Surface *image;int ok;
-    if(!p || !p->window_opened || !path || !gl1_map_pixels(0,0,&pixels))return 0;
+    if(!p || !path)return 0;
+    if(!p->window_opened)return game_menu_capture_png(app,path);
+    if(!gl1_map_pixels(0,0,&pixels))return 0;
     image=SDL_CreateSurfaceFrom((int)gl1_current->width,(int)gl1_current->height,
         SDL_PIXELFORMAT_RGB565,pixels.pixels,(int)pixels.stride);
     ok=image && SDL_SavePNG(image,path);
@@ -837,7 +839,8 @@ static int configuration_begin(GameApplication *app){
     return p->configuration_ready;
 }
 int game_application_platform_start(GameApplication *app,const char *executable) {
-    const char *stage="platform allocation",*base=SDL_GetBasePath(),*directory=SDL_getenv("UPRISING_USER_DIRECTORY");
+    const char *stage="platform allocation",*base=SDL_getenv("UPRISING_ASSET_DIRECTORY"),*directory=SDL_getenv("UPRISING_USER_DIRECTORY");
+    if(!base || !*base)base=SDL_GetBasePath();
 #ifdef __APPLE__
     char home_directory[4128];
 #endif

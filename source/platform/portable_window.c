@@ -40,9 +40,15 @@ extern int game_application_level_graphics_end(GameApplication *);
 extern int game_application_level_graphics_begin(GameApplication *);
 /* Legacy consumers see the same outer-window rectangle, derived from SDL. */
 static int window_bounds(MenuWindow *w,GameMemory *m){
-    int x,y,width,height,top,left,bottom,right;
-    if(!SDL_GetWindowPosition(w->window,&x,&y) || !SDL_GetWindowSize(w->window,&width,&height) ||
-       !SDL_GetWindowBordersSize(w->window,&top,&left,&bottom,&right))return 0;
+    int x=0,y=0,width,height,top=0,left=0,bottom=0,right=0;
+    if(!SDL_GetWindowSize(w->window,&width,&height))return 0;
+    /* Decoration sizes are unavailable on Cocoa; global coordinates may also
+     * be unavailable on Wayland. These legacy records are descriptive only:
+     * input uses SDL client coordinates, so client bounds are a valid fallback. */
+    if(!SDL_GetWindowPosition(w->window,&x,&y)){x=y=0;SDL_ClearError();}
+    if(!SDL_GetWindowBordersSize(w->window,&top,&left,&bottom,&right)){
+        top=left=bottom=right=0;SDL_ClearError();
+    }
     game_memory_write_u32(m,w->identity+0x58,(uint32_t)(x-left));
     game_memory_write_u32(m,w->identity+0x5c,(uint32_t)(y-top));
     game_memory_write_u32(m,w->identity+0x60,(uint32_t)(width+left+right));
@@ -296,6 +302,7 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
  * consumers; it neither changes the desktop mode nor creates a visible window. */
 GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigned height) {
     MenuWindow *w;
+    const char *stage="video initialization";
     GameMemory *m=&a->memory;GameAddress p;
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
@@ -314,11 +321,13 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     if(!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
        !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24) || !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8) ||
        !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1))goto fail;
+    stage="OpenGL window creation";
     w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
     if(!w->window)goto fail;
     {SDL_DisplayID primary=SDL_GetPrimaryDisplay();
      if(!primary || !SDL_SetWindowPosition(w->window,SDL_WINDOWPOS_CENTERED_DISPLAY(primary),
          SDL_WINDOWPOS_CENTERED_DISPLAY(primary)))goto fail;}
+    stage="fonts and text input";
     if(!game_menu_window_resources_begin(a) || !SDL_StartTextInput(w->window))goto fail;
     {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
      if(!icon)goto fail;
@@ -328,6 +337,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
     (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,3);
     (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    stage="OpenGL context creation";
     w->context=SDL_GL_CreateContext(w->window);
     if(!w->context){
         (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
@@ -337,6 +347,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     }
     if(!w->context)goto fail;
     SDL_GL_SetSwapInterval(0);
+    stage="display settings";
     if(!game_display_begin(a,w->window,w->fonts))goto fail;
     /* Saved output dimensions are applied before the final startup placement. */
     if(!(SDL_GetWindowFlags(w->window)&SDL_WINDOW_FULLSCREEN)){
@@ -349,6 +360,7 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     /* Stable owner/member IDs replace the original handle publications. */
     game_memory_write_u32(m,p,p);game_memory_write_u32(m,p+0x54u,1);
     game_memory_write_u32(m,p+0x4cu,width);game_memory_write_u32(m,p+0x50u,height);
+    stage="window bounds";
     if(!window_bounds(w,m))goto fail;
     game_memory_write_u32(m,p+0x124u,p+0x124u);game_memory_write_u32(m,p+0x128u,p+0x128u);
     game_memory_write_u32(m,p+0x12cu,p+0x12cu);
@@ -365,7 +377,11 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     if(!w->hidden && !SDL_ShowWindow(w->window))goto fail;
     game_application_log(a,"SDL window ready: %s\n",SDL_GetCurrentVideoDriver());
     return p;
-fail:game_application_log(a,"SDL window initialization failed: %s\n",SDL_GetError());game_menu_window_destroy(a,p);return 0;
+fail:
+    fprintf(stderr,"SDL window initialization failed at %s: %s\n",stage,SDL_GetError());
+    game_application_log(a,"SDL window initialization stage: %s\n",stage);
+    game_application_log(a,"SDL window initialization failed: %s\n",SDL_GetError());
+    game_menu_window_destroy(a,p);return 0;
 }
 int game_menu_surface_prepare(GameApplication *a,int *restored){
     MenuWindow *w=a->menu_window;

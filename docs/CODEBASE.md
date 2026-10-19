@@ -108,12 +108,19 @@ mouse mapping use the same aspect-preserved viewport. Front-end graphics control
 retain their existing native consumers. The modal uses native-size beveled metal
 trim, a recessed terminal interior and existing fonts. Separate arrow hit areas
 cycle values backward/forward; confirmation has a draining rollback bar.
-SDL owns exclusive fullscreen transitions.
+SDL owns desktop fullscreen transitions; the display mode stays intact. Window
+sizes are 4:3 only. Fullscreen fits the original aspect inside the desktop canvas
+with black borders and reports its automatic output size in the modal.
 Isolated automation rejects fullscreen and ignores saved display modes.
 
 `portable_fsr.inc` wraps AMD's unmodified FSR1 EASU/RCAS GLSL in an optional OpenGL
 4.3 compatibility context. CMake embeds the shader headers; no runtime shader
 files or compiler DLLs are shipped. The original 640x480 render/depth/readback
 buffers remain unchanged; FSR scales the complete gameplay frame (including HUD)
-at presentation. Front-end menus bypass it. Programs and the reusable intermediate
+at presentation. Front-end menus use the same filter, with their top-down texture
+orientation handled in the final pass. Programs and the reusable intermediate
 target belong to the display owner and retire before context destruction.
+The non-FSR path uses TOU's integer-prescale coordinate filter with linear
+sampling, preserving pixel interiors at integer scales without uneven nearest
+pixel widths at fractional scales. Its shader uses GLSL 1.20 independently of
+FSR availability; shader failure retains linear fractional/nearest integer scaling.

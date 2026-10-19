@@ -28,12 +28,16 @@ Settings, keyboard/controller mappings and music preferences share
 `FONTS/keymap.cfg` if present. Later runs use the
 new file. Saves and screenshots remain separate user data.
 
-Options → Graphics → **ADVANCED** selects windowed/fullscreen output, resolution
-and optional FSR1 upscaling. Apply previews the mode; **KEEP** confirms it within
+Options → Graphics → **ADVANCED** selects windowed/fullscreen output, 4:3 window
+resolution and optional FSR1 upscaling. Fullscreen uses the desktop mode with a
+centered 4:3 image and black borders; its output size is automatic. Apply previews
+the mode; **KEEP** confirms it within
 20 seconds, otherwise the previous mode returns. Display preferences use the
 same settings file and load without flags. The original game frame keeps its
 aspect ratio; widescreen output has side bars. FSR1 upscales the existing game
-frame, including its HUD; front-end menus retain their original scaling. FSR
+frame, including its HUD, and the front-end menus. With FSR off, a pixel-art
+presentation filter smooths fractional scaling while preserving integer-scale
+pixel interiors. FSR
 requires an OpenGL 4.3 compatibility context; the existing rendering path remains
 available without it. Fullscreen switching still needs manual acceptance.
 

@@ -11,8 +11,9 @@
   file-attribute and CRT cwd/durability adapters remain deliberate.
 - Manually accept advanced display settings: fullscreen mode changes, confirmation/
   timeout, restart persistence and FSR1 appearance at larger resolutions. Local
-  x86/x64 windowed UI, scaling, FSR toggling and cleanup checks pass. Older-GPU
-  fallback and fullscreen desktop restoration still need hardware acceptance.
+  x86/x64 windowed UI, FSR toggling and cleanup checks passed before the latest
+  all-screen filtering/4:3-only/desktop-fullscreen changes, now awaiting the
+  user's manual check. Older-GPU fallback still needs hardware acceptance.
 - Select a license for project-authored code.
 - Later: better module boundaries, descriptive fields and layout cleanup.
 

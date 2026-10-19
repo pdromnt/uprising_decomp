@@ -9,6 +9,6 @@ void game_display_graphics_drawer(GameApplication *,int x,int y,int visible,int 
 int game_display_event(GameApplication *,const SDL_Event *); /* Consumed by modal UI. */
 void game_display_tick(GameApplication *);
 int game_display_overlay(GameApplication *,SDL_Surface *rgba);
-int game_display_present(GameApplication *,unsigned texture,int width,int height,int top_down,int menu);
+int game_display_present(GameApplication *,unsigned texture,int width,int height,int top_down);
 void game_display_viewport(int width,int height,int source_width,int source_height,int rect[4]);
 #endif

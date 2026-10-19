@@ -10,12 +10,11 @@
 #include "portable_fsr.inc"
 
 typedef struct DisplayOptions {int width,height,fullscreen,fsr;} DisplayOptions;
-typedef struct DisplayMode {int width,height;const SDL_DisplayMode *mode;} DisplayMode;
+typedef struct DisplayMode {int width,height;} DisplayMode;
 struct GameDisplay {
     GameApplication *application;SDL_Window *window;GameMenuFonts *fonts;
     DisplayOptions active,draft,previous;
     DisplayMode modes[96];int mode_count;
-    SDL_DisplayMode **fullscreen_modes;
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
     int open,focus,armed,mouse_x,mouse_y,countdown_pixels;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
@@ -32,26 +31,16 @@ void game_display_viewport(int width,int height,int sw,int sh,int r[4]){
     r[0]=(width-r[2])/2;r[1]=(height-r[3])/2;
 }
 static void display_modes(GameDisplay *d){
-    static const int common[][2]={{640,480},{800,600},{1024,768},{1280,720},{1280,960},
-        {1280,1024},{1600,900},{1600,1200},{1920,1080},{1920,1440},{2560,1440},{3840,2160}};
-    SDL_DisplayID id=SDL_GetDisplayForWindow(d->window);SDL_Rect usable;int count,i,j;
-    d->mode_count=0;SDL_free(d->fullscreen_modes);d->fullscreen_modes=NULL;
-    if(d->draft.fullscreen){
-        d->fullscreen_modes=SDL_GetFullscreenDisplayModes(id,&count);
-        for(i=0;d->fullscreen_modes && i<count && d->mode_count<96;++i){
-            const SDL_DisplayMode *m=d->fullscreen_modes[i];
-            if(m->w<640 || m->h<480 || m->w>8192 || m->h>8192)continue;
-            for(j=0;j<d->mode_count;++j)if(d->modes[j].width==m->w && d->modes[j].height==m->h)break;
-            if(j==d->mode_count)d->modes[d->mode_count++]=(DisplayMode){m->w,m->h,m};
-        }
-    }else{
-        if(!SDL_GetDisplayUsableBounds(id,&usable))usable=(SDL_Rect){0,0,1920,1080};
-        for(i=0;i<(int)(sizeof(common)/sizeof(*common));++i)
-            if(common[i][0]<=usable.w && common[i][1]<=usable.h)
-                d->modes[d->mode_count++]=(DisplayMode){common[i][0],common[i][1],NULL};
-    }
+    static const int common[][2]={{640,480},{800,600},{960,720},{1024,768},{1152,864},
+        {1280,960},{1400,1050},{1600,1200},{1920,1440},{2048,1536},{2560,1920},{2880,2160}};
+    SDL_DisplayID id=SDL_GetDisplayForWindow(d->window);SDL_Rect usable;int i;
+    d->mode_count=0;
+    if(!SDL_GetDisplayUsableBounds(id,&usable))usable=(SDL_Rect){0,0,1920,1080};
+    for(i=0;i<(int)(sizeof(common)/sizeof(*common));++i)
+        if(common[i][0]<=usable.w && common[i][1]<=usable.h)
+            d->modes[d->mode_count++]=(DisplayMode){common[i][0],common[i][1]};
     /* Always offer a recovery window, even on a very small desktop. */
-    if(!d->mode_count){d->draft.fullscreen=0;d->modes[d->mode_count++]=(DisplayMode){640,480,NULL};}
+    if(!d->mode_count)d->modes[d->mode_count++]=(DisplayMode){640,480};
 }
 static int display_mode_index(GameDisplay *d){
     int i;for(i=0;i<d->mode_count;++i)
@@ -59,17 +48,15 @@ static int display_mode_index(GameDisplay *d){
     return -1;
 }
 static int display_set(GameDisplay *d,DisplayOptions options){
-    SDL_DisplayMode mode;const SDL_DisplayMode *selected=NULL;
     if(options.width<320 || options.height<200 || options.width>8192 || options.height>8192)return 0;
     if(options.fullscreen && game_application_isolated_input(d->application)){
         SDL_SetError("Fullscreen is disabled during isolated automation");return 0;
     }
-    if(options.fullscreen){
-        if(!SDL_GetClosestFullscreenDisplayMode(SDL_GetDisplayForWindow(d->window),options.width,options.height,0,false,&mode) ||
-           mode.w!=options.width || mode.h!=options.height)return 0;
-        selected=&mode;
-    }
-    if(!SDL_SetWindowFullscreen(d->window,false) || !SDL_SetWindowFullscreenMode(d->window,selected) ||
+    if(options.width*3!=options.height*4){SDL_SetError("Only 4:3 output sizes are supported");return 0;}
+    /* Desktop fullscreen keeps the display mode intact. The presenter clears
+     * the whole canvas black and draws only the fitted 4:3 viewport. Width/
+     * height remain the preferred window size for the return to windowed mode. */
+    if(!SDL_SetWindowFullscreen(d->window,false) || !SDL_SetWindowFullscreenMode(d->window,NULL) ||
        !SDL_SetWindowSize(d->window,options.width,options.height) ||
        (options.fullscreen && !SDL_SetWindowFullscreen(d->window,true)))return 0;
     (void)SDL_SyncWindow(d->window);d->active=options;return 1;
@@ -134,11 +121,11 @@ void game_display_end(GameApplication *a){
     /* Restore the desktop before destroying the window/context. */
     (void)SDL_SetWindowFullscreen(d->window,false);
     display_fsr_end(&d->fsr);SDL_DestroySurface(d->labels);SDL_DestroySurface(d->canvas);SDL_DestroyPalette(d->label_palette);
-    SDL_free(d->fullscreen_modes);free(d);
+    free(d);
 }
 void game_display_graphics_drawer(GameApplication *a,int x,int y,int visible,int enabled){
     GameDisplay *d=a->display;if(!d)return;
-    d->drawer_x=x+305;d->drawer_y=y+3;d->drawer_visible=visible;if(enabled>=0)d->drawer_enabled=enabled;
+    d->drawer_x=x+255;d->drawer_y=y+3;d->drawer_visible=visible;if(enabled>=0)d->drawer_enabled=enabled;
     if(!visible && d->open)display_close(d);
 }
 static int inside(int x,int y,int left,int top,int width,int height){return x>=left && y>=top && x<left+width && y<top+height;}
@@ -165,6 +152,7 @@ static void display_action(GameDisplay *d,int action,int direction){
         d->draft.fullscreen=!d->draft.fullscreen;display_modes(d);
         if(display_mode_index(d)<0){d->draft.width=d->modes[0].width;d->draft.height=d->modes[0].height;}break;
     case 1:
+        if(d->draft.fullscreen)break;
         index=display_mode_index(d);index=(index+direction+d->mode_count)%d->mode_count;
         d->draft.width=d->modes[index].width;d->draft.height=d->modes[index].height;break;
     case 2:if(d->fsr.available)d->draft.fsr=!d->draft.fsr;break;
@@ -308,23 +296,31 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
             display_button(d,s,170,333,140,30,"KEEP",d->focus==5 || hover==5,d->armed==5);
             display_button(d,s,330,333,140,30,"REVERT",d->focus==6 || hover==6,d->armed==6);
         }else{
-            display_label(d,"DISPLAY MODE",138,185,315,2,2);display_label(d,"RESOLUTION",138,231,315,2,2);
+            display_label(d,"DISPLAY MODE",138,185,315,2,2);
+            display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,231,315,2,2);
             display_label(d,"FSR 1 UPSCALING",138,277,315,2,2);
             display_fill(s,138,215,364,1,display_color(s,29,42,29));
             display_fill(s,138,261,364,1,display_color(s,29,42,29));
             display_selector(d,s,0,d->draft.fullscreen?"FULLSCREEN":"WINDOWED",1);
             snprintf(text,sizeof(text),"%d x %d",d->draft.width,d->draft.height);
-            display_selector(d,s,1,text,1);
+            if(d->draft.fullscreen){
+                SDL_Rect bounds;int viewport[4];
+                if(SDL_GetDisplayBounds(SDL_GetDisplayForWindow(d->window),&bounds)){
+                    game_display_viewport(bounds.w,bounds.h,640,480,viewport);
+                    snprintf(text,sizeof(text),"%d x %d",viewport[2],viewport[3]);
+                }else snprintf(text,sizeof(text),"DESKTOP 4:3");
+            }
+            display_selector(d,s,1,text,!d->draft.fullscreen);
             display_selector(d,s,2,!d->fsr.available?"UNAVAILABLE":d->draft.fsr?"ON":"OFF",d->fsr.available);
             display_button(d,s,170,333,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
             display_button(d,s,330,333,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
-            display_label(d,d->status[0]?d->status:"Original aspect ratio preserved. FSR affects gameplay.",138,310,505,0,2);
+            display_label(d,d->status[0]?d->status:"Original aspect ratio preserved. FSR scales all screens.",138,310,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};
     x=SDL_BlitSurfaceScaled(s,NULL,rgba,&target,SDL_SCALEMODE_NEAREST);return x;
 }
-int game_display_present(GameApplication *a,unsigned texture,int sw,int sh,int top_down,int menu){
+int game_display_present(GameApplication *a,unsigned texture,int sw,int sh,int top_down){
     GameDisplay *d=a->display;int width,height,r[4],mode,ok=1;
     if(!d || !SDL_GetWindowSizeInPixels(d->window,&width,&height))return 0;
     if(width<=0 || height<=0)return 1;
@@ -336,12 +332,12 @@ int game_display_present(GameApplication *a,unsigned texture,int sw,int sh,int t
     glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_REPLACE);glColor4f(1,1,1,1);
     glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,1,1,0,-1,1);
     glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();glViewport(r[0],r[1],r[2],r[3]);
-    if(!menu && d->active.fsr && (r[2]>sw || r[3]>sh)){
-        ok=display_fsr_draw(&d->fsr,texture,sw,sh,r);
+    if(d->active.fsr && (r[2]>sw || r[3]>sh)){
+        ok=display_fsr_draw(&d->fsr,texture,sw,sh,r,top_down);
         if(!ok){d->active.fsr=0;d->draft.fsr=0;snprintf(d->status,sizeof(d->status),"FSR failed; original scaling restored.");
             game_application_log(a,"%s\n",d->status);}
     }else ok=0;
-    if(!ok){glViewport(r[0],r[1],r[2],r[3]);glBindTexture(GL_TEXTURE_2D,texture);display_quad(top_down);}
+    if(!ok){glViewport(r[0],r[1],r[2],r[3]);display_pixel_art_draw(&d->fsr,texture,sw,sh,r,top_down);}
     glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(mode);glPopAttrib();
     return glGetError()==GL_NO_ERROR;
 }

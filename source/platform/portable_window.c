@@ -396,12 +396,13 @@ static int present_windowed_front(MenuWindow *w){
     if(!w->menu_texture){
         glGenTextures(1,&w->menu_texture);glBindTexture(GL_TEXTURE_2D,w->menu_texture);
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,(int)w->width,(int)w->height,0,GL_RGBA,GL_UNSIGNED_BYTE,w->upload->pixels);
     }else{
         glBindTexture(GL_TEXTURE_2D,w->menu_texture);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,(int)w->width,(int)w->height,GL_RGBA,GL_UNSIGNED_BYTE,w->upload->pixels);
     }
-    drawn=game_display_present(w->application,w->menu_texture,w->width,w->height,1,1);
+    drawn=game_display_present(w->application,w->menu_texture,w->width,w->height,1);
     glPopClientAttrib();glPopAttrib();error=glGetError();
     return drawn && error==GL_NO_ERROR && SDL_GL_SwapWindow(w->window);
 }

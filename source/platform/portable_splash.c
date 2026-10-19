@@ -30,8 +30,15 @@ int game_application_asset_bootstrap(GameApplication *a){
     char archive[260],resource[260];ResourceBlob blob={0};AssetBitmap bitmap;
     uint8_t encoded[1028];size_t written;MenuSplash *splash=NULL;SDL_Surface *image=NULL,*front;
     unsigned x,y;int found,ok=1;const char *stage="startup bitmap";
-    if(a->menu_splash)return 0;
-    if(!splash_name(&a->memory,0x59735c,archive) || !splash_name(&a->memory,0x59736c,resource))return 0;
+    if(a->menu_splash){fprintf(stderr,"startup splash failed: splash already owned\n");return 0;}
+    if(!splash_name(&a->memory,0x59735c,archive)){
+        fprintf(stderr,"startup splash failed: invalid archive name\n");return 0;
+    }
+    if(!splash_name(&a->memory,0x59736c,resource)){
+        fprintf(stderr,"startup splash failed: invalid bitmap name\n");return 0;
+    }
+    game_application_log(a,"startup splash archive: %s\n",archive);
+    game_application_log(a,"startup splash bitmap: %s\n",resource);
     found=resource_blob_open_named(archive,resource,&blob,NULL);if(!found)return 1;
     if(found<0 || !asset_bitmap_startup_palette(&blob,&bitmap,encoded,sizeof(encoded),&written)){ok=0;goto done;}
     if(getenv("UPRISING_RECOMP_HEADLESS"))goto done;

@@ -877,9 +877,9 @@ int game_application_platform_start(GameApplication *app,const char *executable)
     if (!game_application_startup(app)) goto fail;
     return 1;
 fail:
-    fprintf(stderr,"native startup failed: %s; memory fault=%d at %08lx size=%lu\n",
+    fprintf(stderr,"native startup failed: %s; memory fault=%d at %08lx size=%lu; SDL: %s\n",
         stage, app->memory.fault, (unsigned long)app->memory.fault_address,
-        (unsigned long)app->memory.fault_size);
+        (unsigned long)app->memory.fault_size,SDL_GetError());
     fflush(stderr);
     game_application_platform_stop(app);
     return 0;
@@ -940,6 +940,8 @@ ResourceFile *game_application_bindings_file(GameApplication *app,int write) {
 int game_application_startup(GameApplication *app) {
     PortablePlatform *platform=app->platform;GameMemory *m=&app->memory;
     size_t length=strlen(platform->executable);
+    game_application_log(app,"startup user directory: %s\n",platform->user_directory);
+    game_application_log(app,"startup executable: %s\n",platform->executable);
     if(!game_application_directory(app,"saves")){
         fprintf(stderr,"startup saves directory failed: %s; SDL: %s\n",platform->user_directory,SDL_GetError());return 0;
     }
@@ -947,8 +949,13 @@ int game_application_startup(GameApplication *app) {
     /* This bounded path is retained for the menu's read-only executable probe;
      * no module, OS-version or registry state participates in game startup. */
     if(length>=260){fprintf(stderr,"startup executable path exceeds the legacy 259-byte limit\n");return 0;}
-    if(!game_memory_write(m,0x5eff38u,platform->executable,length+1u) ||
-       !game_application_asset_bootstrap(app))return 0;
+    if(!game_memory_write(m,0x5eff38u,platform->executable,length+1u)){
+        fprintf(stderr,"startup executable path publication failed\n");return 0;
+    }
+    game_application_log(app,"startup stage: %s\n","asset bootstrap");
+    if(!game_application_asset_bootstrap(app)){
+        fprintf(stderr,"startup asset bootstrap failed; SDL: %s\n",SDL_GetError());return 0;
+    }
     return !m->fault;
 }int game_application_audio_muted(GameApplication *app) {
     (void)app;

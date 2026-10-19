@@ -11,6 +11,7 @@ layout(location=0) in vec4 vertex_color;
 layout(location=1) in vec3 texture_coordinate;
 layout(location=2) in float distance_to_camera;
 layout(location=0) out vec4 output_color;
+layout(location=1) out float output_reciprocal_depth;
 vec4 keyed_texel(ivec2 p) {
     ivec2 size=textureSize(image,0);
     p.x=(material.texture_sampling&2u)!=0u?(p.x%size.x+size.x)%size.x:clamp(p.x,0,size.x-1);
@@ -58,4 +59,5 @@ void main() {
         rgb=mix(material.fog_color.rgb,rgb,visibility);
     }
     output_color=vec4(rgb,alpha);
+    output_reciprocal_depth=texture_coordinate.z;
 }

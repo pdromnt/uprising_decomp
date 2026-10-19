@@ -18,15 +18,16 @@ typedef struct VulkanDrawTexture {
     VkDescriptorPool pool;VkDescriptorSet variants[8];
 } VulkanDrawTexture;
 enum {VULKAN_DRAW_DEPTH_TEST=1,VULKAN_DRAW_DEPTH_WRITE=2,VULKAN_DRAW_BLEND=4,
-    VULKAN_DRAW_LEQUAL=3<<3}; /* Other compare values use VkCompareOp << 3. */
+    VULKAN_DRAW_LEQUAL=3<<3,VULKAN_DRAW_POINTS=64,VULKAN_DRAW_LINES=128};
+/* Compare values use VkCompareOp << 3; primitive bits are mutually exclusive. */
 typedef struct VulkanDrawBatch {
     uint32_t first,count,flags;VkDescriptorSet texture,mask;VulkanDrawMaterial material;
 } VulkanDrawBatch;
 typedef struct VulkanDraw {
     VulkanDevice *device;uint32_t width,height;
-    VulkanImage color,depth;VulkanBuffer vertices,readback;
+    VulkanImage color,depth,reciprocal_depth;VulkanBuffer vertices,readback;
     VkRenderPass pass,resume_pass;VkFramebuffer framebuffer;VkDescriptorPool descriptors;
-    VkDescriptorSetLayout texture_layout;VkPipelineLayout layout;VkPipeline pipelines[64];VkShaderModule shaders[2];
+    VkDescriptorSetLayout texture_layout;VkPipelineLayout layout;VkPipeline pipelines[448];VkShaderModule shaders[2];
     VulkanDrawMaterial material;
     VkSampler samplers[8];int texture_sampler;
     VulkanDrawTexture *mask_texture;
@@ -34,6 +35,9 @@ typedef struct VulkanDraw {
     VulkanDrawVertex *staging;size_t vertex_count,vertex_capacity;
     VulkanDrawBatch *batches;size_t batch_count,batch_capacity;
     float clear[4],clear_depth;int recording,has_frame,resuming;
+    /* Capture unquantized world 1/w alongside color. UI/skies and draws without
+     * depth writes preserve it. This is not yet FSR's perspective depth. */
+    int capture_depth,clear_reciprocal;
 } VulkanDraw;
 int vulkan_draw_open(VulkanDraw *,VulkanDevice *,uint32_t width,uint32_t height);
 void vulkan_draw_close(VulkanDraw *);
@@ -46,9 +50,15 @@ int vulkan_draw_texture_update(VulkanDraw *,VulkanDrawTexture *,const uint8_t *r
 int vulkan_draw_texture_region(VulkanDraw *,VulkanDrawTexture *,const uint8_t *rgba,uint32_t x,uint32_t y,uint32_t width,uint32_t height);
 int vulkan_draw_begin(VulkanDraw *,const float clear[4]);
 int vulkan_draw_resume(VulkanDraw *);
+/* Start a new world input on a resumed target without clearing screen artwork
+ * or legacy hardware depth. Must precede captured geometry in this batch. */
+int vulkan_draw_reset_reciprocal_depth(VulkanDraw *);
 int vulkan_draw_triangles(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
+int vulkan_draw_points(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
+int vulkan_draw_lines(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
 /* Synchronous completion for parity/readback consumers. rgba may be NULL.
  * A later frame ring can overlap work without changing submission semantics. */
 int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
+int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);
 #endif

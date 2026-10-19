@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 _Static_assert(sizeof(VulkanDrawMaterial)==104,"Vulkan push block layout");
+enum {CAPTURE_RECIPROCAL_DEPTH=256};
 
 #define VK(call) do {VkResult status=(call);if(status!=VK_SUCCESS){fprintf(stderr,"Vulkan draw %s: %d\n",#call,(int)status);goto fail;}}while(0)
 #define TRY(call) do {if(!(call))goto fail;}while(0)
@@ -101,31 +102,34 @@ static int draw_pipeline(VulkanDraw *d,uint32_t flags){
     VkPipelineRasterizationStateCreateInfo raster={VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     VkPipelineMultisampleStateCreateInfo samples={VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     VkPipelineDepthStencilStateCreateInfo z={VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    VkPipelineColorBlendAttachmentState blend={0};VkPipelineColorBlendStateCreateInfo blending={VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    VkPipelineColorBlendAttachmentState blend[2]={{0}};VkPipelineColorBlendStateCreateInfo blending={VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     VkGraphicsPipelineCreateInfo pipeline={VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};unsigned i;
     stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;
     for(i=0;i<2;i++){stages[i].module=d->shaders[i];stages[i].pName="main";}
     input.vertexBindingDescriptionCount=1;input.pVertexBindingDescriptions=&vertex_binding;input.vertexAttributeDescriptionCount=4;input.pVertexAttributeDescriptions=attributes;
-    assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    assembly.topology=flags&VULKAN_DRAW_POINTS?VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+        flags&VULKAN_DRAW_LINES?VK_PRIMITIVE_TOPOLOGY_LINE_LIST:VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     viewport.viewportCount=viewport.scissorCount=1;viewport.pViewports=&rect;viewport.pScissors=&scissor;
     raster.polygonMode=VK_POLYGON_MODE_FILL;raster.cullMode=VK_CULL_MODE_NONE;raster.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE;raster.lineWidth=1;
     samples.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;z.depthCompareOp=VK_COMPARE_OP_LESS_OR_EQUAL;
-    blend.colorWriteMask=VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
-    blend.srcColorBlendFactor=blend.srcAlphaBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
-    blend.dstColorBlendFactor=blend.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blend.colorBlendOp=blend.alphaBlendOp=VK_BLEND_OP_ADD;blending.attachmentCount=1;blending.pAttachments=&blend;
+    blend[0].colorWriteMask=VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
+    blend[0].srcColorBlendFactor=blend[0].srcAlphaBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
+    blend[0].dstColorBlendFactor=blend[0].dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend[0].colorBlendOp=blend[0].alphaBlendOp=VK_BLEND_OP_ADD;
+    blend[1].colorWriteMask=flags&CAPTURE_RECIPROCAL_DEPTH?VK_COLOR_COMPONENT_R_BIT:0;
+    blending.attachmentCount=2;blending.pAttachments=blend;
     pipeline.stageCount=2;pipeline.pStages=stages;pipeline.pVertexInputState=&input;pipeline.pInputAssemblyState=&assembly;
     pipeline.pViewportState=&viewport;pipeline.pRasterizationState=&raster;pipeline.pMultisampleState=&samples;
     pipeline.pDepthStencilState=&z;pipeline.pColorBlendState=&blending;pipeline.layout=d->layout;pipeline.renderPass=d->pass;
     z.depthTestEnable=(flags&VULKAN_DRAW_DEPTH_TEST)!=0;z.depthWriteEnable=(flags&VULKAN_DRAW_DEPTH_WRITE)!=0;
-    z.depthCompareOp=(VkCompareOp)((flags>>3)&7);blend.blendEnable=(flags&VULKAN_DRAW_BLEND)!=0;
+    z.depthCompareOp=(VkCompareOp)((flags>>3)&7);blend[0].blendEnable=(flags&VULKAN_DRAW_BLEND)!=0;
     VK(v->CreateGraphicsPipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,d->pipelines+flags));return 1;
 fail:return 0;
 }
 int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t height){
-    VkAttachmentDescription attachment[2]={{0}};VkAttachmentReference color={0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},depth={1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentDescription attachment[3]={{0}};VkAttachmentReference color[2]={{0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},{2,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},depth={1,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass={0};VkSubpassDependency dependency[2]={{0}};
-    VkRenderPassCreateInfo pass={VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};VkFramebufferCreateInfo fb={VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};VkImageView views[2];
+    VkRenderPassCreateInfo pass={VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};VkFramebufferCreateInfo fb={VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};VkImageView views[3];
     VkDescriptorSetLayoutBinding binding={0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,NULL};
     VkDescriptorSetLayoutCreateInfo texture={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     VkDescriptorPoolSize size={VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,4096};VkDescriptorPoolCreateInfo pool={VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -139,6 +143,7 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     if(!width || !height || width>v->properties.limits.maxFramebufferWidth || height>v->properties.limits.maxFramebufferHeight || (uint64_t)width*height>SIZE_MAX/4)goto fail;
     TRY(vulkan_image_create(v,&d->color,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_image_create_aspect(v,&d->depth,VK_FORMAT_D32_SFLOAT,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,width,height,VK_IMAGE_ASPECT_DEPTH_BIT));
+    TRY(vulkan_image_create(v,&d->reciprocal_depth,VK_FORMAT_R32_SFLOAT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_buffer_create(v,&d->readback,(VkDeviceSize)width*height*4,VK_BUFFER_USAGE_TRANSFER_DST_BIT));
     attachment[0].format=VK_FORMAT_R8G8B8A8_UNORM;attachment[0].samples=VK_SAMPLE_COUNT_1_BIT;
     attachment[0].loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;attachment[0].storeOp=VK_ATTACHMENT_STORE_OP_STORE;
@@ -146,7 +151,8 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     attachment[0].initialLayout=VK_IMAGE_LAYOUT_UNDEFINED;attachment[0].finalLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     attachment[1]=attachment[0];attachment[1].format=VK_FORMAT_D32_SFLOAT;
     attachment[1].finalLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    subpass.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;subpass.colorAttachmentCount=1;subpass.pColorAttachments=&color;subpass.pDepthStencilAttachment=&depth;
+    attachment[2]=attachment[0];attachment[2].format=VK_FORMAT_R32_SFLOAT;
+    subpass.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;subpass.colorAttachmentCount=2;subpass.pColorAttachments=color;subpass.pDepthStencilAttachment=&depth;
     dependency[0].srcSubpass=VK_SUBPASS_EXTERNAL;dependency[0].dstSubpass=0;
     dependency[0].srcStageMask=VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;dependency[0].srcAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;
     dependency[0].dstStageMask=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
@@ -154,12 +160,13 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     dependency[1].srcSubpass=0;dependency[1].dstSubpass=VK_SUBPASS_EXTERNAL;
     dependency[1].srcStageMask=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;dependency[1].dstStageMask=VK_PIPELINE_STAGE_TRANSFER_BIT;
     dependency[1].srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;dependency[1].dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
-    pass.attachmentCount=2;pass.pAttachments=attachment;pass.subpassCount=1;pass.pSubpasses=&subpass;pass.dependencyCount=2;pass.pDependencies=dependency;
-    VK(v->CreateRenderPass(v->device,&pass,NULL,&d->pass));views[0]=d->color.view;views[1]=d->depth.view;
-    attachment[0].loadOp=attachment[1].loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
+    pass.attachmentCount=3;pass.pAttachments=attachment;pass.subpassCount=1;pass.pSubpasses=&subpass;pass.dependencyCount=2;pass.pDependencies=dependency;
+    VK(v->CreateRenderPass(v->device,&pass,NULL,&d->pass));views[0]=d->color.view;views[1]=d->depth.view;views[2]=d->reciprocal_depth.view;
+    attachment[0].loadOp=attachment[1].loadOp=attachment[2].loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
     attachment[0].initialLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;attachment[1].initialLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    attachment[2].initialLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     VK(v->CreateRenderPass(v->device,&pass,NULL,&d->resume_pass));
-    fb.renderPass=d->pass;fb.attachmentCount=2;fb.pAttachments=views;fb.width=width;fb.height=height;fb.layers=1;
+    fb.renderPass=d->pass;fb.attachmentCount=3;fb.pAttachments=views;fb.width=width;fb.height=height;fb.layers=1;
     VK(v->CreateFramebuffer(v->device,&fb,NULL,&d->framebuffer));
     texture.bindingCount=1;texture.pBindings=&binding;VK(v->CreateDescriptorSetLayout(v->device,&texture,NULL,&d->texture_layout));
     pool.flags=VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;pool.maxSets=4096;pool.poolSizeCount=1;pool.pPoolSizes=&size;
@@ -177,7 +184,7 @@ fail:
 void vulkan_draw_close(VulkanDraw *d){
     VulkanDevice *v=d->device;unsigned i;if(!v)return;
     v->DeviceWaitIdle(v->device);vulkan_draw_texture_destroy(d,&d->white);
-    for(i=0;i<64;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);
+    for(i=0;i<448;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);
     for(i=0;i<2;i++)if(d->shaders[i])v->DestroyShaderModule(v->device,d->shaders[i],NULL);
     for(i=0;i<8;i++)if(d->samplers[i])v->DestroySampler(v->device,d->samplers[i],NULL);
     if(d->layout)v->DestroyPipelineLayout(v->device,d->layout,NULL);
@@ -187,16 +194,22 @@ void vulkan_draw_close(VulkanDraw *d){
     if(d->pass)v->DestroyRenderPass(v->device,d->pass,NULL);
     if(d->resume_pass)v->DestroyRenderPass(v->device,d->resume_pass,NULL);
     vulkan_image_destroy(v,&d->color);vulkan_image_destroy(v,&d->depth);
+    vulkan_image_destroy(v,&d->reciprocal_depth);
     vulkan_buffer_destroy(v,&d->vertices);vulkan_buffer_destroy(v,&d->readback);
     free(d->staging);free(d->batches);memset(d,0,sizeof(*d));
 }
 int vulkan_draw_begin(VulkanDraw *d,const float clear[4]){
     if(!d->pass || d->recording)return 0;
-    d->vertex_count=d->batch_count=0;memcpy(d->clear,clear,sizeof(d->clear));d->recording=1;d->resuming=0;return 1;
+    d->vertex_count=d->batch_count=0;memcpy(d->clear,clear,sizeof(d->clear));d->recording=1;d->resuming=0;d->clear_reciprocal=0;return 1;
 }
 int vulkan_draw_resume(VulkanDraw *d){
     if(d->recording || !d->has_frame)return 0;
     d->vertex_count=d->batch_count=0;d->recording=1;d->resuming=1;return 1;
+}
+int vulkan_draw_reset_reciprocal_depth(VulkanDraw *d){
+    size_t i;if(!d->recording)return 0;
+    for(i=0;i<d->batch_count;i++)if(d->batches[i].flags&CAPTURE_RECIPROCAL_DEPTH)return 0;
+    d->clear_reciprocal=1;return 1;
 }
 static void *grow(void *data,size_t *capacity,size_t needed,size_t element){
     size_t count;void *p;if(needed<=*capacity)return data;
@@ -204,9 +217,10 @@ static void *grow(void *data,size_t *capacity,size_t needed,size_t element){
     if(count>SIZE_MAX/element)return NULL;
     p=realloc(data,count*element);if(!p)return NULL;*capacity=count;return p;
 }
-int vulkan_draw_triangles(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32_t count,VulkanDrawTexture *texture,uint32_t flags){
+static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32_t count,VulkanDrawTexture *texture,uint32_t flags){
     VkDescriptorSet descriptor;VulkanDrawBatch *last,*batches;VulkanDrawVertex *staging;
-    if(!d->recording || flags>63 || !vertices || !count || count%3 || count>UINT32_MAX-d->vertex_count)return 0;
+    if(!d->recording || flags>=192 || !vertices || !count || count>UINT32_MAX-d->vertex_count)return 0;
+    if(d->capture_depth && (flags&3)==3)flags|=CAPTURE_RECIPROCAL_DEPTH;
     descriptor=texture?texture_binding(d,texture):d->white.descriptor;if(!descriptor)return 0;
     staging=grow(d->staging,&d->vertex_capacity,d->vertex_count+count,sizeof(*vertices));if(!staging)return 0;d->staging=staging;
     batches=grow(d->batches,&d->batch_capacity,d->batch_count+1,sizeof(*last));if(!batches)return 0;d->batches=batches;
@@ -217,9 +231,18 @@ int vulkan_draw_triangles(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32_
     else d->batches[d->batch_count++]=(VulkanDrawBatch){(uint32_t)d->vertex_count,count,flags,descriptor,mask,d->material};}
     d->vertex_count+=count;return 1;
 }
+int vulkan_draw_triangles(VulkanDraw *d,const VulkanDrawVertex *v,uint32_t count,VulkanDrawTexture *t,uint32_t flags){
+    return flags<64 && !(count%3) && draw_primitives(d,v,count,t,flags);
+}
+int vulkan_draw_points(VulkanDraw *d,const VulkanDrawVertex *v,uint32_t count,VulkanDrawTexture *t,uint32_t flags){
+    return flags<64 && draw_primitives(d,v,count,t,flags|VULKAN_DRAW_POINTS);
+}
+int vulkan_draw_lines(VulkanDraw *d,const VulkanDrawVertex *v,uint32_t count,VulkanDrawTexture *t,uint32_t flags){
+    return flags<64 && !(count%2) && draw_primitives(d,v,count,t,flags|VULKAN_DRAW_LINES);
+}
 int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     VulkanDevice *v=d->device;VkCommandBuffer command;VkDeviceSize offset=0;size_t i,vertex_bytes=d->vertex_count*sizeof(*d->staging);
-    VkRenderPassBeginInfo begin={VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};VkClearValue clear[2]={0};
+    VkRenderPassBeginInfo begin={VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};VkClearValue clear[3]={0};
     VkBufferImageCopy copy={0};VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
     if(!d->recording || (rgba && bytes<(size_t)d->width*d->height*4))return 0;
     d->recording=0;
@@ -227,8 +250,13 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     if(vertex_bytes>d->vertices.size){vulkan_buffer_destroy(v,&d->vertices);TRY(vulkan_buffer_create(v,&d->vertices,d->vertex_capacity*sizeof(*d->staging),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT));}
     if(vertex_bytes)TRY(vulkan_buffer_write(v,&d->vertices,d->staging,vertex_bytes));
     TRY(vulkan_command_begin(v,&command));memcpy(clear[0].color.float32,d->clear,sizeof(d->clear));clear[1].depthStencil.depth=d->clear_depth;
-    begin.renderPass=d->resuming?d->resume_pass:d->pass;begin.framebuffer=d->framebuffer;begin.renderArea.extent=(VkExtent2D){d->width,d->height};begin.clearValueCount=2;begin.pClearValues=clear;
+    begin.renderPass=d->resuming?d->resume_pass:d->pass;begin.framebuffer=d->framebuffer;begin.renderArea.extent=(VkExtent2D){d->width,d->height};begin.clearValueCount=3;begin.pClearValues=clear;
     v->CmdBeginRenderPass(command,&begin,VK_SUBPASS_CONTENTS_INLINE);
+    if(d->clear_reciprocal){
+        VkClearAttachment reset={0};VkClearRect area={{{0,0},{d->width,d->height}},0,1};
+        reset.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;reset.colorAttachment=1;
+        v->CmdClearAttachments(command,1,&reset,1,&area);d->clear_reciprocal=0;
+    }
     if(vertex_bytes)v->CmdBindVertexBuffers(command,0,1,&d->vertices.buffer,&offset);
     for(i=0;i<d->batch_count;i++){
         VulkanDrawBatch *b=d->batches+i;v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->pipelines[b->flags]);
@@ -250,17 +278,19 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     d->has_frame=1;return 1;
 fail:return 0;
 }
-int vulkan_draw_readback(VulkanDraw *d,uint8_t *rgba,size_t bytes){
+static int draw_read_image(VulkanDraw *d,VkImage image,void *pixels,size_t bytes){
     VulkanDevice *v=d->device;VkCommandBuffer command;VkBufferImageCopy copy={0};
     VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-    if(d->recording || !d->has_frame || !rgba || bytes<(size_t)d->width*d->height*4)return 0;
+    if(d->recording || !d->has_frame || !pixels || bytes<(size_t)d->width*d->height*4)return 0;
     TRY(vulkan_command_begin(v,&command));
     copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){d->width,d->height,1};
-    v->CmdCopyImageToBuffer(command,d->color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,d->readback.buffer,1,&copy);
+    v->CmdCopyImageToBuffer(command,image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,d->readback.buffer,1,&copy);
     host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
     host.srcQueueFamilyIndex=host.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;host.buffer=d->readback.buffer;host.size=VK_WHOLE_SIZE;
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     TRY(vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE));
-    return vulkan_buffer_read(v,&d->readback,rgba,(size_t)d->width*d->height*4);
+    return vulkan_buffer_read(v,&d->readback,pixels,(size_t)d->width*d->height*4);
 fail:return 0;
 }
+int vulkan_draw_readback(VulkanDraw *d,uint8_t *rgba,size_t bytes){return draw_read_image(d,d->color.image,rgba,bytes);}
+int vulkan_draw_read_reciprocal_depth(VulkanDraw *d,float *depth,size_t bytes){return draw_read_image(d,d->reciprocal_depth.image,depth,bytes);}

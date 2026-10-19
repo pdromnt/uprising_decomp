@@ -16,7 +16,7 @@ The game remains C. Keep any later AMD C++ host code behind a small C interface.
    chroma/alpha, legacy W-depth, fog, layered skies, menus, videos and HUD order.
    Keep pixel-readback/glyph/mask consumers working before optimizing transfers.
    Accept menu -> level -> movement/fire -> reload -> shutdown and matched captures.
-3. **Temporal inputs.** Carry previous camera/object transforms alongside current
+3. **Temporal inputs (started: world reciprocal depth).** Carry previous camera/object transforms alongside current
    submissions. Current vertices are already projected and contain no motion
    history. Add consistent depth, jitter and motion vectors for terrain, actors,
    sprites and debris. Isolate HUD/cockpit/minimap. Reset history on camera cuts,
@@ -68,6 +68,20 @@ effects, HUD/text, layered skies/fog and masked remote-monitor skies to Vulkan.
 The established material/texture owner is shared with the comparator; selecting
 Vulkan never creates or re-enters an OpenGL context. Native text ink uses buffered
 rectangles; immutable HUD tile versions use a bounded content-checked atlas.
+Points and lines now use native primitive pipelines rather than expanded/cullable
+triangles. The probe checks mixed primitive batches, pixel coverage and occlusion;
+complete cross-driver line raster equivalence remains unproved.
+
+An owned R32F target now records unquantized reciprocal depth from real world
+vertices alongside color, under the existing hardware depth/alpha tests. Explicit
+tank/citadel and O-view world scopes exclude artwork and final overlay queues;
+skies and draws without depth writes preserve this input. Its independent reset
+also works on resumed double-buffer targets without erasing color or legacy depth.
+The live check compares all 1,228,800 depth bytes before/after HUD draws, including
+world geometry underneath the cockpit. The GPU probe checks interpolation,
+occlusion, alpha cutouts, preserved depth through UI/resume and removal of stale
+depth on reset. This is **not yet FSR perspective depth or motion history**:
+conversion, previous camera/object transforms, jitter and history resets remain.
 
 Local Windows x64: the existing Graphics drawer regression passed three cycles.
 Campaign GPU readback matched all 307,200 indexed/palette pixels exactly and
@@ -77,11 +91,9 @@ passed with exact saved position/ammo restored. Erudara's 320-frame O-view check
 passed remote sky/mask, camera rotation, return to tank, pause and window restore.
 These establish exercised routes, not complete visual equivalence or performance
 acceptance. Matched 15-second stationary Training1 samples without GDB now measure
-about 149 FPS Vulkan versus 136 FPS stable OpenGL on RTX4060Ti (640x480,
-windowed/muted/isolated), up from ~53 FPS Vulkan. Profiling found texture comparisons
-reading mapped upload memory and full-frame scratch scans for individual strings.
-Texture comparisons now use an owned CPU cache; glyph writes report their actual
-pixel span and retire only that scratch span. Texture uploads remain unchanged.
+about 142 FPS Vulkan versus 136 FPS stable OpenGL with the new depth target on
+RTX4060Ti (640x480, windowed/muted/isolated). CPU texture comparison caches and
+sparse glyph spans removed the earlier ~53 FPS regression; uploads remain unchanged.
 The lower HUD capture is pixel-identical before/after; animated scene/sky pixels
 still differ. Sparse-text checks pass on x86/x64, including clipping, multiple
 strings, empty writes and rejected out-of-bounds writes. Gameplay/reload and O-view
@@ -90,11 +102,13 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with the level extension. CI for these latest
-performance changes and validation-layer coverage of level rendering remain pending, as do native Apple
+Six-platform application CI passed with the performance fixes. CI for the new
+primitive/depth changes and validation-layer coverage of level rendering remain pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
-Windows/Linux use the installed Vulkan driver/loader. macOS explicitly requires
+Windows/Linux use the installed Vulkan driver/loader. The new separate world
+target explicitly requires independent blending and an R32F color/sampled image;
+unsupported devices fail with a diagnostic. macOS explicitly requires
 KosmicKrisp, Apple Silicon and macOS 26+, with a developer Vulkan SDK for now:
 
 ```sh
@@ -128,5 +142,6 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
 
 Primary references: [AMD integration](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-interpolation/),
 [pinned source](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/c6efa6bf7f2027b3ec94f28578bb5965eabb9e55),
+[Vulkan rasterization](https://docs.vulkan.org/spec/latest/chapters/primsrast.html),
 [KosmicKrisp](https://docs.mesa3d.org/drivers/kosmickrisp.html),
 [LunarG macOS SDK](https://vulkan.lunarg.com/doc/view/latest/mac/getting_started.html).

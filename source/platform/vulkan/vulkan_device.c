@@ -84,6 +84,7 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
     {
         VkPhysicalDeviceProperties2 p={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
         VkPhysicalDeviceFeatures2 f={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        VkPhysicalDeviceFeatures core={0};
         VkDeviceQueueCreateInfo q={VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};VkDeviceCreateInfo d={VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         VkPhysicalDeviceVulkan12Features enabled={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         VkExtensionProperties *supported;const char *device_extensions[2]={swap};uint32_t n=0,extension_count=1;
@@ -97,6 +98,7 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
         }
 #endif
         v->features12.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;f.pNext=&v->features12;features(v->physical,&f);
+        if(!f.features.independentBlend){fprintf(stderr,"Vulkan temporal targets require independentBlend\n");goto fail;}
         CHECK(extensions(v->physical,NULL,&n,NULL));supported=calloc(n,sizeof(*supported));if(!supported)goto fail;
         if(extensions(v->physical,NULL,&n,supported)!=VK_SUCCESS){free(supported);goto fail;}
         for(i=0;i<n;i++)if(!strcmp(supported[i].extensionName,"VK_KHR_portability_subset"))device_extensions[extension_count++]="VK_KHR_portability_subset";
@@ -104,6 +106,7 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
         enabled.timelineSemaphore=v->features12.timelineSemaphore;enabled.shaderFloat16=v->features12.shaderFloat16;
         q.queueFamilyIndex=v->family;q.queueCount=1;q.pQueuePriorities=&priority;
         d.queueCreateInfoCount=1;d.pQueueCreateInfos=&q;d.enabledExtensionCount=extension_count;d.ppEnabledExtensionNames=device_extensions;d.pNext=&enabled;
+        core.independentBlend=VK_TRUE;d.pEnabledFeatures=&core;
         CHECK(create_device(v->physical,&d,NULL,&v->device));
     }
     INSTANCE(v->get_device,PFN_vkGetDeviceProcAddr,"vkGetDeviceProcAddr");

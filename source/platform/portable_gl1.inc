@@ -71,6 +71,7 @@ typedef struct Gl1Device {
     struct Vk1Device *vulkan;
     uint32_t native_depth_write,native_depth_func,native_cull;
     int native_blend,native_fog;
+    int world_depth_capture;
     float native_fog_start,native_fog_end;
 } Gl1Device;
 /* Callbacks borrow the single window-thread device; PortablePlatform owns it. */
@@ -568,6 +569,7 @@ static void gl1_close(void){
     g->sky_loaded=g->sky_active=g->fog_pending=0;
     memset(g->ncc_loaded,0,sizeof(g->ncc_loaded));g->ncc_selected=0;
     g->remote_mask=g->lfb_texture=0;
+    g->world_depth_capture=0;
 }
 static void gl1_shutdown(void){gl1_close();free(gl1_current);gl1_current=NULL;}
 static int32_t gl1_open(SDL_Window *window){

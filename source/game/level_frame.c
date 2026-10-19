@@ -225,12 +225,13 @@ int game_level_present(GameApplication *a){
     if(!game_level_world_present(a))return 0;
     word=get(a,0x59d460)+get(a,0x59d464);put(a,0x59d460,word);
     if(word==10)put(a,0x59d464,UINT32_MAX);else if(!word)put(a,0x59d464,1);
-    if(a->memory.fault || !game_level_texture_frame(a) || !game_application_render_mode(a,1) ||
+    if(a->memory.fault || !game_level_texture_frame(a) || !game_application_render_mode(a,1) || !game_application_scene_depth(a,1) ||
        (get(a,0x597f60) && !game_level_world_surface_draw(a)) ||
        !game_level_world_render(a,get(a,0x6252f8)) || !game_level_colored_render(a,get(a,0x59626c))){
         game_application_log(a,"native presentation failed: %s\n","world render submission");return 0;
     }
     for(i=0;i<3;i++)if(!game_level_projected_render(a,(ProjectedQueueKind)i))goto failed;
+    if(!game_application_scene_depth(a,0))goto failed;
     stage="frame auxiliary surface";if(!game_level_frame_004d9570(a))goto failed;
     game_initializer_004e9660(&a->memory);
     if(get(a,0x58404c) && !game_level_frame_00435240(a))return 0;

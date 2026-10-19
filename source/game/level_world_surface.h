@@ -17,6 +17,9 @@ typedef struct GameRemoteSkyFrame {
     float yaw,scale,speed;
 } GameRemoteSkyFrame;
 int game_application_remote_sky(GameApplication *,const GameRemoteSkyFrame *);
+/* Bound the actual 3D submissions; screen artwork and final overlay queues
+ * must not replace the temporal renderer's unquantized world depth. */
+int game_application_scene_depth(GameApplication *,int enabled);
 int game_application_surface_begin(GameApplication *);
 int game_application_surface_clamp(GameApplication *,int);
 int game_application_surface_texture(GameApplication *,const TextureRecord *);

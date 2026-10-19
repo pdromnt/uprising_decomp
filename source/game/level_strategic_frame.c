@@ -267,8 +267,9 @@ int game_level_strategic_present(GameApplication *a){
         sky.scale=real(a,0x6290f4);sky.speed=real(a,0x626d50);
         if(a->memory.fault || !game_application_remote_sky(a,&sky))return 0;
     }
-    if(!game_level_world_render(a,get(a,0x6252f8)) || !game_level_colored_render(a,get(a,0x59626c)) ||
-       !game_level_projected_render(a,PROJECTED_PLAIN) || !game_level_projected_render(a,PROJECTED_TEXTURED) || !game_level_projected_render(a,PROJECTED_ALPHA) || !game_level_frame_004d9570(a))return 0;
+    if(!game_application_scene_depth(a,1) || !game_level_world_render(a,get(a,0x6252f8)) || !game_level_colored_render(a,get(a,0x59626c)) ||
+       !game_level_projected_render(a,PROJECTED_PLAIN) || !game_level_projected_render(a,PROJECTED_TEXTURED) || !game_level_projected_render(a,PROJECTED_ALPHA) ||
+       !game_application_scene_depth(a,0) || !game_level_frame_004d9570(a))return 0;
     if(selected){
         uint32_t source[4];GameAddress point=get(a,selected+0x1c);uint32_t w=(uint32_t)(int32_t)(int16_t)game_memory_read_u16(&a->memory,0x596100),h=(uint32_t)(int32_t)(int16_t)game_memory_read_u16(&a->memory,0x596102);
         uint32_t cx=w-(uint32_t)shift(truncated((long double)integer(w)*real(a,point)),17)-1,cy=h-(uint32_t)shift(truncated((long double)integer(h)*real(a,point+8)),17)-1,half=(uint32_t)shift(get(a,0x6024f8)-get(a,0x6024f0),1);

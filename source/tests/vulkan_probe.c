@@ -66,6 +66,74 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
            !pixel(rgba,8,8,0,0,255) || !pixel(rgba,24,8,255,0,0)){ok=0;goto done;}
         printf("VULKAN_MATERIAL_PASS keyed_filter=checked batch_constants=checked\n");
     }
+    {
+        VulkanDrawVertex points[2]={0},lines[4]={0};unsigned i;
+        const float black[4]={0,0,0,1};
+        if(!vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        draw.material.chroma=draw.material.fog_mode=0;
+        for(i=0;i<2;i++){
+            points[i].position[0]=8.2f+i*4.6f;points[i].position[1]=8.2f+i*0.6f;points[i].position[2]=0.25f;
+            points[i].color[i]=points[i].color[3]=1;points[i].uv[2]=1;
+        }
+        if(!vulkan_draw_points(&draw,points,2,NULL,3|VULKAN_DRAW_LEQUAL)){ok=0;goto done;}
+        /* A later farther point must retain the near red point's depth. */
+        points[0].position[2]=0.75f;points[0].color[0]=0;points[0].color[2]=1;
+        if(!vulkan_draw_points(&draw,points,1,NULL,3|VULKAN_DRAW_LEQUAL)){ok=0;goto done;}
+        for(i=0;i<4;i++){
+            lines[i].position[0]=i<2?(i?24.5f:4.5f):32.5f;
+            lines[i].position[1]=i<2?24.5f:(i==2?4.5f:24.5f);
+            lines[i].color[1]=lines[i].color[3]=1;lines[i].color[2]=i>=2?1:0;lines[i].uv[2]=1;
+        }
+        if(!vulkan_draw_lines(&draw,lines,4,NULL,0) ||
+           vulkan_draw_lines(&draw,lines,3,NULL,0) || vulkan_draw_triangles(&draw,points,2,NULL,0) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !pixel(rgba,8,8,255,0,0) || !pixel(rgba,12,8,0,255,0) ||
+           !pixel(rgba,7,8,0,0,0) || !pixel(rgba,8,9,0,0,0) ||
+           !pixel(rgba,14,24,0,255,0) || !pixel(rgba,32,14,0,255,255) ||
+           !pixel(rgba,14,23,0,0,0) || !pixel(rgba,31,14,0,0,0)){ok=0;goto done;}
+        printf("VULKAN_PRIMITIVES_PASS native_points=checked native_lines=checked mixed_batches=checked depth=checked\n");
+    }
+    {
+        VulkanDrawVertex triangle[3]={0};float depths[64*64];unsigned i;
+        const float black[4]={0,0,0,1};
+        draw.capture_depth=1;
+        draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        if(!vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        for(i=0;i<3;i++){
+            triangle[i].position[0]=i==1?64:0;triangle[i].position[1]=i==2?64:0;
+            triangle[i].position[2]=0.4f;triangle[i].color[0]=triangle[i].color[3]=1;
+            triangle[i].uv[2]=i==1?0.375f:0.125f;
+        }
+        if(!vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL)){ok=0;goto done;}
+        for(i=0;i<3;i++){triangle[i].position[2]=0.8f;triangle[i].uv[2]=0.5f;}
+        if(!vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_resume(&draw)){ok=0;goto done;}
+        /* Opaque screen artwork may replace color and hardware depth while
+         * retaining the world input, including across a readback/resume. */
+        draw.capture_depth=0;
+        if(!draw_quad(&draw,0,0,32,32,0.1f,0,0,1,1,NULL,3) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) || !pixel(rgba,8,8,0,0,255) ||
+           !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths)) ||
+           fabsf(depths[8+8*64]-0.158203125f)>0.0000001f || depths[48+48*64]!=0){
+            fprintf(stderr,"Vulkan reciprocal depth: interpolation/occlusion/UI preservation failed\n");ok=0;goto done;
+        }
+        /* Alpha-discarded texels must leave far depth, not invisible occluders. */
+        if(!vulkan_draw_texture_update(&draw,&texture,texels,sizeof(texels)) || !vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.capture_depth=1;draw.texture_sampler=0;
+        draw.material.color_mode=4;draw.material.alpha_mode=4;draw.material.alpha_function=4;
+        if(!draw_quad(&draw,0,0,64,64,0.2f,1,1,1,1,&texture,3) ||
+           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths)) ||
+           !(depths[4+16*64]>1) || depths[60+16*64]!=0){
+            fprintf(stderr,"Vulkan reciprocal depth: alpha rejection/clear failed\n");ok=0;goto done;
+        }
+        draw.capture_depth=0;
+        if(!vulkan_draw_resume(&draw) || !vulkan_draw_reset_reciprocal_depth(&draw) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) || !pixel(rgba,4,16,255,255,255) ||
+           !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths))){ok=0;goto done;}
+        for(i=0;i<64*64;i++)if(depths[i]!=0){fprintf(stderr,"Vulkan reciprocal depth: stale resumed world pixel\n");ok=0;goto done;}
+        printf("VULKAN_WORLD_DEPTH_PASS interpolation=checked occlusion=checked hud_preserved=checked alpha_cutout=checked reset=checked\n");
+    }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
 }

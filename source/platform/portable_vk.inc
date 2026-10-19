@@ -131,6 +131,7 @@ static VulkanDrawVertex vk1_vertex(const GameRenderVertex *v){
 }
 static uint32_t vk1_material(VulkanDraw *d){
     Gl1Device *g=gl1_current;VulkanDrawMaterial *m=&d->material;
+    d->capture_depth=g->world_depth_capture;
     m->color_mode=g->textured?(uint32_t)g->color_mode:g->constant_enabled?1:0;
     m->mask_enabled=0;d->mask_texture=NULL;
     m->alpha_mode=!g->textured && g->alpha_mode==RENDER_ALPHA_TEXTURE?1:(uint32_t)g->alpha_mode;
@@ -154,14 +155,18 @@ static void vk1_triangle(const GameRenderVertex *a,const GameRenderVertex *b,con
     ++g->triangles;
 }
 static void vk1_point(const GameRenderVertex *v){
-    GameRenderVertex a=*v,b=*v,c=*v,d=*v;a.x-=0.5f;a.y-=0.5f;b.x+=0.5f;b.y-=0.5f;c.x+=0.5f;c.y+=0.5f;d.x-=0.5f;d.y+=0.5f;
-    vk1_triangle(&a,&b,&c);vk1_triangle(&a,&c,&d);
+    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex;
+    if(!vk1_ready_draw())return;
+    vertex=vk1_vertex(v);
+    if(!vulkan_draw_points(d,&vertex,1,g->textured && g->bound?
+        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan point batch");
 }
 static void vk1_line(const GameRenderVertex *a,const GameRenderVertex *b){
-    float dx=b->x-a->x,dy=b->y-a->y,len=hypotf(dx,dy);GameRenderVertex v[4]={*a,*b,*b,*a};unsigned i;
-    if(!(len>0)){vk1_point(a);return;}dx=dx/len*0.5f;dy=dy/len*0.5f;
-    for(i=0;i<4;i++){float side=i<2?1:-1;v[i].x-=dy*side;v[i].y+=dx*side;}
-    vk1_triangle(v,v+1,v+2);vk1_triangle(v,v+2,v+3);
+    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex[2];
+    if(!vk1_ready_draw())return;
+    vertex[0]=vk1_vertex(a);vertex[1]=vk1_vertex(b);
+    if(!vulkan_draw_lines(d,vertex,2,g->textured && g->bound?
+        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan line batch");
 }
 static void vk1_clear(uint32_t color,uint32_t alpha,uint32_t depth){
     VulkanDraw *d=vk1_back();float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
@@ -196,6 +201,7 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
 static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,float r,float b,float z,float u0,float v0,float u1,float v1,float alpha,uint32_t flags){
     VulkanDrawVertex v[6]={0};unsigned i;const unsigned corner[6]={0,1,2,0,2,3};
     if(!d->recording && !vulkan_draw_resume(d))return 0;
+    d->capture_depth=0; /* Sky and screen quads do not own world depth. */
     for(i=0;i<6;i++){unsigned c=corner[i];int right=c==1 || c==2,bottom=c>=2;
         v[i].position[0]=right?r:l;v[i].position[1]=bottom?b:t;v[i].position[2]=z;
         v[i].uv[0]=right?u1:u0;v[i].uv[1]=bottom?v1:v0;v[i].uv[2]=1;
@@ -223,6 +229,7 @@ static int vk1_unmap(void){
          * preserves the existing bounded text lock without a texture upload,
          * render-pass flush or GPU fence for every string. Magenta is untouched. */
         d->material.color_mode=0;d->material.alpha_mode=1;d->material.chroma=d->material.fog_mode=d->material.mask_enabled=0;d->material.alpha_function=7;d->mask_texture=NULL;
+        d->capture_depth=0;
         for(y=top;y<bottom;y++)for(x=left;x<right;){
             uint16_t color=g->lfb[(size_t)y*g->width+x];unsigned end=x+1;
             if(color==0xf81f){x++;continue;}

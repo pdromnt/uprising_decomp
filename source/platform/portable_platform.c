@@ -610,6 +610,13 @@ int game_application_scene_translucency(GameApplication *a,int enabled){
     if(!p || !p->renderer_initialized )return 0;
     gl1_alpha_blend(enabled);gl1_depth_mask(enabled?0:1);return 1;
 }
+int game_application_scene_depth(GameApplication *a,int enabled){
+    if(!gl1_current || gl1_current->application!=a || !gl1_ready())return 0;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(enabled && gl1_current->vulkan && (!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back())))return 0;
+#endif
+    gl1_current->world_depth_capture=enabled!=0;return 1;
+}
 int game_application_world_begin(GameApplication *a){
     PortablePlatform *p=a->platform;
     if(!p || !p->renderer_initialized )return 0;

@@ -16,6 +16,7 @@ void main() {
     // Game vertices are already projected, with a top-left pixel origin.
     // Vulkan's positive-height viewport maps NDC -1 to the top edge.
     gl_Position=vec4(position.xy/material.extent*2.0-1.0,position.z,1.0);
+    gl_PointSize=1.0;
     vertex_color=color;
     texture_coordinate=projective_uv;
     distance_to_camera=fog_distance;

@@ -19,7 +19,7 @@
  X(CreateSwapchainKHR) X(DestroySwapchainKHR) X(GetSwapchainImagesKHR) X(AcquireNextImageKHR) X(QueuePresentKHR) \
  X(CreateSemaphore) X(DestroySemaphore) X(CreateSampler) X(DestroySampler) \
  X(CreateRenderPass) X(DestroyRenderPass) X(CreateFramebuffer) X(DestroyFramebuffer) \
- X(CreateGraphicsPipelines) X(CmdBeginRenderPass) X(CmdEndRenderPass) \
+ X(CreateGraphicsPipelines) X(CmdBeginRenderPass) X(CmdEndRenderPass) X(CmdClearAttachments) \
  X(CmdBindVertexBuffers) X(CmdPushConstants) X(CmdDraw) X(CmdCopyBufferToImage) X(CmdBlitImage)
 
 typedef struct VulkanDevice {

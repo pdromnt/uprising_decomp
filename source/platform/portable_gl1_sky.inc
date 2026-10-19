@@ -129,7 +129,9 @@ static int gl1_sky_end(void){
         if(sample<1)sample=1;if(sample>g->height-3)sample=(float)g->height-3;
         row=(int)floorf(sample);
         glGetIntegerv(GL_PACK_ALIGNMENT,&previous);glPixelStorei(GL_PACK_ALIGNMENT,1);
-        glReadPixels(0,g->height-row-3,g->width,3,GL_RGB,GL_UNSIGNED_BYTE,g->rgba);glPixelStorei(GL_PACK_ALIGNMENT,previous);
+        gl1_readback_begin(g);
+        glReadPixels(0,g->height-row-3,g->width,3,GL_RGB,GL_UNSIGNED_BYTE,g->rgba);
+        gl1_readback_end(g);glPixelStorei(GL_PACK_ALIGNMENT,previous);
         for(x=0;x<g->width*3;x++){
             uint8_t *p=g->rgba+x*3;
             if((p[0]==0x83 && p[1]==0xb9 && p[2]==0xbe) || (p[0]<80 && p[1]>220 && p[2]<80))continue;
@@ -164,7 +166,9 @@ static int gl1_remote_mask(const int32_t bounds[4]){
     if(g->remote_mask && !memcmp(g->remote_bounds,bounds,sizeof(g->remote_bounds)))return 1;
     inside=calloc(count,1);queue=malloc(count*sizeof(*queue));if(!inside || !queue)goto done;
     glGetIntegerv(GL_PACK_ALIGNMENT,&packing);glPixelStorei(GL_PACK_ALIGNMENT,1);
+    gl1_readback_begin(g);
     glReadPixels(bounds[0],g->height-bounds[3],width,height,GL_RGB,GL_UNSIGNED_BYTE,g->rgba);
+    gl1_readback_end(g);
     glPixelStorei(GL_PACK_ALIGNMENT,packing);
     index=(size_t)(height/2)*width+width/2;memcpy(color,g->rgba+index*3,3);
     inside[index]=1;queue[tail++]=(uint32_t)index;

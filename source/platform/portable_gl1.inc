@@ -90,6 +90,16 @@ static void gl1_resolve(Gl1Device *g,unsigned buffer){
     g->blit_framebuffer(0,0,g->width,g->height,0,0,g->width,g->height,GL_COLOR_BUFFER_BIT,GL_NEAREST);
     g->bind_framebuffer(GL_FRAMEBUFFER,gl1_render_target(g,g->back));
 }
+/* Fog-color and monitor-mask sampling also read the live world. ReadPixels
+ * cannot read a multisample FBO; resolve color while retaining the draw owner. */
+static void gl1_readback_begin(Gl1Device *g){
+    if(!g->aa_samples)return;
+    gl1_resolve(g,g->back);
+    g->bind_framebuffer(GL_READ_FRAMEBUFFER,g->framebuffers[g->back]);glReadBuffer(GL_COLOR_ATTACHMENT0);
+}
+static void gl1_readback_end(Gl1Device *g){
+    if(g->aa_samples)g->bind_framebuffer(GL_READ_FRAMEBUFFER,gl1_render_target(g,g->back));
+}
 static void gl1_msaa_release(Gl1Device *g){
     if(g->delete_framebuffers)g->delete_framebuffers(2,g->aa_framebuffers);
     if(g->delete_renderbuffers){g->delete_renderbuffers(2,g->aa_colors);if(g->aa_depth)g->delete_renderbuffers(1,&g->aa_depth);}

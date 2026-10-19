@@ -1,4 +1,5 @@
 #include "resource_file.h"
+#include "host_file.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -12,7 +13,7 @@ ResourceFile *resource_file_open_mode(const char *path,const char *mode) {
     ResourceStream stream;
     FILE *opened;
     if(!path || !mode)return NULL;
-    opened=fopen(path,mode); if(!opened)return NULL;
+    opened=host_file_open(path,mode); if(!opened)return NULL;
     file=malloc(sizeof(*file)); if(!file){fclose(opened);return NULL;}
     file->stream=opened;
     stream.context=opened;stream.read=host_read;stream.seek=host_seek;stream.tell=host_tell;stream.close=host_close;

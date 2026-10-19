@@ -1,48 +1,77 @@
 # Building
 
-The current build needs Windows, MinGW-w64 GCC/G++, windres, CMake 3.24+ and
-Ninja. MSVC, Linux and macOS builds are not supported yet.
+Targets: Windows x86/x64/ARM64, Linux x64/ARM64 and macOS ARM64. Native CI builds
+and checks each target; a successful build does not establish gameplay parity.
 
-From the game root:
+## Windows
+
+For the existing MinGW-w64 GCC/G++, windres, CMake 3.24+ and Ninja toolchain:
 
 ```powershell
 ./source/scripts/build.ps1 -Bits 32 -Tests
 ./source/scripts/build.ps1 -Bits 64 -Tests
 ```
 
-Run local architectures sequentially: their dependency source caches are shared.
-`source\scripts\build.bat` forwards the same arguments, preferring PowerShell 7.
-Use `-Compiler` to choose GCC, `-OutputDirectory` for staging, and `-?` for help.
-The script finds tools on PATH, with local TDM/Visual Studio fallbacks.
+Run local architectures sequentially; dependency sources are shared. The batch
+shortcut forwards these arguments. Outputs are `uprising.exe` and `uprising64.exe`
+beside the assets. The script retains the previous EXE and checks native renderer
+identity and execution symbols. `-OutputDirectory` selects staging.
 
-Outputs are `uprising.exe` (x86) and `uprising64.exe` (x64). Builds are incremental,
-use at most four compiler processes and share assets without copying them.
-Per-architecture caches live under `source/build/windows-32` and `windows-64`.
-The script refuses to replace an original/unknown EXE, retains the previous
-output, and checks the linked execution symbols and renderer identity. `-Tests`
-runs the asset-free core/config/audio checks; it does not establish gameplay parity.
+Windows ARM64 uses Visual Studio 2022 with the ARM64 C++ tools and Windows SDK:
 
-CMake fetches checksum-pinned SDL 3.4.16, FreeType 2.14.3 and ENet 1.3.18 once.
-They link statically; bundled libsmacker, stb_vorbis and FSR shader sources need
-no extra runtime DLLs. The Windows resource script is compiled during the build.
-Do not commit generated resources or binaries.
+```powershell
+cmake -S source -B source/build/native -A ARM64 -DBUILD_TESTING=ON -DUPRISING_EXECUTABLE_NAME=uprising
+cmake --build source/build/native --config Release --parallel 2
+ctest --test-dir source/build/native -C Release --output-on-failure
+```
 
-Keep `uprising.cln`, `FONTS/`, `GRIDS/`, `VIDEO/` and `Music/` beside the EXE.
-Include the complete supplied fonts and licenses. No original EXE or legacy
-Glide/DirectDraw/Smacker DLL/VXD is required.
+## Linux and macOS
 
-For diagnostics, `UPRISING_RECOMP_NATIVE_OBSERVE=1` enables a log replaced on each
-launch; normal launches create no log. `UPRISING_USER_DIRECTORY` selects isolated
-user data and enables diagnostic logging. Direct CMake builds use Ninja/GCC,
-`-m32`/`-m64`, windres and `UPRISING_ASSET_DIRECTORY`; `BUILD_TESTING=ON` enables CTest.
+Use a native C11 compiler, CMake 3.24+ and Ninja. Linux also needs OpenGL development
+headers and SDL platform dependencies (X11/Wayland, ALSA/PulseAudio and udev);
+the CI workflow lists the packages. macOS needs Xcode command line tools and Ninja.
 
-## Releases
+```sh
+cmake -S source -B source/build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build source/build/native --parallel 2
+ctest --test-dir source/build/native --output-on-failure
+```
+
+Linux produces `uprising`; macOS produces `Uprising.app`. Ordinary local builds
+do not copy the asset tree. To populate a self-contained runtime, install once:
+
+```sh
+cmake --install source/build/native --config Release --prefix source/build/stage --component Runtime
+```
+
+On macOS, SDL resolves bundled assets in `Contents/Resources`; user data goes to
+`~/uprising/`. The base renderer uses legacy OpenGL 2.1. FSR requires OpenGL 4.3
+compatibility and is unavailable on macOS; the default pixel-art scaling filter
+remains available. Other features depend on the driver's exposed capabilities.
+
+## Dependencies and diagnostics
+
+CMake fetches checksum-pinned SDL 3.4.16, FreeType 2.14.3 and ENet 1.3.18. These
+link statically; bundled libsmacker, stb_vorbis and FSR sources need no extra game
+DLLs. System libraries/frameworks remain platform dependencies. Assets retain
+original casing; the file adapter handles legacy separators and case-insensitive
+reads on case-sensitive filesystems. No original EXE or legacy support DLL is used.
+
+`BUILD_TESTING=ON` runs the existing core/config/audio checks. Normal launches
+create no diagnostic log. `UPRISING_RECOMP_NATIVE_OBSERVE=1` enables a replaced log;
+`UPRISING_USER_DIRECTORY` selects isolated user data and also enables logging.
+
+## CI and releases
+
+Main/PR builds produce six runtime packages. Windows packages use `uprising.exe`
+regardless of architecture; Linux uses `uprising`. macOS ships an ad-hoc-signed app
+in a DMG, with the original `README.TXT` also outside the app. It is not notarized.
+Windows archives are ZIP; Linux archives are tar.gz. Source, user configuration,
+saves and private-lab content are excluded. Only installation's `Runtime` component
+is packaged, so dependency development files stay out.
 
 Tag the desired revision, then manually run **Build release** for that existing
-tag. The workflow builds both architectures and attaches their runtime ZIPs.
-Each package names its EXE `uprising.exe` and includes assets/component notices;
-source, settings, saves and build caches are excluded. GitHub provides the tagged
-source archives. Ordinary main/PR workflows upload the two EXEs separately.
-
-`source/scripts/package-release.ps1` performs packaging. Preserve asset and
-third-party terms in [Third-party notices](../THIRD_PARTY_NOTICES.md).
+tag. The release workflow resolves the tag's commit, reuses the same six-target
+build and publishes only after every target succeeds. `package-release.ps1`
+checks executable identity, native architecture and required runtime content.
+Keep asset/component terms from [Third-party notices](../THIRD_PARTY_NOTICES.md).

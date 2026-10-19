@@ -1,4 +1,5 @@
 #include "game_memory.h"
+#include "host_file.h"
 #include "game_initial_data.h"
 #include "render_texture_cache.h"
 #include "ui_geometry.h"
@@ -682,6 +683,15 @@ static int producer_deploy(void *c,GameAddress root,GameAddress o,const float p[
 }
 static int producer_recycle(void *c,GameAddress o){ProducerProbe *probe=c;(void)o;++probe->recycled;return 1;}
 int main(void) {
+    {
+        FILE *file=fopen("HostFileCase.tmp","wb");char path[128];
+        CHECK(file!=NULL);CHECK(fputs("case",file)>=0);CHECK(!fclose(file));
+        file=host_file_open(".\\hostfilecase.tmp","rb");
+        CHECK(file!=NULL);CHECK(fgetc(file)=='c');CHECK(!fclose(file));
+        CHECK(host_file_path(".\\hostfilecase.tmp",path,sizeof(path)));
+        CHECK(!strchr(path,'\\'));CHECK(!remove(path));
+        CHECK(!host_file_path("too-long",path,2));
+    }
     {
         uint8_t source[8]={1,0,3,0xaa,4,5,6,0xbb},destination[24],overlap[6]={1,2,3,4,5,6};
         GameMenuPixelSpan from={source,sizeof(source),3,2,4},to={destination,sizeof(destination),4,4,6};

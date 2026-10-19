@@ -2,8 +2,8 @@
  * existing platform owner owns its context, upload snapshots and readback.
  * The preserved renderer supplies depth, combine, chroma and UV semantics;
  * this device does not link that runtime or load a graphics wrapper DLL. */
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include <SDL3/SDL_opengl.h>
+#include <SDL3/SDL_opengl_glext.h>
 #include <math.h>
 
 typedef struct Gl1Texture {

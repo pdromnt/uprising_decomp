@@ -1,4 +1,5 @@
 set(CORE_SOURCES
+    core/host_file.c
     core/application_frame.c
     core/application_mode.c
     core/application_name_registry.c

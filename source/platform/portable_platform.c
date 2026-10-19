@@ -6,6 +6,7 @@
 #include "portable_input_devices.h"
 #include "portable_sdl.h"
 #include "portable_display.h"
+#include "host_file.h"
 #include <SDL3/SDL_opengl.h>
 #include "game_initial_data.h"
 #include "application_config.h"
@@ -111,7 +112,9 @@ int game_application_file_path(GameApplication *app,const char *name,int write,c
     if(p && p->user_directory && (write || !strncmp(name,"saves\\",6) || !strncmp(name,"saves/",6)))
         size=snprintf(path,capacity,"%s/%s",p->user_directory,name);
     else size=snprintf(path,capacity,"%s",name);
-    return size>=0 && (size_t)size<capacity;
+    if(size<0 || (size_t)size>=capacity)return 0;
+    {size_t i;for(i=0;path[i];++i)if(path[i]=='\\')path[i]='/';}
+    return 1;
 }
 int game_application_file_delete(GameApplication *app,const char *name) {
     char path[4128];return game_application_file_path(app,name,1,path,sizeof(path)) && SDL_RemovePath(path);
@@ -823,6 +826,9 @@ static int configuration_begin(GameApplication *app){
 }
 int game_application_platform_start(GameApplication *app,const char *executable) {
     const char *stage="platform allocation",*base=SDL_GetBasePath(),*directory=SDL_getenv("UPRISING_USER_DIRECTORY");
+#ifdef __APPLE__
+    char home_directory[4128];
+#endif
     PortablePlatform *platform=calloc(1,sizeof(*platform));
     if(!platform)return 0;
     app->platform=platform;
@@ -830,7 +836,19 @@ int game_application_platform_start(GameApplication *app,const char *executable)
      platform->isolated_input=isolated && !strcmp(isolated,"1");}
     if(!base || !executable || !*executable)goto fail;
     platform->executable=SDL_strdup(executable);if(!platform->executable)goto fail;
-    if(!directory || !*directory)directory=base;
+    if(!directory || !*directory){
+#ifdef __APPLE__
+        const char *home=SDL_GetUserFolder(SDL_FOLDER_HOME);
+        int length;
+        if(!home || !*home)goto fail;
+        length=snprintf(home_directory,sizeof(home_directory),"%s/uprising",home);
+        if(length<0 || (size_t)length>=sizeof(home_directory))goto fail;
+        if(!SDL_CreateDirectory(home_directory))goto fail;
+        directory=home_directory;
+#else
+        directory=base;
+#endif
+    }
     if(strlen(directory)>4095)goto fail;
     platform->user_directory=SDL_strdup(directory);if(!platform->user_directory)goto fail;
     /* Resolve assets once, even when a shortcut/debugger starts elsewhere.

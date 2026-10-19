@@ -1,4 +1,5 @@
 #include "resource_blob.h"
+#include "host_file.h"
 #include "resource_file.h"
 #include "resource_index.h"
 #include <string.h>
@@ -8,7 +9,7 @@ static void file_blob_free(void *context,void *data){(void)context;free(data);}
 int resource_blob_open_file(const char *path,ResourceBlob *output){
     ResourceBlob blob={0};FILE *file;long length;int result=0;
     if(!path || !output || output->data)return 0;
-    file=fopen(path,"rb");if(!file)return 0;
+    file=host_file_open(path,"rb");if(!file)return 0;
     if(fseek(file,0,SEEK_END) || (length=ftell(file))<0 ||
         length>64L*1024L*1024L || fseek(file,0,SEEK_SET))goto done;
     blob.allocator.release=file_blob_free;blob.size=(size_t)length;

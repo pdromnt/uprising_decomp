@@ -1,38 +1,63 @@
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$Version,
-    [ValidateSet(32,64)][int]$Bits=32,
-    [string]$Executable,
+    [Parameter(Mandatory=$true)][ValidateSet('windows-x86','windows-x64','windows-arm64','linux-x64','linux-arm64','macos-arm64')][string]$Platform,
+    [Parameter(Mandatory=$true)][string]$StageDirectory,
     [string]$OutputDirectory
 )
 $ErrorActionPreference='Stop'
-$project=Split-Path -Parent $PSScriptRoot
-$repository=Split-Path -Parent $project
 if($Version -notmatch '^[A-Za-z0-9._-]+$'){throw 'Version must be a safe filename component.'}
-if(!$Executable){$Executable=Join-Path (Split-Path -Parent $project) $(if($Bits -eq 64){'uprising64.exe'}else{'uprising.exe'})}
-if(!$OutputDirectory){$OutputDirectory=Join-Path $project 'dist'}
-$bytes=[IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Executable))
-if(![Text.Encoding]::ASCII.GetString($bytes).Contains('NATIVE_OPENGL1_CPU_FREE:')){throw 'Only the native reconstructed executable may be packaged.'}
-$machine=[BitConverter]::ToUInt16($bytes,[BitConverter]::ToInt32($bytes,60)+4)
-if($machine -ne $(if($Bits -eq 32){0x14c}else{0x8664})){throw 'Executable architecture does not match -Bits.'}
-$staging=Join-Path $project "build/package-$Bits"
-New-Item -ItemType Directory -Path $staging,$OutputDirectory -Force | Out-Null
-Copy-Item -LiteralPath $Executable -Destination (Join-Path $staging 'uprising.exe') -Force
-$documents=@('README.md','THIRD_PARTY_NOTICES.md')
-foreach($name in $documents){Copy-Item -LiteralPath (Join-Path $repository $name) -Destination $staging -Force}
-$license=Join-Path $staging 'libsmacker-COPYING.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/libsmacker/COPYING') -Destination $license -Force
-$sdlLicense=Join-Path $staging 'SDL3-LICENSE.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/SDL3-LICENSE.txt') -Destination $sdlLicense -Force
-$fontLicense=Join-Path $staging 'FreeType-FTL.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/FreeType-FTL.txt') -Destination $fontLicense -Force
-$vorbisLicense=Join-Path $staging 'stb-LICENSE.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/stb-LICENSE.txt') -Destination $vorbisLicense -Force
-$networkLicense=Join-Path $staging 'enet-LICENSE.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/enet-LICENSE.txt') -Destination $networkLicense -Force
-$fsrLicense=Join-Path $staging 'FSR-LICENSE.txt'
-Copy-Item -LiteralPath (Join-Path $project 'third_party/fsr/LICENSE.txt') -Destination $fsrLicense -Force
-$archive=Join-Path $OutputDirectory "uprising-$Version-windows-$Bits.zip"
-$files=@(Join-Path $staging 'uprising.exe')+@($documents | ForEach-Object {Join-Path $staging $_})+@($license,$sdlLicense,$fontLicense,$vorbisLicense,$networkLicense,$fsrLicense)
-$files+=@('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','hints.txt') | ForEach-Object {Join-Path $repository $_}
-Compress-Archive -LiteralPath $files -DestinationPath $archive -Force
-Write-Host "Created $archive (executable, notices and game data; no source/user settings/saves)."
+$stage=(Resolve-Path -LiteralPath $StageDirectory).Path
+if(!$OutputDirectory){$OutputDirectory=Join-Path (Split-Path -Parent $PSScriptRoot) 'dist'}
+New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+$output=[IO.Path]::GetFullPath($OutputDirectory)
+if($output.StartsWith($stage+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or $output -eq $stage){throw 'Archive output must be outside the runtime stage.'}
+$assets=$stage
+$exe=Join-Path $stage 'uprising'
+if($Platform.StartsWith('windows-')){$exe+='.exe'}
+if($Platform -eq 'macos-arm64'){
+    $assets=Join-Path $stage 'Uprising.app/Contents/Resources'
+    $exe=Join-Path $stage 'Uprising.app/Contents/MacOS/Uprising'
+}
+foreach($name in @('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','README.md','THIRD_PARTY_NOTICES.md','libsmacker-COPYING.txt','SDL3-LICENSE.txt','FreeType-FTL.txt','stb-LICENSE.txt','enet-LICENSE.txt','FSR-LICENSE.txt')){
+    if(!(Test-Path -LiteralPath (Join-Path $assets $name))){throw "Missing runtime content: $name"}
+}
+foreach($name in @('source','recomp-project','CONFIG','saves','scrshts')){
+    if(Test-Path -LiteralPath (Join-Path $assets $name)){throw "User/private/source content in runtime stage: $name"}
+}
+if(Get-ChildItem -LiteralPath (Join-Path $assets 'FONTS') -Filter '*.cfg'){throw 'Legacy user configuration must not ship.'}
+$bytes=[IO.File]::ReadAllBytes($exe)
+$text=[Text.Encoding]::ASCII.GetString($bytes)
+if(!$text.Contains('NATIVE_OPENGL1_CPU_FREE:') -or $text.Contains('glide2x.dll')){throw 'Native renderer/execution identity gate failed.'}
+if($Platform.StartsWith('windows-')){
+    $machine=[BitConverter]::ToUInt16($bytes,[BitConverter]::ToInt32($bytes,60)+4)
+    $expected=@{'windows-x86'=0x14c;'windows-x64'=0x8664;'windows-arm64'=0xaa64}[$Platform]
+    if($machine -ne $expected){throw 'PE architecture does not match the package.'}
+}else{
+    $description=(& file -b $exe) -join ' '
+    if($LASTEXITCODE){throw 'Cannot inspect native executable.'}
+    $expected=@{'linux-x64'='ELF 64-bit.*x86-64';'linux-arm64'='ELF 64-bit.*(ARM aarch64|ARM64)';'macos-arm64'='Mach-O 64-bit.*arm64'}[$Platform]
+    if($description -notmatch $expected){throw "Wrong executable architecture: $description"}
+    if($Platform -eq 'macos-arm64'){
+        # Ad-hoc signing enables native Apple Silicon execution; not notarization.
+        & codesign --force --deep --sign - (Join-Path $stage 'Uprising.app')
+        if($LASTEXITCODE){throw 'App signing failed.'}
+        & codesign --verify --deep --strict (Join-Path $stage 'Uprising.app')
+        if($LASTEXITCODE){throw 'App signature verification failed.'}
+        if(!(Test-Path -LiteralPath (Join-Path $stage 'README.TXT'))){throw 'DMG root needs the original README.TXT.'}
+    }
+}
+$base=Join-Path $output "uprising-$Version-$Platform"
+if($Platform.StartsWith('windows-')){
+    $archive="$base.zip"
+    # tar avoids Compress-Archive silently omitting hidden runtime entries.
+    & tar -a -cf $archive -C $stage .
+}elseif($Platform -eq 'macos-arm64'){
+    $archive="$base.dmg"
+    & hdiutil create -ov -volname 'Uprising' -srcfolder $stage -format UDZO $archive
+}else{
+    $archive="$base.tar.gz"
+    & tar -czf $archive -C $stage .
+}
+if($LASTEXITCODE){throw 'Runtime packaging failed.'}
+Write-Host "Created $archive"

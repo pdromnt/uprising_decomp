@@ -4,7 +4,7 @@
 static uint16_t gl1_le16(const uint8_t *p){return (uint16_t)(p[0]|(uint16_t)p[1]<<8);}
 static uint32_t gl1_le32(const uint8_t *p){return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
 static int gl1_sky_load(unsigned layer,const char *path){
-    Gl1Device *g=gl1_current;FILE *file=fopen(path,"rb");
+    Gl1Device *g=gl1_current;FILE *file=host_file_open(path,"rb");
     uint8_t header[54],palette[1024]={0},row[256];uint32_t w,h,entries,dib,offset,y,x;
     uint64_t sums[3]={0};int ok=0;
     if(!file)return 0;
@@ -42,10 +42,10 @@ done:fclose(file);return ok;
 }
 static void gl1_sky_select(const char *name){
     Gl1Device *g=gl1_current;char path[256],base[128],message[256],*extension;unsigned i;
-    if(!_stricmp(name,g->sky_name))return;
+    if(!SDL_strcasecmp(name,g->sky_name))return;
     glDeleteTextures(3,g->sky_layers);memset(g->sky_layers,0,sizeof(g->sky_layers));
     snprintf(g->sky_name,sizeof(g->sky_name),"%s",name);g->sky_loaded=0;g->fog_pending=0;
-    if(!*name || !_stricmp(name,"nosky"))return;
+    if(!*name || !SDL_strcasecmp(name,"nosky"))return;
     /* Level configuration supplies a basename, not an arbitrary path. */
     for(i=0;name[i];i++)if(name[i]=='/' || name[i]=='\\' || name[i]==':' || (name[i]=='.' && name[i+1]=='.'))return;
     snprintf(path,sizeof(path),"GRIDS/skies/%s%s",name,strrchr(name,'.')?"":".bmp");

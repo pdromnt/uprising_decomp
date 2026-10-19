@@ -6,7 +6,7 @@
 #include "level_objects.h"
 #include "level_factory.h"
 #include "level_routes.h"
-#include "../core/level_objects.h""
+#include "../core/level_objects.h"
 #include "level_citadels.h"
 #include "level_entity_store.h"
 #include "level_teleporters.h"

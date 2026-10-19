@@ -15,3 +15,5 @@ Music/** binary
 VIDEO/** binary
 README.TXT -text
 hints.txt -text
+
+*.sh text eol=lf

@@ -34,6 +34,9 @@ address-keyed callbacks take real arguments/returns, with no guest calling ABI.
 display owner persist through `platform/portable_platform.c`, which owns loading,
 durable flushing and atomic replacement. Configuration is a persistence snapshot,
 not a second live simulation. Neutral `field_*` keys retain unrenamed options.
+macOS keeps user data in `~/uprising/`; bundled assets stay in the app's Resources.
+`core/host_file.c` adapts retail path separators and case-insensitive reads to
+case-sensitive filesystems without copying or renaming the assets.
 
 ## Platform owners
 

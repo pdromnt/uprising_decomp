@@ -9,5 +9,6 @@ FetchContent_Declare(freetype
     URL_HASH SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
     DOWNLOAD_DIR "${FETCHCONTENT_BASE_DIR}"
     SOURCE_DIR "${FETCHCONTENT_BASE_DIR}/freetype-src"
+    SUBBUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/freetype-subbuild"
     BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/freetype")
 FetchContent_MakeAvailable(freetype)

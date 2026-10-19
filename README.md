@@ -14,14 +14,21 @@ crashes that have not yet been found.
 
 ## Running
 
-Launch `uprising.exe` (x86) or `uprising64.exe` (x64); no flags are required.
+Launch `uprising.exe` on Windows, `uprising` on Linux or `Uprising.app` on macOS;
+no flags are required. Local Windows x64 builds use `uprising64.exe`.
 Keep it beside `uprising.cln`, `FONTS/`, `GRIDS/`, `Music/` and `VIDEO/`, using the
 complete fonts supplied by this project. Assets resolve beside the executable,
-regardless of the launch directory. Windows builds are currently supported;
-Linux and macOS ports are next.
+regardless of the launch directory. The macOS app contains its own assets.
+
+Target platforms: Windows x86/x64/ARM64, macOS ARM64, and Linux x64/ARM64.
+CI builds native runtime packages for each target; see [Building](docs/BUILDING.md).
+macOS users may need to change some game keybindings in Options to avoid
+conflicts with macOS system shortcuts.
 
 The first launch is windowed and centered on the primary monitor. Settings,
 keyboard/controller bindings and music preferences use `CONFIG/settings.ini`.
+On macOS, user data lives in `~/uprising/`, including
+`~/uprising/CONFIG/settings.ini`, so replacing the app preserves it.
 Legacy `FONTS/settings.cfg` and `FONTS/keymap.cfg` are imported on first use when
 present. Saves and screenshots are separate user data.
 
@@ -31,6 +38,7 @@ Options → Graphics → **ADVANCED** provides:
   borders on wide monitors; windowed resolutions are 4:3 only.
 - **FSR1:** upscales gameplay, HUD and menus. Off uses a pixel-art scaling filter.
   FSR requires an OpenGL 4.3 compatibility context; the base renderer does not.
+  macOS uses the default scaling filter because its OpenGL lacks this context.
 - **3D anti-aliasing:** Off or supported MSAA 2×/4×/8×, applied on the next mission
   load. HUD, text, menus and 2D overlay draws remain outside the AA pass.
 

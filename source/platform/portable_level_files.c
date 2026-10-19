@@ -1,4 +1,5 @@
 #include "portable_sdl.h"
+#include "host_file.h"
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -32,6 +33,7 @@ int game_menu_level_files(GameApplication *a,GameLevelNames *output,const char *
     for(i=0;search[i];++i)if(search[i]=='\\')search[i]='/';
     slash=strrchr(search,'/');prefix=slash?(size_t)(slash-search)+1:0;mask=search+prefix;
     if(prefix){memcpy(directory,search,prefix);directory[prefix]=0;}else strcpy(directory,".");
+    if(!host_file_path(directory,directory,sizeof(directory)))return 0;
     memset(output,0,sizeof(*output));
 #ifdef _WIN32
     {DWORD attributes=GetFileAttributesA(directory);

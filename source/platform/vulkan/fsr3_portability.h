@@ -9,6 +9,13 @@
 #include <cstdarg>
 #include <cerrno>
 #include <locale>
+#include <FidelityFX/host/ffx_types.h>
+// Wide debug/binding names enlarge the private context on Unix. Reserve enough
+// opaque backing storage in every SDK translation unit; retain its size assert.
+static_assert(sizeof(wchar_t)==2 || sizeof(wchar_t)==4,"Unsupported SDK wide-character width");
+#undef FFX_SDK_DEFAULT_CONTEXT_SIZE
+#define FFX_SDK_DEFAULT_CONTEXT_SIZE (1024 * 128 * (sizeof(wchar_t) / 2))
+template<typename T,size_t N> constexpr size_t _countof(T (&)[N]) noexcept {return N;}
 inline int strcpy_s(char *out,size_t capacity,const char *in){
     if(!out || !capacity || !in)return EINVAL;
     size_t count=std::strlen(in);if(count>=capacity){out[0]=0;return ERANGE;}

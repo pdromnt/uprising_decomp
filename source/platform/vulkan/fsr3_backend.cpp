@@ -33,10 +33,11 @@ static VkResult VKAPI_CALL create_pipelines(VkDevice device,VkPipelineCache cach
 extern "C" PFN_vkVoidFunction VKAPI_CALL fsr3_backend_device_proc(VkDevice device,const char *name){
     if(!strcmp(name,"vkCreateDescriptorPool"))return reinterpret_cast<PFN_vkVoidFunction>(create_pool);
     if(!strcmp(name,"vkCreateComputePipelines"))return reinterpret_cast<PFN_vkVoidFunction>(create_pipelines);
-    PFN_vkVoidFunction function=vkGetDeviceProcAddr(device,name);if(function)return function;
     if(!strcmp(name,"vkGetBufferMemoryRequirements2KHR"))return vkGetDeviceProcAddr(device,"vkGetBufferMemoryRequirements2");
     if(!strcmp(name,"vkGetImageMemoryRequirements2KHR"))return vkGetDeviceProcAddr(device,"vkGetImageMemoryRequirements2");
-    return nullptr;
+    // Prefer the enabled core command even if a loader/layer exposes a KHR
+    // trampoline for an extension that was not enabled on this device.
+    return vkGetDeviceProcAddr(device,name);
 }
 #undef DECLARE
 #include <FidelityFX/host/backends/vk/ffx_vk.h>

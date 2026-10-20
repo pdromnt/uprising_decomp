@@ -24,7 +24,9 @@ The game remains C. AMD's C++ host code is isolated behind a small C interface.
    HUD is rendered afterward at output resolution. Conservative GPU reactive/
    composition masks and cropped remote-monitor composition are connected.
    Drawable-size output, settings and context recreation are connected.
-   Complete particle/sky/discontinuity history.
+   Opaque base skies now have affine texture motion at infinite depth. Independent
+   cloud/horizon layers and unknown particles conservatively reject history.
+   Complete particle/discontinuity history and layered-sky quality acceptance.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -114,10 +116,17 @@ legacy dimensions. A renderer-owned compute pass extracts an R8 rejection mask
 from actual motion validity and surviving translucent coverage, feeding both SDK
 mask inputs. Stable opaque pixels retain history even when blending is enabled;
 depth-writing effects with effective alpha below one reject it. Unknown geometry
-and skies conservatively reject history until their motion is implemented.
+rejects history. Opaque base skies track their actual screen-to-texture mapping
+between consecutive rendered frames, at infinite depth. Normal and masked remote
+views keep separate bounded records, cleared with view/output/resource changes.
+Gaps, degenerate mappings and large shifts (including yaw wraps) reject sky
+correspondence. Independent cloud/horizon layers raise rejection while preserving
+the base vector; a blended sky is not assigned one fictitious motion vector.
 The mask is allocated once and stays on the GPU; HUD never enters it.
-This remains experimental, with incomplete moving-sky/particle
-history. No complete image-quality or speedup claim.
+World effects now raise rejection even when depth testing is disabled. Unknown
+particles still lack stable vectors. This remains experimental, with incomplete
+particle/discontinuity history and layered-sky quality acceptance. No complete
+image-quality or speedup claim.
 
 Local RTX4060Ti checks exercise real gameplay/reload and normal/O-view transitions.
 A settled-frame visual comparison found black world silhouettes: the previous
@@ -143,6 +152,14 @@ The resize fixture also checks a fractional output canvas. Live Training1 checks
 1000x600 window pillarboxing and pointer mapping, then native-AA return. Its
 resized monitor capture was inspected. Advanced Apply/Revert/persistence checks
 pass on Vulkan and OpenGL. These isolated runs do not exercise desktop fullscreen.
+Sky/effect GPU fixtures check infinite depth, jitter-correct vectors, layered
+rejection, effects without depth testing and HUD preservation on x86/x64. Core
+checks cover scrolling, gaps, resource changes and wrap/cut rejection. Live
+Training1 readback confirms valid infinite-depth sky vectors at 960x720; Erudara's
+O-view rotation/return/pause/minimize/restore/shutdown route passes with remote
+sky history active. These establish inputs and exercised routes, not temporal
+image-quality acceptance or a new matched FPS result. Priva's citadel claim,
+power-up particles, O-return, camera and shutdown route also passes.
 
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
@@ -160,7 +177,7 @@ An owned R32F target records reversed-infinite perspective depth `10/z`, derived
 from unquantized `q=numerator/z`, under existing hardware depth/alpha tests. Terrain
 and model near clipping both use z=10; finite visibility limits remain unchanged. Explicit
 tank/citadel and O-view world scopes exclude artwork and final overlay queues;
-skies and draws without depth writes preserve this input. Its independent reset
+skies retain infinite depth; other draws without depth writes preserve this input. Its independent reset
 also works on resumed double-buffer targets without erasing color or legacy depth.
 The live check compares all 1,228,800 depth bytes before/after HUD draws, including
 world geometry underneath the cockpit. The GPU probe checks interpolation,
@@ -213,8 +230,8 @@ as final color. Artwork/text never write it, including artwork drawn before the
 O-view monitor. Scene color clears with temporal inputs, survives flush/resume,
 and remains byte-identical through later HUD draws. The O-view scope now begins
 before masked sky submission, so it uses the active camera's jitter. Sky color
-is captured without inventing solid sky depth/motion; sky history quality still
-needs work. Four color attachments fit Vulkan's baseline attachment limit.
+is captured at infinite depth, now with base-layer texture motion; layered sky
+history quality still needs work. Four color attachments fit Vulkan's baseline attachment limit.
 GPU fixtures check masked sky jitter, blend/occlusion, UI exclusion and resumed
 reset. Live Training1 checks all 1,228,800 scene bytes before/after HUD; Erudara
 readback verifies nonempty scene color with no artwork outside the monitor.
@@ -278,7 +295,7 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   software-driver validation. Native Apple GPU execution is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
-- Need sky/particle/discontinuity history and
+- Need particle/discontinuity history, layered-sky quality and
   temporal-quality/performance acceptance, remaining shader variants, 32-bit safe handles,
   KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 

@@ -38,7 +38,9 @@ typedef struct VulkanDraw {
     float clear[4],clear_depth;int recording,has_frame,resuming;
     /* R32F world reversed-infinite perspective depth (near/z), derived from
      * unquantized q. UI/skies and draws without depth writes preserve it. */
-    int capture_depth,capture_scene,clear_reciprocal;
+    /* Background capture writes motion at infinite depth (zero near/z).
+     * Other scene-only layers raise rejection without replacing vectors. */
+    int capture_depth,capture_scene,capture_background,clear_reciprocal;
     float scene_jitter[2],scene_depth_scale;
 } VulkanDraw;
 /* q=numerator/z becomes reversed infinite perspective depth near/z. Hardware

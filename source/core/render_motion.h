@@ -14,6 +14,12 @@ void render_motion_reset(RenderMotionHistory *);
 /* Halton[2,3], pixel offsets in [-.5,.5], matching the FSR jitter convention.
  * Sequence length belongs to the render/display ratio; no simulation state. */
 int render_motion_jitter(uint64_t frame,uint32_t phases,float output[2]);
+/* Previous screen positions of an affine textured rectangle's four corners.
+ * Used for scrolling backgrounds, not geometry depth. Gaps/resource changes,
+ * degenerate mappings and shifts beyond half a viewport reject correspondence. */
+typedef struct RenderMotionPlane {uint64_t frame,identity;float bounds[4],uv[4];} RenderMotionPlane;
+int render_motion_plane(RenderMotionPlane *,uint64_t frame,uint64_t identity,
+    const float bounds[4],const float uv[4],float previous[4][4]);
 int render_motion_sample(RenderMotionHistory *,uint64_t frame,uint64_t key,
     const float current[3],float previous[3]);
 /* Pack previous screen coordinates for correct projective interpolation.

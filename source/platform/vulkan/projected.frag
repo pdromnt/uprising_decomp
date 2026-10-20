@@ -64,7 +64,7 @@ void main() {
     }
     output_color=vec4(rgb,alpha);
     output_scene=output_color;
-    output_reciprocal_depth=clamp(texture_coordinate.z*material.depth_scale,0.0,1.0);
+    output_reciprocal_depth=(material.padding.x&4u)!=0u?0.0:clamp(texture_coordinate.z*material.depth_scale,0.0,1.0);
     output_motion=vec4(0,0,0,1);
     if(previous_coordinate.w>=0.99999 && previous_coordinate.z>0.0)
         output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-(gl_FragCoord.xy-material.jitter),1,0);

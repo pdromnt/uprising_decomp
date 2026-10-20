@@ -780,6 +780,19 @@ static int check_motion_clipping(void){
 static int check_render_motion(void){
     RenderMotionHistory history={0};float a[3]={4,8,0.125f},b[3]={12,6,0.25f},previous[3],packed[4];
     uint32_t page;uint64_t first_key,second_key;
+    {RenderMotionPlane plane={0};float corners[4][4];
+    float bounds[4]={8,12,72,60},uv[4]={0,0,2,1.5f};
+    CHECK(!render_motion_plane(&plane,1,7,bounds,uv,corners) && !corners[0][3]);
+    uv[0]=.25f;uv[2]=2.25f;uv[1]=-.125f;uv[3]=1.375f;
+    CHECK(render_motion_plane(&plane,2,7,bounds,uv,corners));
+    CHECK(corners[0][0]==16 && corners[0][1]==8 && corners[2][0]==80 && corners[2][1]==56 && corners[2][3]==1);
+    CHECK(!render_motion_plane(&plane,4,7,bounds,uv,corners)); /* visibility gap */
+    CHECK(!render_motion_plane(&plane,5,8,bounds,uv,corners)); /* resource reload */
+    uv[0]+=4;uv[2]+=4;
+    CHECK(!render_motion_plane(&plane,6,8,bounds,uv,corners) && !corners[2][3]); /* wrap/cut */
+    CHECK(render_motion_plane(&plane,7,8,bounds,uv,corners));
+    uv[2]=uv[0];CHECK(!render_motion_plane(&plane,8,8,bounds,uv,corners) && !plane.frame);
+    }
     {float jitter[2],repeat[2];unsigned i;
     CHECK(!render_motion_jitter(0,0,jitter) && jitter[0]==0 && jitter[1]==0);
     CHECK(render_motion_jitter(0,8,jitter) && jitter[0]==0 && fabsf(jitter[1]+1.0f/6.0f)<0.000001f);

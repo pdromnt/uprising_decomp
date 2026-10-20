@@ -3,6 +3,30 @@
 #include <stdlib.h>
 #include <string.h>
 enum {BUCKETS=8192,WAYS=4};
+int render_motion_plane(RenderMotionPlane *h,uint64_t frame,uint64_t identity,
+        const float bounds[4],const float uv[4],float previous[4][4]){
+    unsigned i,axis;int valid=frame && identity && h->identity==identity && h->frame &&
+        h->frame<frame && frame-h->frame==1;
+    memset(previous,0,4*4*sizeof(float));
+    for(i=0;i<4;i++)if(!isfinite(bounds[i]) || !isfinite(uv[i])){memset(h,0,sizeof(*h));return 0;}
+    if(bounds[2]<=bounds[0] || bounds[3]<=bounds[1] || uv[2]==uv[0] || uv[3]==uv[1]){
+        memset(h,0,sizeof(*h));return 0;
+    }
+    if(valid)for(i=0;i<4;i++){
+        for(axis=0;axis<2;axis++){
+            unsigned edge=axis==0?(i==1 || i==2):(i>=2);
+            float current=bounds[axis+edge*2];
+            float mapped=h->bounds[axis]+(uv[axis+edge*2]-h->uv[axis])*
+                (h->bounds[axis+2]-h->bounds[axis])/(h->uv[axis+2]-h->uv[axis]);
+            if(!isfinite(mapped) || fabsf(mapped-current)>(bounds[axis+2]-bounds[axis])*0.5f)valid=0;
+            previous[i][axis]=mapped;
+        }
+        previous[i][2]=previous[i][3]=1;
+    }
+    h->frame=frame;h->identity=identity;memcpy(h->bounds,bounds,sizeof(h->bounds));memcpy(h->uv,uv,sizeof(h->uv));
+    if(!valid)memset(previous,0,4*4*sizeof(float));
+    return valid;
+}
 int render_motion_jitter(uint64_t frame,uint32_t phases,float output[2]){
     unsigned axis;uint32_t index;
     output[0]=output[1]=0;if(!phases)return 0;

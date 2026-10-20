@@ -638,7 +638,7 @@ int game_application_scene_depth(GameApplication *a,int enabled){
             output[0]=n->fsr_output[0]?n->fsr_output[0]:gl1_current->width;
             output[1]=n->fsr_output[1]?n->fsr_output[1]:gl1_current->height;
         }
-        if(requested!=n->fsr_requested || memcmp(output,n->fsr_output,sizeof(output))){render_motion_reset(&n->history);n->fsr_reset=1;n->fsr_time=0;}
+        if(requested!=n->fsr_requested || memcmp(output,n->fsr_output,sizeof(output))){vk1_history_reset(n);n->fsr_reset=1;n->fsr_time=0;}
         n->fsr_requested=requested;memcpy(n->fsr_output,output,sizeof(output));
         if(n->composed[gl1_current->back] && !vk1_flush(vk1_back(),0))return 0;
         n->composed[gl1_current->back]=0;
@@ -649,7 +649,7 @@ int game_application_scene_depth(GameApplication *a,int enabled){
             if(a->memory.fault || right<=left || bottom<=top || right>gl1_current->width || bottom>gl1_current->height)return 0;
             crop[0]=left;crop[1]=top;crop[2]=right-left;crop[3]=bottom-top;
         }
-        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)) || memcmp(crop,n->fsr_crop,sizeof(crop))){render_motion_reset(&n->history);n->fsr_reset=1;}
+        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)) || memcmp(crop,n->fsr_crop,sizeof(crop))){vk1_history_reset(n);n->fsr_reset=1;}
         n->history_camera=camera;n->history_mode=mode;memcpy(n->history_projection,projection,sizeof(projection));
         memcpy(n->fsr_crop,crop,sizeof(crop));
         /* Subtracting the crop origin centers the actual monitor camera.

@@ -267,12 +267,14 @@ static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32
     VkDescriptorSet descriptor;VulkanDrawBatch *last,*batches;VulkanDrawVertex *staging;
     VulkanDrawMaterial material=d->material;
     if(!d->recording || flags>=192 || !vertices || !count || count>UINT32_MAX-d->vertex_count)return 0;
-    if(d->capture_depth && (flags&3)==3)flags|=CAPTURE_RECIPROCAL_DEPTH;
-    else if(d->capture_depth && (flags&VULKAN_DRAW_DEPTH_TEST))flags|=CAPTURE_REACTIVE;
-    if(d->capture_depth || d->capture_scene)flags|=CAPTURE_SCENE;
+    if(d->capture_background || (d->capture_depth && (flags&3)==3))flags|=CAPTURE_RECIPROCAL_DEPTH;
+    else if(d->capture_depth || d->capture_scene)flags|=CAPTURE_REACTIVE;
+    if(d->capture_depth || d->capture_scene || d->capture_background)flags|=CAPTURE_SCENE;
     /* Blended effects can also write depth. Keep their solid depth/vector
      * output, but reject their changing color just like no-write translucency. */
-    material.padding[0]=(flags&CAPTURE_REACTIVE?1u:0u)|(d->capture_depth && (flags&VULKAN_DRAW_BLEND)?2u:0u);
+    material.padding[0]=(flags&CAPTURE_REACTIVE?1u:0u)|
+        ((d->capture_depth || d->capture_background) && (flags&VULKAN_DRAW_BLEND)?2u:0u)|
+        (d->capture_background?4u:0u);
     material.depth_scale=d->scene_depth_scale;
     material.jitter[0]=flags&CAPTURE_SCENE?d->scene_jitter[0]:0;
     material.jitter[1]=flags&CAPTURE_SCENE?d->scene_jitter[1]:0;

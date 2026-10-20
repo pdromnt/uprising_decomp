@@ -389,6 +389,37 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
            !pixel(scene,50,8,0,0,0) || !pixel(scene,51,8,255,0,0)){ok=0;goto done;}
         printf("VULKAN_SCENE_COLOR_PASS sky_jitter=checked mask=checked blend=checked occlusion=checked ui_excluded=checked resume_reset=checked\n");
     }
+    {
+        const float black[4]={0,0,0,1};VulkanDrawVertex sky[3]={0};
+        float motion[64*64*4],depths[64*64];unsigned i;
+        if(!vulkan_draw_projection(&draw,1,1,.375f,-.25f) || !vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        for(i=0;i<3;i++){
+            sky[i].position[0]=i==1?128:0;sky[i].position[1]=i==2?128:0;
+            sky[i].color[2]=sky[i].color[3]=sky[i].uv[2]=1;
+            sky[i].previous[0]=sky[i].position[0]+4;sky[i].previous[1]=sky[i].position[1]-2;
+            sky[i].previous[2]=sky[i].previous[3]=1;
+        }
+        draw.capture_background=draw.capture_scene=1;
+        if(!vulkan_draw_triangles(&draw,sky,3,NULL,0)){ok=0;goto done;}
+        draw.capture_background=0;
+        /* Independent cloud layer preserves base motion but rejects history. */
+        if(!draw_quad(&draw,8,8,24,24,0,1,0,0,.5f,NULL,VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        draw.capture_scene=0;draw.capture_depth=1;
+        /* A world effect with depth testing disabled must reject history too. */
+        if(!draw_quad(&draw,32,32,48,48,0,0,1,0,.5f,NULL,VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        draw.capture_depth=0;
+        if(!draw_quad(&draw,0,0,64,64,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&draw,NULL,0) ||
+           !vulkan_draw_read_motion(&draw,motion,sizeof(motion)) ||
+           !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths))){ok=0;goto done;}
+        for(i=0;i<3;i++){
+            unsigned p=i==0?40+8*64:i==1?8+8*64:40+40*64;const float *m=motion+p*4;
+            if(depths[p]!=0 || fabsf(m[0]-4)>.001f || fabsf(m[1]+2)>.001f || m[2]!=1 || m[3]!=(i?1:0)){
+                fprintf(stderr,"Vulkan sky/effect: infinite depth, motion or rejection failed sample=%u\n",i);ok=0;goto done;
+            }
+        }
+        printf("VULKAN_SKY_MOTION_PASS infinite_depth=checked jitter=checked layers=checked no_depth_effect=checked hud=checked\n");
+    }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
 }

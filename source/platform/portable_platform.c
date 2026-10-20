@@ -627,13 +627,22 @@ int game_application_scene_depth(GameApplication *a,int enabled){
     if(!gl1_current || gl1_current->application!=a || !gl1_ready())return 0;
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     if(enabled && gl1_current->vulkan){
-        Vk1Device *n=gl1_current->vulkan;float projection[5],jitter[2]={0,0};unsigned i;
+        Vk1Device *n=gl1_current->vulkan;float projection[5],view[12],jitter[2]={0,0};unsigned i;
         uint32_t crop[4]={0,0,gl1_current->width,gl1_current->height};
         uint32_t output[2];int requested=game_display_temporal_output(a,output);
         static const GameAddress fields[5]={0x6290c8,0x6290cc,0x6290f0,0x6290f4,0x574cb0};
         uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
         for(i=0;i<5;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
+        for(i=0;i<12;i++){uint32_t bits=game_memory_read_u32(&a->memory,0x5cedf0+i*4);memcpy(view+i,&bits,4);}
         if(a->memory.fault)return 0;
+        /* Half the4096-unit spatial cell is a conservative single-frame jump.
+         * Check elapsed time before resolving any geometry or sky samples. */
+        n->history_cut_reasons=render_motion_camera(&n->history_pose,n->frames+1,SDL_GetTicksNS(),view,2048);
+        if(n->history_cut_reasons){
+            vk1_history_reset(n);n->fsr_reset=1;n->fsr_time=0;
+            if(n->history_cut_reasons&RENDER_CAMERA_INVALID)return 0;
+            if(n->history_cut_reasons&~RENDER_CAMERA_INITIAL)n->history_camera_cuts++;
+        }
         if(!output[0] || !output[1]){
             output[0]=n->fsr_output[0]?n->fsr_output[0]:gl1_current->width;
             output[1]=n->fsr_output[1]?n->fsr_output[1]:gl1_current->height;

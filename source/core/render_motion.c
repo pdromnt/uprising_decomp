@@ -3,6 +3,32 @@
 #include <stdlib.h>
 #include <string.h>
 enum {BUCKETS=8192,WAYS=4};
+unsigned render_motion_camera(RenderMotionCamera *h,uint64_t frame,uint64_t time_ns,
+        const float view[12],float max_translation){
+    unsigned i,axis,reason=0;double trace=0,distance=0;
+    for(i=0;i<12;i++)if(!isfinite(view[i]))goto invalid;
+    if(!frame || !isfinite(max_translation) || max_translation<=0)goto invalid;
+    if(!h->frame)reason=RENDER_CAMERA_INITIAL;
+    else{
+        if(frame<=h->frame || frame-h->frame!=1)reason|=RENDER_CAMERA_GAP;
+        if(time_ns<h->time_ns || time_ns-h->time_ns>UINT64_C(250000000))reason|=RENDER_CAMERA_TIME;
+        for(axis=0;axis<3;axis++){
+            double current=0,previous=0;
+            for(i=0;i<3;i++){
+                current-=(double)view[i*4+axis]*view[i*4+3];
+                previous-=(double)h->view[i*4+axis]*h->view[i*4+3];
+                trace+=(double)view[i*4+axis]*h->view[i*4+axis];
+            }
+            distance+=(current-previous)*(current-previous);
+        }
+        /* trace(Rcurrent * Rprevious^T)=1+2*cos(angle). A jump over45deg
+         * has little reusable coverage even if the camera object is unchanged. */
+        if(trace<2.414213562373095 || distance>(double)max_translation*max_translation)reason|=RENDER_CAMERA_POSE;
+    }
+    h->frame=frame;h->time_ns=time_ns;memcpy(h->view,view,sizeof(h->view));return reason;
+invalid:
+    memset(h,0,sizeof(*h));return RENDER_CAMERA_INVALID;
+}
 int render_motion_plane(RenderMotionPlane *h,uint64_t frame,uint64_t identity,
         const float bounds[4],const float uv[4],float previous[4][4]){
     unsigned i,axis;int valid=frame && identity && h->identity==identity && h->frame &&

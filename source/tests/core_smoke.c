@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "core check failed at line %d: %s\n", __LINE__, #condition); \
@@ -780,6 +781,33 @@ static int check_motion_clipping(void){
 static int check_render_motion(void){
     RenderMotionHistory history={0};float a[3]={4,8,0.125f},b[3]={12,6,0.25f},previous[3],packed[4];
     uint32_t page;uint64_t first_key,second_key;
+    {RenderMotionCamera pose={0};unsigned reason;
+    float view[12]={1,0,0,0,0,1,0,0,0,0,1,0};
+    CHECK(render_motion_camera(&pose,1,1000000,view,2048)==RENDER_CAMERA_INITIAL);
+    view[3]=-32;CHECK(!render_motion_camera(&pose,2,17000000,view,2048));
+    view[3]=-4096;CHECK(render_motion_camera(&pose,3,33000000,view,2048)==RENDER_CAMERA_POSE);
+    CHECK(!render_motion_camera(&pose,4,49000000,view,2048));
+    CHECK(render_motion_camera(&pose,5,400000000,view,2048)==RENDER_CAMERA_TIME);
+    CHECK(render_motion_camera(&pose,7,416000000,view,2048)==RENDER_CAMERA_GAP);
+    CHECK(render_motion_camera(&pose,8,415000000,view,2048)==RENDER_CAMERA_TIME);
+    memset(&pose,0,sizeof(pose));
+    /* Views around the yaw wrap are adjacent, despite opposite signed angles. */
+    view[3]=0;view[0]=view[10]=cosf(.01f);view[2]=sinf(.01f);view[8]=-view[2];
+    CHECK(render_motion_camera(&pose,1,0,view,2048)==RENDER_CAMERA_INITIAL);
+    view[2]=-view[2];view[8]=-view[8];CHECK(!render_motion_camera(&pose,2,16000000,view,2048));
+    view[0]=view[10]=0;view[2]=1;view[8]=-1;
+    CHECK(render_motion_camera(&pose,3,32000000,view,2048)==RENDER_CAMERA_POSE);
+    /* Turning far from the world origin changes view translation enormously,
+     * although the camera itself stays put. Compare inverse poses instead. */
+    memset(&pose,0,sizeof(pose));memset(view,0,sizeof(view));
+    view[0]=view[5]=view[10]=1;view[3]=-65536;
+    CHECK(render_motion_camera(&pose,1,0,view,2048)==RENDER_CAMERA_INITIAL);
+    view[0]=view[10]=cosf(.1f);view[2]=sinf(.1f);view[8]=-view[2];
+    view[3]=-view[0]*65536;view[11]=-view[8]*65536;
+    CHECK(!render_motion_camera(&pose,2,16000000,view,2048));
+    view[0]=NAN;reason=render_motion_camera(&pose,4,48000000,view,2048);
+    CHECK(reason==RENDER_CAMERA_INVALID && !pose.frame);
+    }
     {RenderMotionPlane plane={0};float corners[4][4];
     float bounds[4]={8,12,72,60},uv[4]={0,0,2,1.5f};
     CHECK(!render_motion_plane(&plane,1,7,bounds,uv,corners) && !corners[0][3]);

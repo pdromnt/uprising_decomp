@@ -12,6 +12,7 @@ typedef struct Vk1Device {
     int track_text,scratch_clean;
     RenderMotionHistory history;
     RenderMotionPlane sky_history[2];uint64_t sky_motion_valid;
+    RenderMotionCamera history_pose;unsigned history_cut_reasons;uint64_t history_camera_cuts;
     uint32_t history_camera,history_mode;
     float history_projection[5];
     int jitter_enabled;

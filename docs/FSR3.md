@@ -26,7 +26,8 @@ The game remains C. AMD's C++ host code is isolated behind a small C interface.
    Drawable-size output, settings and context recreation are connected.
    Opaque base skies now have affine texture motion at infinite depth. Independent
    cloud/horizon layers and unknown particles conservatively reject history.
-   Complete particle/discontinuity history and layered-sky quality acceptance.
+   Large same-owner pose cuts and elapsed gaps now invalidate history before
+   submission. Complete particle/layered-sky quality and broader camera-route acceptance.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -68,7 +69,7 @@ the build derives a backend file with the memory/layout corrections.
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
 the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed. CI39352007295 passed all
+is still needed there. Local RTX4060Ti dispatch passed. CI39354481661 passed all
 six application targets, including upscaler execution with Khronos validation on
 Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
 No local validation-layer pass is claimed. The newer game integration below
@@ -124,8 +125,14 @@ correspondence. Independent cloud/horizon layers raise rejection while preservin
 the base vector; a blended sky is not assigned one fictitious motion vector.
 The mask is allocated once and stays on the GPU; HUD never enters it.
 World effects now raise rejection even when depth testing is disabled. Unknown
-particles still lack stable vectors. This remains experimental, with incomplete
-particle/discontinuity history and layered-sky quality acceptance. No complete
+particles still lack stable vectors. Before scene submission, the actual rendered
+view matrix detects same-camera jumps over45degrees or2048world units (half a
+spatial cell), skipped frames, backward time and gaps over250ms. These clear
+geometry/sky samples and reset FSR before new vectors are resolved. Rigid inverse
+poses distinguish a camera translation from turning far from the world origin;
+Euler yaw wrapping does not cause a cut. These are conservative thresholds, not
+an explicit notification for every smaller scripted cut. This remains experimental,
+with incomplete particle and broader camera/layered-sky quality acceptance. No complete
 image-quality or speedup claim.
 
 Local RTX4060Ti checks exercise real gameplay/reload and normal/O-view transitions.
@@ -160,6 +167,12 @@ O-view rotation/return/pause/minimize/restore/shutdown route passes with remote
 sky history active. These establish inputs and exercised routes, not temporal
 image-quality acceptance or a new matched FPS result. Priva's citadel claim,
 power-up particles, O-return, camera and shutdown route also passes.
+The Erudara resize fixture additionally changes the real O-camera yaw/offset and
+waits300ms without replacing that camera. Each case verifies an SDK reset and
+zero stale geometry/sky correspondences; ordinary history must recover afterward.
+Core checks cover angle wrapping, distant-origin turns, frame/time gaps and invalid poses.
+The FSR-enabled1740-frame Training1 movement/fire/weapon/save/reload/shutdown
+check passes with exact restored position/ammo. No matched FPS claim for this batch.
 
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
@@ -211,7 +224,7 @@ coverage. Unknown point particles reject history rather than inventing vectors.
 Priva's actual claim/power-up/O-return/citadel-camera/shutdown route also passed,
 including normalized native point RGB. Its fixture now uses native pixel views;
 the comparator's point check remains, with a Vulkan submission check added.
-Particle quality and same-owner camera discontinuities still need coverage.
+Particle quality and broader scripted-camera discontinuities still need coverage.
 
 Per-batch projection snapshots apply subpixel jitter to world geometry and skies;
 motion subtracts the current raster jitter and history keeps original positions.
@@ -295,7 +308,7 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   software-driver validation. Native Apple GPU execution is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
-- Need particle/discontinuity history, layered-sky quality and
+- Need particle/layered-sky quality, broader scripted-camera coverage and
   temporal-quality/performance acceptance, remaining shader variants, 32-bit safe handles,
   KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 

@@ -47,7 +47,8 @@ extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint3
     if(result!=FFX_OK){std::fprintf(stderr,"FSR3 context creation failed: %x\n",result);goto fail;}}
     s->created=true;active=s;
     {const VkFormat formats[3]={VK_FORMAT_R32_SFLOAT,VK_FORMAT_R16G16_SFLOAT,VK_FORMAT_R32_UINT};
-    for(unsigned i=0;i<3;i++)if(!vulkan_image_create(v,s->shared+i,formats[i],VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height))goto fail;
+    // The SDK clears reconstructed depth during reset using a transfer job.
+    for(unsigned i=0;i<3;i++)if(!vulkan_image_create(v,s->shared+i,formats[i],VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT,width,height))goto fail;
     if(!vulkan_image_create(v,&s->output,VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,output_width,output_height))goto fail;}
     return s;
 fail:fsr3_upscaler_close(s);return nullptr;

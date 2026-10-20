@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <locale>
 #include <FidelityFX/host/ffx_types.h>
+#include <FidelityFX/host/ffx_util.h>
 // Wide debug/binding names enlarge the private context on Unix. Reserve enough
 // opaque backing storage in every SDK translation unit; retain its size assert.
 static_assert(sizeof(wchar_t)==2 || sizeof(wchar_t)==4,"Unsupported SDK wide-character width");

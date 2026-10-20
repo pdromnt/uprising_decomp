@@ -316,6 +316,50 @@ end users must not require an SDK in the eventual playable build. Current probe
 artifacts are developer executables, not game releases. Main's macOS app remains
 unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
 
+## Current renderer checks
+
+Packed HUD tiles now keep filtering inside their original32x32 tile, including
+repeat/clamp and chroma/alpha edges. This removes the black corner around the
+citadel reticle at fractional output scaling. A focused GPU check compares every
+pixel against standalone textures at1.5x; it failed before the fix. Atlas slots
+are bounded, and ordinary textures clear the tile metadata.
+
+Adjacent batches retain compatible pipeline, descriptor and material bindings
+within one command buffer. Draw order and draw count are unchanged; each command
+buffer starts with fresh bindings. Observe-only timings separate preparation,
+scene scope, command submission and reconstruction. These wall-clock scopes can
+overlap (scene includes mid-scene flushes); they are not exclusive GPU timings.
+
+The Training3 first-attack archive exercises tank/O/citadel views with normal fire
+input, shared assets and isolated settings. Captures cover final960x720 output
+and the640x480 source scene. The citadel fixture looks mostly skyward, so it does
+not establish crowded-target citadel acceptance. Owned effect counts include
+pooled entries and are not active projectile/particle counts. Short guarded
+profiles are intentionally terminated; clean shutdown uses the existing route.
+
+Final local x86/x64 application builds and GPU probes pass. The atlas comparison
+covers all pixels in four clamp/repeat and alpha/chroma cases. x64 SDK moving
+checks pass; x86 still reports its explicit SDK image-handle limitation. The
+existing64-frame resize/camera route passes and exits cleanly: Apply/Revert,
+context retirement, fractional O crop, letterboxing and same-owner history cuts.
+No local Khronos validation layer. Prior commit33f49d02 passed six-target CI.
+
+Training3 / RTX4060Ti / FSR640x480 ->960x720, same archive/seed/input, windowed,
+muted and isolated. Sequential20s baseline /25s final samples, first5s excluded:
+
+| View | Earlier FPS | Final FPS | Final pipeline binds / batches per frame |
+| --- | --- | --- | --- |
+| Tank |105.77 |108.45 |43 /1025 |
+| O monitor |100.86 |101.82 |33 /1345 |
+| Citadel |64.72 |68.39 |34 /1506 |
+
+Previously each batch bound its pipeline, descriptors and material. Final
+material pushes are192/212/220 per frame respectively; texture descriptors remain
+frequent. No history resets occur inside the measured intervals. These are short
+moving-simulation samples, not a demonstrated FPS gain. Final citadel preparation
+and scene scopes are about3.50/3.60ms, reconstruction2.56ms; scopes overlap as noted
+above. Broader crowded-view profiling and temporal visual acceptance remain open.
+
 ## Evidence and open dependencies
 
 - Local Windows x64/RTX4060Ti: reactive-mask numeric check and swapchain present

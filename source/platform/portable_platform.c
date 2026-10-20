@@ -628,6 +628,8 @@ int game_application_scene_depth(GameApplication *a,int enabled){
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     if(enabled && gl1_current->vulkan){
         Vk1Device *n=gl1_current->vulkan;float projection[5],view[12],jitter[2]={0,0};unsigned i;
+        Uint64 view_time=SDL_GetTicksNS();
+        if(n->observe){n->scene_start_ns=view_time;if(n->frame_start && view_time>=n->frame_start)n->prepare_cost_ns+=view_time-n->frame_start;}
         uint32_t crop[4]={0,0,gl1_current->width,gl1_current->height};
         uint32_t output[2];int requested=game_display_temporal_output(a,output);
         static const GameAddress fields[5]={0x6290c8,0x6290cc,0x6290f0,0x6290f4,0x574cb0};
@@ -637,7 +639,7 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         if(a->memory.fault)return 0;
         /* Half the4096-unit spatial cell is a conservative single-frame jump.
          * Check elapsed time before resolving any geometry or sky samples. */
-        n->history_cut_reasons=render_motion_camera(&n->history_pose,n->frames+1,SDL_GetTicksNS(),view,2048);
+        n->history_cut_reasons=render_motion_camera(&n->history_pose,n->frames+1,view_time,view,2048);
         if(n->history_cut_reasons){
             vk1_history_reset(n);n->fsr_reset=1;n->fsr_time=0;
             if(n->history_cut_reasons&RENDER_CAMERA_INVALID)return 0;
@@ -676,7 +678,11 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         if(!vulkan_draw_projection(vk1_back(),10,projection[4],jitter[0],jitter[1]))return 0;
         if(!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back()))return 0;
     }
-    if(!enabled && gl1_current->world_depth_capture && gl1_current->vulkan && !vk1_scene_complete())return 0;
+    if(!enabled && gl1_current->world_depth_capture && gl1_current->vulkan){
+        Vk1Device *n=gl1_current->vulkan;
+        if(n->observe && n->scene_start_ns)n->scene_cost_ns+=SDL_GetTicksNS()-n->scene_start_ns;
+        if(!vk1_scene_complete())return 0;
+    }
 #endif
     gl1_current->world_depth_capture=enabled!=0;return 1;
 }

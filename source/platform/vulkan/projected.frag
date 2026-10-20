@@ -17,19 +17,34 @@ layout(location=1) out float output_reciprocal_depth;
 layout(location=2) out vec4 output_motion;
 layout(location=3) out vec4 output_scene;
 vec4 keyed_texel(ivec2 p) {
-    ivec2 size=textureSize(image,0);
+    ivec2 size=textureSize(image,0),origin=ivec2(0);
+    if(material.padding.y!=0u){
+        uint tile=material.padding.y-1u;
+        origin=ivec2(tile&31u,tile>>5u)*32;size=ivec2(32);p-=origin;
+    }
     p.x=(material.texture_sampling&2u)!=0u?(p.x%size.x+size.x)%size.x:clamp(p.x,0,size.x-1);
     p.y=(material.texture_sampling&4u)!=0u?(p.y%size.y+size.y)%size.y:clamp(p.y,0,size.y-1);
-    vec4 value=texelFetch(image,p,0);
+    vec4 value=texelFetch(image,p+origin,0);
     uvec3 key=uvec3((material.chroma>>16)&255u,(material.chroma>>8)&255u,material.chroma&255u);
-    if(all(equal(uvec3(round(value.rgb*255.0)),key)))value.a=0.0;
+    if(material.chroma!=0u && all(equal(uvec3(round(value.rgb*255.0)),key)))value.a=0.0;
     return value;
 }
 vec4 sample_material(vec2 uv) {
-    if(material.chroma==0u)return texture(image,uv);
+    if(material.chroma==0u && material.padding.y==0u)return texture(image,uv);
     vec2 pixel=uv*vec2(textureSize(image,0));
+    if(material.chroma==0u){
+        uint tile=material.padding.y-1u;
+        vec2 local=pixel-vec2(uvec2(tile&31u,tile>>5u)*32u);
+        // Hardware filtering is safe inside the tile; only its boundary needs
+        // explicit taps to repeat/clamp within this original32x32 texture.
+        if(all(greaterThanEqual(local,vec2(.5))) && all(lessThanEqual(local,vec2(31.5))))return texture(image,uv);
+    }
     if((material.texture_sampling&1u)==0u)return keyed_texel(ivec2(floor(pixel)));
     vec2 f=fract(pixel-0.5);ivec2 p=ivec2(floor(pixel-0.5));
+    // Projective interpolation/atlas translation can leave a few float ULPs at
+    // an exact texel center. Do not turn a transparent edge into visible ink.
+    f=mix(f,vec2(0),lessThan(f,vec2(1.0/4096.0)));
+    f=mix(f,vec2(1),greaterThan(f,vec2(1.0-1.0/4096.0)));
     return mix(mix(keyed_texel(p),keyed_texel(p+ivec2(1,0)),f.x),
                mix(keyed_texel(p+ivec2(0,1)),keyed_texel(p+ivec2(1,1)),f.x),f.y);
 }

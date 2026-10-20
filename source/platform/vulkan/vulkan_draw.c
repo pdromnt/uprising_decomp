@@ -267,6 +267,9 @@ static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32
     VkDescriptorSet descriptor;VulkanDrawBatch *last,*batches;VulkanDrawVertex *staging;
     VulkanDrawMaterial material=d->material;
     if(!d->recording || flags>=192 || !vertices || !count || count>UINT32_MAX-d->vertex_count)return 0;
+    if(texture && texture->atlas){
+        if(texture->width!=1024 || texture->height!=1024 || !material.padding[1] || material.padding[1]>1024)return 0;
+    }else material.padding[1]=0;
     if(d->capture_background || (d->capture_depth && (flags&3)==3))flags|=CAPTURE_RECIPROCAL_DEPTH;
     else if(d->capture_depth || d->capture_scene)flags|=CAPTURE_REACTIVE;
     if(d->capture_depth || d->capture_scene || d->capture_background)flags|=CAPTURE_SCENE;
@@ -319,10 +322,21 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     }
     if(vertex_bytes)v->CmdBindVertexBuffers(command,0,1,&d->vertices.buffer,&offset);
     for(i=0;i<d->batch_count;i++){
-        VulkanDrawBatch *b=d->batches+i;v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->pipelines[b->flags]);
-        v->CmdPushConstants(command,d->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(b->material),&b->material);
+        VulkanDrawBatch *b=d->batches+i,*previous=i?b-1:NULL;
+        /* All pipelines share this owner's layout. Keep draw order, but retain
+         * compatible state across adjacent batches. First batch binds everything
+         * anew: no state is borrowed from another command buffer or render pass. */
+        if(!previous || previous->flags!=b->flags){
+            v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->pipelines[b->flags]);d->pipeline_binds++;
+        }
+        if(!previous || memcmp(&previous->material,&b->material,sizeof(b->material))){
+            v->CmdPushConstants(command,d->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(b->material),&b->material);
+            d->material_pushes++;
+        }
         VkDescriptorSet sets[2]={b->texture,b->mask};
-        v->CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->layout,0,2,sets,0,NULL);
+        if(!previous || previous->texture!=b->texture || previous->mask!=b->mask){
+            v->CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->layout,0,2,sets,0,NULL);d->descriptor_binds++;
+        }
         v->CmdDraw(command,b->count,1,b->first,0);
     }
     v->CmdEndRenderPass(command);

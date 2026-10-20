@@ -16,6 +16,7 @@ typedef struct VulkanDrawMaterial {
 typedef struct VulkanDrawTexture {
     VulkanImage image;VkSampler sampler;VkDescriptorSet descriptor;
     VulkanBuffer upload;uint32_t width,height;int initialized;
+    int atlas; /*1024x1024 immutable32x32 UI tiles; material.padding[1] is slot+1. */
     VkDescriptorPool pool;VkDescriptorSet variants[8];
 } VulkanDrawTexture;
 enum {VULKAN_DRAW_DEPTH_TEST=1,VULKAN_DRAW_DEPTH_WRITE=2,VULKAN_DRAW_BLEND=4,
@@ -35,6 +36,7 @@ typedef struct VulkanDraw {
     VulkanDrawTexture white;
     VulkanDrawVertex *staging;size_t vertex_count,vertex_capacity;
     VulkanDrawBatch *batches;size_t batch_count,batch_capacity;
+    uint64_t pipeline_binds,descriptor_binds,material_pushes;
     float clear[4],clear_depth;int recording,has_frame,resuming;
     /* R32F world reversed-infinite perspective depth (near/z), derived from
      * unquantized q. UI/skies and draws without depth writes preserve it. */

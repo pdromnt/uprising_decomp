@@ -7,6 +7,8 @@ typedef struct Vk1Device {
     struct {uint64_t hash;uint32_t next;uint8_t pixels[4096];} tile[1024];
     uint32_t tile_buckets[1024],tile_count;
     uint64_t frames,submissions,uploads,atlas_uploads;
+    uint64_t vertices,batches,flush_cost_ns,fsr_cost_ns;int observe;
+    uint64_t scene_start_ns,scene_cost_ns,prepare_cost_ns;
     Uint64 frame_start;
     uint32_t written_range[2];
     int track_text,scratch_clean;
@@ -35,8 +37,10 @@ static VulkanDraw *vk1_target(unsigned index){
 }
 static VulkanDraw *vk1_back(void){return vk1_target(gl1_current->back);}
 static int vk1_flush(VulkanDraw *d,int resume){
-    if(d->recording)gl1_current->vulkan->submissions++;
+    Vk1Device *n=gl1_current->vulkan;Uint64 started=d->recording && n->observe?SDL_GetTicksNS():0;
+    if(d->recording){n->submissions++;n->vertices+=d->vertex_count;n->batches+=d->batch_count;}
     if(d->recording && !vulkan_draw_finish(d,NULL,0)){gl1_fail("Vulkan submission");return 0;}
+    if(started)n->flush_cost_ns+=SDL_GetTicksNS()-started;
     if(resume && !d->recording && !vulkan_draw_resume(d)){gl1_fail("Vulkan render target continuation");return 0;}
     return 1;
 }
@@ -97,6 +101,7 @@ static int vk1_scene_complete(void){
     if(!image || !vulkan_temporal_compose(&n->temporal,command,image,&scene->scene,&scene->color,&target->color,
         n->fsr_crop[0],n->fsr_crop[1],target->width,target->height))goto command_fail;
     if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
+    if(n->observe)n->fsr_cost_ns+=SDL_GetTicksNS()-now;
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
     n->fsr_reset=0;n->composed[g->back]=1;
     if(n->fsr_monitor)n->fsr_monitor_frames++;
@@ -113,6 +118,7 @@ static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     Gl1Device *g=gl1_current;unsigned i;const float clear[4]={0,0,0,0};
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
+    g->vulkan->observe=SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE")!=NULL;
     {const char *jitter=SDL_getenv("UPRISING_VULKAN_JITTER");g->vulkan->jitter_enabled=jitter && !strcmp(jitter,"1");}
     g->width=640;g->height=480;g->front=0;g->back=1;
     g->lfb=malloc((size_t)g->width*g->height*2);g->rgba=malloc((size_t)g->width*g->height*4);
@@ -164,6 +170,7 @@ static void vk1_refresh(Gl1Texture *texture){
             if(!n->tiles.image.image){
                 uint8_t *empty=calloc(1024u*1024u,4);int ok=empty && vulkan_draw_texture_create(owner,&n->tiles,empty,1024,1024,0,0);free(empty);
                 if(!ok){gl1_fail("Vulkan tile atlas");return;}
+                n->tiles.atlas=1;
             }
             if(n->tile_count==1024){
                 if(!vk1_flush_all())return;
@@ -265,6 +272,7 @@ static uint32_t vk1_material(VulkanDraw *d){
     if(m->fog_mode==2)m->fog_range[0]=g->density;
     d->texture_sampler=(g->min_filter==GL_LINEAR?1:0)|(g->wrap_s==GL_REPEAT?2:0)|(g->wrap_t==GL_REPEAT?4:0);
     m->texture_sampling=(uint32_t)d->texture_sampler;
+    m->padding[1]=g->textured && g->bound && g->bound->ui_tile?g->bound->native_tile:0;
     return (g->depth_mode?VULKAN_DRAW_DEPTH_TEST:0)|(g->native_depth_write?VULKAN_DRAW_DEPTH_WRITE:0)|
         (g->native_blend?VULKAN_DRAW_BLEND:0)|(g->native_depth_func<<3);
 }
@@ -309,12 +317,22 @@ static void vk1_swap(void){
      * retaining the previous output selection leaves stale occlusion depth. */
     g->vulkan->composed[g->back]=0;
     ++g->vulkan->frames;
-    if((g->vulkan->frames<=4 || !(g->vulkan->frames&63u)) && SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE"))
-        fprintf(stderr,"native Vulkan counters: frames=%llu submits=%llu uploads=%llu atlas_uploads=%llu tiles=%u cpu_ms=%.2f submit_ms=%.2f present_ms=%.2f time_ns=%llu fsr_frames=%llu fsr_resets=%llu view=%u canvas=%ux%u\n",
+    if((g->vulkan->frames<=4 || !(g->vulkan->frames&63u)) && g->vulkan->observe){
+        Vk1Device *n=g->vulkan;uint64_t pipeline_binds=0,descriptor_binds=0,material_pushes=0;unsigned i;
+        for(i=0;i<2;i++){
+            pipeline_binds+=n->frame[i].pipeline_binds+n->output[i].pipeline_binds;
+            descriptor_binds+=n->frame[i].descriptor_binds+n->output[i].descriptor_binds;
+            material_pushes+=n->frame[i].material_pushes+n->output[i].material_pushes;
+        }
+        fprintf(stderr,"native Vulkan counters: frames=%llu submits=%llu uploads=%llu atlas_uploads=%llu tiles=%u cpu_ms=%.2f submit_ms=%.2f present_ms=%.2f time_ns=%llu fsr_frames=%llu fsr_resets=%llu view=%u canvas=%ux%u vertices=%llu batches=%llu flush_ns=%llu fsr_ns=%llu pipeline_binds=%llu descriptor_binds=%llu material_pushes=%llu prepare_ns=%llu scene_ns=%llu\n",
             (unsigned long long)g->vulkan->frames,(unsigned long long)g->vulkan->submissions,(unsigned long long)g->vulkan->uploads,(unsigned long long)g->vulkan->atlas_uploads,g->vulkan->tile_count,
             (before-g->vulkan->frame_start)/1000000.0,(submitted-before)/1000000.0,(SDL_GetTicksNS()-submitted)/1000000.0,
             (unsigned long long)SDL_GetTicksNS(),(unsigned long long)g->vulkan->fsr_frames,(unsigned long long)g->vulkan->fsr_resets,
-            g->vulkan->history_mode,vk1_target(g->front)->width,vk1_target(g->front)->height);
+            g->vulkan->history_mode,vk1_target(g->front)->width,vk1_target(g->front)->height,
+            (unsigned long long)n->vertices,(unsigned long long)n->batches,(unsigned long long)n->flush_cost_ns,(unsigned long long)n->fsr_cost_ns,
+            (unsigned long long)pipeline_binds,(unsigned long long)descriptor_binds,(unsigned long long)material_pushes,
+            (unsigned long long)n->prepare_cost_ns,(unsigned long long)n->scene_cost_ns);
+    }
     g->vulkan->frame_start=SDL_GetTicksNS();
 }
 static int vk1_map(int write,unsigned buffer,RenderPixelView *info){

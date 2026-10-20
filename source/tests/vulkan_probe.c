@@ -27,6 +27,46 @@ static int pixel(const uint8_t *rgba,unsigned x,unsigned y,unsigned r,unsigned g
         fprintf(stderr,"Vulkan draw pixel %u,%u: %u,%u,%u expected %u,%u,%u\n",x,y,p[0],p[1],p[2],r,g,b);return 0;
     }return 1;
 }
+static int ui_atlas_pass(VulkanDevice *v){
+    VulkanDraw draw={0};VulkanDrawTexture atlas={0},standalone={0};
+    uint8_t *pixels=calloc(1024u*1024u,4),tile[32*32*4],reference[64*64*4],actual[64*64*4];
+    const float blue[4]={0,0,1,1};unsigned test,x,y,i,pass;int ok=0;
+    if(!pixels || !vulkan_draw_open(&draw,v,64,64))goto done;
+    for(i=3;i<1024u*1024u*4;i+=4)pixels[i]=255; /* Opaque black neighboring tiles. */
+    if(!vulkan_draw_texture_create(&draw,&atlas,pixels,1024,1024,1,0))goto done;
+    atlas.atlas=1;
+    for(test=0;test<4;test++){
+        for(y=0;y<32;y++)for(x=0;x<32;x++){
+            uint8_t *p=tile+(x+y*32)*4;int border=x==0 || y==0 || x==31 || y==31;
+            p[0]=border?(test>=2?255:0):(uint8_t)(x*6);
+            p[1]=border?0:(uint8_t)(y*6);p[2]=border?(test>=2?255:0):32;
+            p[3]=border && test<2?0:255;
+        }
+        if(!standalone.image.image){if(!vulkan_draw_texture_create(&draw,&standalone,tile,32,32,1,0))goto done;}
+        else if(!vulkan_draw_texture_update(&draw,&standalone,tile,sizeof(tile)))goto done;
+        if(!vulkan_draw_texture_region(&draw,&atlas,tile,32,32,32,32))goto done;
+        for(pass=0;pass<2;pass++){
+            float low=test&1?-.25f:0,high=test&1?1.25f:1;VulkanDrawTexture *texture=pass?&atlas:&standalone;
+            if(!vulkan_draw_begin(&draw,blue))goto done;
+            draw.texture_sampler=test&1?7:1;draw.material.texture_sampling=(uint32_t)draw.texture_sampler;
+            draw.material.color_mode=draw.material.alpha_mode=4;draw.material.alpha_function=4;draw.material.alpha_reference=0;
+            draw.material.chroma=test>=2?0x1ff00ffu:0;draw.material.padding[1]=34; /* Tile33, origin32/32. */
+            if(!draw_quad(&draw,8,8,56,56,0,1,1,1,1,texture,0))goto done;
+            for(i=0;i<draw.vertex_count;i++){
+                VulkanDrawVertex *p=draw.staging+i;float u=p->position[0]==56?high:low,w=p->position[1]==56?high:low;
+                p->uv[0]=pass?(32+u*32)/1024:u;p->uv[1]=pass?(32+w*32)/1024:w;p->uv[2]=1;
+            }
+            if(!vulkan_draw_finish(&draw,pass?actual:reference,sizeof(actual)))goto done;
+        }
+        if((test&1) && !pixel(reference,15,8,0,0,255))goto done;
+        for(i=0;i<sizeof(actual);i++)if(abs((int)actual[i]-(int)reference[i])>2){
+            fprintf(stderr,"Vulkan UI atlas mismatch test=%u pixel=%u,%u channel=%u atlas=%u standalone=%u\n",test,(i/4)%64,(i/4)/64,i%4,actual[i],reference[i]);goto done;
+        }
+    }
+    printf("VULKAN_UI_ATLAS_PASS fractional=1.5 clamp=checked repeat=checked alpha=checked chroma=checked standalone_comparison=all_pixels\n");ok=1;
+done:
+    free(pixels);vulkan_draw_texture_destroy(&draw,&standalone);vulkan_draw_texture_destroy(&draw,&atlas);vulkan_draw_close(&draw);return ok;
+}
 static int temporal_mask_pass(VulkanDraw *draw,const float *motion){
     VulkanDevice *v=draw->device;VulkanTemporal temporal={0};VulkanBuffer buffer={0};
     uint8_t pixels[64*64];unsigned frame,i,accepted=0,rejected=0;int ok=0;
@@ -647,7 +687,7 @@ int main(int argc,char **argv){
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
-    if(!graphics_pass(&device,window) || !temporal_monitor_pass(&device) || !reactive_pass(&device,&reactive))goto done;
+    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !temporal_monitor_pass(&device) || !reactive_pass(&device,&reactive))goto done;
 #ifdef UPRISING_FSR3_UPSCALER
     if(!upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
 #else

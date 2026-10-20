@@ -16,8 +16,16 @@ typedef struct Vk1Device {
     int jitter_enabled;
     uint64_t motion_samples,motion_valid;
     uint64_t motion_clipped;
+    VulkanDraw output[2];int composed[2],fsr_requested,fsr_view,fsr_reset;
+    Uint64 fsr_time;uint64_t fsr_frames,fsr_resets;
+#ifdef UPRISING_FSR3_UPSCALER
+    Fsr3Upscaler *upscaler;
+#endif
 } Vk1Device;
-static VulkanDraw *vk1_back(void){return &gl1_current->vulkan->frame[gl1_current->back];}
+static VulkanDraw *vk1_target(unsigned index){
+    Vk1Device *n=gl1_current->vulkan;return n->composed[index]?n->output+index:n->frame+index;
+}
+static VulkanDraw *vk1_back(void){return vk1_target(gl1_current->back);}
 static int vk1_flush(VulkanDraw *d,int resume){
     if(d->recording)gl1_current->vulkan->submissions++;
     if(d->recording && !vulkan_draw_finish(d,NULL,0)){gl1_fail("Vulkan submission");return 0;}
@@ -27,11 +35,55 @@ static int vk1_flush(VulkanDraw *d,int resume){
 static int vk1_ready_draw(void){
     VulkanDraw *d=vk1_back();return gl1_ready() && (d->recording || vulkan_draw_resume(d));
 }
+static int vk1_flush_all(void){
+    Vk1Device *n=gl1_current->vulkan;unsigned i;
+    for(i=0;i<2;i++)if(!vk1_flush(n->frame+i,0) || !vk1_flush(n->output+i,0))return 0;
+    return 1;
+}
+static int vk1_scene_complete(void){
+#ifdef UPRISING_FSR3_UPSCALER
+    Gl1Device *g=gl1_current;Vk1Device *n=g->vulkan;VulkanDraw *scene=n->frame+g->back,*target=n->output+g->back;
+    VulkanDevice *v=vulkan_menu_device(n->menu);VkCommandBuffer command;const VulkanImage *image;
+    const float clear[4]={0,0,0,1};float focal,fov,elapsed;Uint64 now;
+    if(!n->fsr_view)return 1;
+    focal=n->history_projection[2]*n->history_projection[3]*n->history_projection[4];
+    if(!isfinite(focal) || focal<=0)return 0;
+    fov=2*atanf((float)g->height/(2*focal));
+    if(!isfinite(fov) || fov<=0 || fov>=3.14159265f)return 0;
+    if(!n->upscaler){n->upscaler=fsr3_upscaler_open(v,g->width,g->height,g->width*2,g->height*2);if(!n->upscaler)return 0;n->fsr_reset=1;}
+    if(!target->device){
+        if(!vulkan_draw_open(target,v,g->width*2,g->height*2) || !vulkan_draw_begin(target,clear) || !vulkan_draw_finish(target,NULL,0))return 0;
+        /* Geometry stays in legacy screen coordinates; the viewport maps HUD
+         * edges directly onto the larger output, after temporal reconstruction. */
+        target->material.extent[0]=(float)g->width;target->material.extent[1]=(float)g->height;
+    }
+    if(!vk1_flush(scene,0))return 0;
+    now=SDL_GetTicksNS();elapsed=n->fsr_time?(float)((now-n->fsr_time)/1000000.0):16.667f;
+    if(elapsed>250){n->fsr_reset=1;elapsed=250;}if(elapsed<=0)elapsed=.001f;
+    if(!vulkan_command_begin(v,&command))return 0;
+    image=fsr3_upscaler_dispatch(n->upscaler,command,&scene->scene,&scene->reciprocal_depth,&scene->motion,
+        scene->scene_jitter[0],scene->scene_jitter[1],elapsed,10,fov,n->fsr_reset,1);
+    if(!image){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
+    if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+       !vulkan_draw_blit_color(target,image,g->width*2,g->height*2))return 0;
+    n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
+    n->fsr_reset=0;n->composed[g->back]=1;
+    if(n->fsr_frames==1){char message[192];snprintf(message,sizeof(message),
+        "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u; HUD follows dispatch\n",
+        g->width,g->height,g->width*2,g->height*2,fov,fsr3_upscaler_jitter_phases(g->width,g->width*2));
+        game_application_log(g->application,"%s",message);}
+#endif
+    return 1;
+}
 static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     Gl1Device *g=gl1_current;unsigned i;const float clear[4]={0,0,0,0};
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
     {const char *jitter=SDL_getenv("UPRISING_VULKAN_JITTER");g->vulkan->jitter_enabled=jitter && !strcmp(jitter,"1");}
+    {const char *fsr=SDL_getenv("UPRISING_VULKAN_FSR3");g->vulkan->fsr_requested=fsr && !strcmp(fsr,"1");}
+#ifndef UPRISING_FSR3_UPSCALER
+    if(g->vulkan->fsr_requested){gl1_fail("FSR3 host is unavailable on this architecture");goto fail;}
+#endif
     g->width=640;g->height=480;g->front=0;g->back=1;
     g->lfb=malloc((size_t)g->width*g->height*2);g->rgba=malloc((size_t)g->width*g->height*4);
     if(!g->lfb || !g->rgba)goto fail;
@@ -46,7 +98,7 @@ fail:gl1_fail("Vulkan level device allocation");gl1_close();return 0;
 }
 static void vk1_texture_release(Gl1Texture *texture){
     if(!texture->vulkan_texture)return;
-    if(!vk1_flush(vk1_back(),0))vk1_back()->recording=0;
+    if(!vk1_flush_all())vk1_back()->recording=0;
     vulkan_draw_texture_destroy(&gl1_current->vulkan->frame[0],texture->vulkan_texture);
     free(texture->vulkan_texture);texture->vulkan_texture=NULL;
     free(texture->vulkan_pixels);texture->vulkan_pixels=NULL;
@@ -57,11 +109,14 @@ static void vk1_sky_release(void){
 }
 static void vk1_close(void){
     Gl1Device *g=gl1_current;unsigned i;
-    for(i=0;i<2;i++){vk1_flush(g->vulkan->frame+i,0);g->vulkan->frame[i].recording=0;}
+    vk1_flush_all();
     vulkan_menu_device(g->vulkan->menu)->DeviceWaitIdle(vulkan_menu_device(g->vulkan->menu)->device);
     for(i=0;i<4096;i++)vk1_texture_release(g->textures+i);
     vk1_sky_release();vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->remote_mask);vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->tiles);
-    for(i=0;i<2;i++)vulkan_draw_close(g->vulkan->frame+i);
+#ifdef UPRISING_FSR3_UPSCALER
+    fsr3_upscaler_close(g->vulkan->upscaler);
+#endif
+    for(i=0;i<2;i++){vulkan_draw_close(g->vulkan->output+i);vulkan_draw_close(g->vulkan->frame+i);}
     render_motion_release(&g->vulkan->history);
     free(g->vulkan);g->vulkan=NULL;
 }
@@ -79,7 +134,7 @@ static void vk1_refresh(Gl1Texture *texture){
                 if(!ok){gl1_fail("Vulkan tile atlas");return;}
             }
             if(n->tile_count==1024){
-                if(!vk1_flush(n->frame,0) || !vk1_flush(n->frame+1,0))return;
+                if(!vk1_flush_all())return;
                 n->tile_count=0;memset(n->tile_buckets,0,sizeof(n->tile_buckets));
                 /* Cached CPU texture records must reacquire an atlas version. */
                 for(i=0;i<4096;i++)if(g->textures[i].ui_tile)g->textures[i].dirty=1;
@@ -97,7 +152,7 @@ static void vk1_refresh(Gl1Texture *texture){
     g->chroma_enabled=0;gl1_convert(texture,texture->pixels,texture->width*texture->height,g->rgba);g->chroma_enabled=chroma;
     if(t && t->image.image && t->width==texture->width && t->height==texture->height &&
        texture->vulkan_pixels && !memcmp(texture->vulkan_pixels,g->rgba,(size_t)texture->width*texture->height*4))goto current;
-    if(!vk1_flush(g->vulkan->frame,0) || !vk1_flush(g->vulkan->frame+1,0))return;
+    if(!vk1_flush_all())return;
     g->vulkan->uploads++;
     if(!t){t=calloc(1,sizeof(*t));if(!t){gl1_fail("Vulkan texture owner");return;}texture->vulkan_texture=t;}
     if(t->image.image && (t->width!=texture->width || t->height!=texture->height))vulkan_draw_texture_destroy(owner,t);
@@ -206,7 +261,9 @@ static void vk1_line(const GameRenderVertex *a,const GameRenderVertex *b){
         (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan line batch");
 }
 static void vk1_clear(uint32_t color,uint32_t alpha,uint32_t depth){
-    VulkanDraw *d=vk1_back();float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
+    Gl1Device *g=gl1_current;VulkanDraw *d;float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
+    if(g->vulkan->composed[g->back] && !vk1_flush(vk1_back(),0))return;
+    g->vulkan->composed[g->back]=0;d=vk1_back();
     d->recording=0;d->clear_depth=(depth&65535)/65535.0f;if(!vulkan_draw_begin(d,clear))gl1_fail("Vulkan clear");
     gl1_current->vulkan->frame_start=SDL_GetTicksNS();
 }
@@ -215,6 +272,10 @@ static void vk1_swap(void){
     if(!vk1_flush(vk1_back(),0))return;submitted=SDL_GetTicksNS();
     if(!vulkan_menu_present_image(g->vulkan->menu,vk1_back())){gl1_fail("Vulkan level presentation");return;}
     old=g->front;g->front=g->back;g->back=old;
+    /* The next frame prepares its legacy depth/viewport mask before the scene
+     * scope opens. Route that work back to the low-resolution owner now;
+     * retaining the previous output selection leaves stale occlusion depth. */
+    g->vulkan->composed[g->back]=0;
     ++g->vulkan->frames;
     if((g->vulkan->frames<=4 || !(g->vulkan->frames&63u)) && SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE"))
         fprintf(stderr,"native Vulkan counters: frames=%llu submits=%llu uploads=%llu atlas_uploads=%llu tiles=%u cpu_ms=%.2f submit_ms=%.2f present_ms=%.2f\n",
@@ -229,6 +290,8 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
     g->vulkan->track_text=0;
     if(write){if(!g->vulkan->scratch_clean)for(i=0;i<g->width*g->height;i++)g->lfb[i]=0xf81f;}
     else{
+        VulkanDraw *shown=vk1_target(buffer?g->back:g->front);
+        if(shown!=d && (!vk1_flush(shown,0) || !vk1_flush(d,0) || !vulkan_draw_blit_color(d,&shown->color,shown->width,shown->height)))return 0;
         if(!vk1_flush(d,0) || !vulkan_draw_readback(d,g->rgba,(size_t)g->width*g->height*4))return 0;
         for(i=0;i<g->width*g->height;i++){const uint8_t *p=g->rgba+i*4;g->lfb[i]=(uint16_t)((p[0]>>3)<<11|(p[1]>>2)<<5|(p[2]>>3));}
     }
@@ -251,7 +314,7 @@ static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,flo
     d->capture_scene=1;ok=vulkan_draw_triangles(d,v,6,texture,flags);d->capture_scene=0;return ok;
 }
 static int vk1_unmap(void){
-    Gl1Device *g=gl1_current;VulkanDraw *d=g->vulkan->frame+(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;
+    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_target(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;
     static const unsigned corner[6]={0,1,2,0,2,3};
     if(!g->locked)return 0;
     if(g->write_lock){

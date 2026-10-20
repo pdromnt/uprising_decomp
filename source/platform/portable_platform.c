@@ -632,14 +632,26 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
         for(i=0;i<5;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
         if(a->memory.fault)return 0;
-        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)))render_motion_reset(&n->history);
+        if(n->composed[gl1_current->back] && !vk1_flush(vk1_back(),0))return 0;
+        n->composed[gl1_current->back]=0;
+        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection))){render_motion_reset(&n->history);n->fsr_reset=1;}
         n->history_camera=camera;n->history_mode=mode;memcpy(n->history_projection,projection,sizeof(projection));
+        /* SDK reprojection assumes a centered perspective image. Strategic
+         * monitors remain on the native renderer until their cropped inputs
+         * and artwork composition are implemented. Never invent their FOV. */
+        n->fsr_view=n->fsr_requested && fabsf(projection[0]-gl1_current->width*.5f)<.01f && fabsf(projection[1]-gl1_current->height*.5f)<.01f;
+        if(!n->fsr_view){n->fsr_reset=1;n->fsr_time=0;}
+#ifdef UPRISING_FSR3_UPSCALER
+        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(gl1_current->width,gl1_current->width*2),jitter);
+        else
+#endif
         if(n->jitter_enabled)render_motion_jitter(n->frames,8,jitter);
         /* Terrain and model near clipping both use z=10. The infinite depth
          * encoding does not remove their existing finite visibility limits. */
         if(!vulkan_draw_projection(vk1_back(),10,projection[4],jitter[0],jitter[1]))return 0;
         if(!vk1_ready_draw() || !vulkan_draw_reset_reciprocal_depth(vk1_back()))return 0;
     }
+    if(!enabled && gl1_current->world_depth_capture && gl1_current->vulkan && !vk1_scene_complete())return 0;
 #endif
     gl1_current->world_depth_capture=enabled!=0;return 1;
 }

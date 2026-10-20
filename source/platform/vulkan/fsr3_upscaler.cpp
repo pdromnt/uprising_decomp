@@ -37,6 +37,12 @@ FfxErrorCode capabilities(FfxInterface *backend,FfxDeviceCapabilities *out){
 }
 extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint32_t height,uint32_t output_width,uint32_t output_height){
     if(active || !v || !width || !height || output_width<width || output_height<height)return nullptr;
+    VkFormatProperties source_format{},destination_format{};
+    v->format_properties(v->physical,VK_FORMAT_R32G32B32A32_SFLOAT,&source_format);
+    v->format_properties(v->physical,VK_FORMAT_R8G8B8A8_UNORM,&destination_format);
+    if(!(source_format.optimalTilingFeatures&VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+       !(destination_format.optimalTilingFeatures&VK_FORMAT_FEATURE_BLIT_DST_BIT)){
+        std::fprintf(stderr,"FSR3 output requires RGBA32F source and RGBA8 destination blits\n");return nullptr;}
     if(!v->fsr3_storage_supported){std::fprintf(stderr,"FSR3 requires extended storage formats, formatless image writes and extended gathers\n");return nullptr;}
     Fsr3Upscaler *s=new(std::nothrow) Fsr3Upscaler;if(!s)return nullptr;s->device=v;
     s->width=width;s->height=height;s->output_width=output_width;s->output_height=output_height;
@@ -69,6 +75,10 @@ extern "C" void fsr3_upscaler_close(Fsr3Upscaler *s){
     for(auto &image:s->shared)vulkan_image_destroy(s->device,&image);
     vulkan_image_destroy(s->device,&s->output);
     ::operator delete(s->scratch,std::align_val_t(32));if(active==s)active=nullptr;delete s;
+}
+extern "C" uint32_t fsr3_upscaler_jitter_phases(uint32_t width,uint32_t output_width){
+    if(!width || output_width<width || output_width>INT32_MAX)return 0;
+    return static_cast<uint32_t>(ffxFsr3UpscalerGetJitterPhaseCount(static_cast<int32_t>(width),static_cast<int32_t>(output_width)));
 }
 namespace {
 FfxResource resource(const VulkanImage *image,FfxSurfaceFormat format,uint32_t width,uint32_t height,FfxResourceStates state){

@@ -8,6 +8,9 @@
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
 #include "vulkan_menu.h"
 #include "vulkan_draw.h"
+#ifdef UPRISING_FSR3_UPSCALER
+#include "fsr3_upscaler.h"
+#endif
 #endif
 
 typedef struct Gl1Texture {

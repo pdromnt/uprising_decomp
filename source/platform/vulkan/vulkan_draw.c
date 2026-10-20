@@ -151,7 +151,7 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     d->clear_depth=1;d->material.extent[0]=(float)width;d->material.extent[1]=(float)height;
     d->material.color_mode=d->material.alpha_mode=4;d->material.alpha_function=4;
     if(!width || !height || width>v->properties.limits.maxFramebufferWidth || height>v->properties.limits.maxFramebufferHeight || (uint64_t)width*height>SIZE_MAX/16)goto fail;
-    TRY(vulkan_image_create(v,&d->color,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
+    TRY(vulkan_image_create(v,&d->color,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_image_create_aspect(v,&d->depth,VK_FORMAT_D32_SFLOAT,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,width,height,VK_IMAGE_ASPECT_DEPTH_BIT));
     TRY(vulkan_image_create(v,&d->reciprocal_depth,VK_FORMAT_R32_SFLOAT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_image_create(v,&d->motion,VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
@@ -224,6 +224,25 @@ int vulkan_draw_begin(VulkanDraw *d,const float clear[4]){
 int vulkan_draw_resume(VulkanDraw *d){
     if(d->recording || !d->has_frame)return 0;
     d->vertex_count=d->batch_count=0;d->recording=1;d->resuming=1;return 1;
+}
+int vulkan_draw_blit_color(VulkanDraw *d,const VulkanImage *source,uint32_t width,uint32_t height){
+    VulkanDevice *v=d->device;VkCommandBuffer command;VkImageBlit copy={0};
+    VkImageMemoryBarrier b={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    if(d->recording || !d->has_frame || !source || !source->image || source->image==d->color.image || !width || !height)return 0;
+    if(!vulkan_command_begin(v,&command))return 0;
+    b.oldLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;b.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex=b.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;b.image=d->color.image;
+    b.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+    b.srcAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;b.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&b);
+    copy.srcSubresource=copy.dstSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    copy.srcOffsets[1]=(VkOffset3D){(int32_t)width,(int32_t)height,1};
+    copy.dstOffsets[1]=(VkOffset3D){(int32_t)d->width,(int32_t)d->height,1};
+    v->CmdBlitImage(command,source->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,d->color.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy,VK_FILTER_NEAREST);
+    b.oldLayout=b.newLayout;b.newLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    b.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;b.dstAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&b);
+    return vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE);
 }
 int vulkan_draw_reset_reciprocal_depth(VulkanDraw *d){
     size_t i;if(!d->recording)return 0;

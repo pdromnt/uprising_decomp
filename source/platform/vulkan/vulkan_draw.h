@@ -56,6 +56,9 @@ int vulkan_draw_texture_update(VulkanDraw *,VulkanDrawTexture *,const uint8_t *r
 int vulkan_draw_texture_region(VulkanDraw *,VulkanDrawTexture *,const uint8_t *rgba,uint32_t x,uint32_t y,uint32_t width,uint32_t height);
 int vulkan_draw_begin(VulkanDraw *,const float clear[4]);
 int vulkan_draw_resume(VulkanDraw *);
+/* Completed transfer-source image -> completed color target, GPU only. Other
+ * attachments are preserved. Used for temporal output and legacy readbacks. */
+int vulkan_draw_blit_color(VulkanDraw *,const VulkanImage *,uint32_t width,uint32_t height);
 /* Reset scene color/depth/motion on a resumed target without clearing final
  * screen artwork or legacy hardware depth. Must precede captured scene draws. */
 int vulkan_draw_reset_reciprocal_depth(VulkanDraw *);
@@ -68,7 +71,7 @@ int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
 /* Scene-only color: world and sky under their actual depth/alpha/mask tests.
  * Screen artwork never writes it. Retained across flush/resume, reset with
- * temporal world inputs. Final post-upscale composition remains separate work. */
+ * temporal world inputs. Post-upscale HUD uses a separate output target. */
 int vulkan_draw_read_scene(VulkanDraw *,uint8_t *rgba,size_t bytes);
 /* Historical name: returns normalized near/z, not raw numerator/z. */
 int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);

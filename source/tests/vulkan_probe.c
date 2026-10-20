@@ -365,9 +365,13 @@ done:
 }
 #ifdef UPRISING_FSR3_UPSCALER
 static int upscale_pass(VulkanDevice *v){
-    VulkanDraw draw={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
+    VulkanDraw draw={0},composed={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
     const float black[4]={0,0,0,1};float pixels[128*128*4];
+    uint8_t rgba[128*128*4];
     if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_buffer_create(v,&readback,sizeof(pixels),VK_BUFFER_USAGE_TRANSFER_DST_BIT))goto done;
+    if(fsr3_upscaler_jitter_phases(64,128)!=32 || fsr3_upscaler_jitter_phases(64,64)!=8 ||
+       !vulkan_draw_open(&composed,v,128,128) || !vulkan_draw_begin(&composed,black) || !vulkan_draw_finish(&composed,NULL,0))goto done;
+    composed.material.extent[0]=composed.material.extent[1]=64;
     upscaler=fsr3_upscaler_open(v,64,64,128,128);if(!upscaler)goto done;
     if(fsr3_upscaler_open(v,64,64,128,128)){fprintf(stderr,"FSR3 accepted competing context ownership\n");goto done;}
     for(frame=0;frame<3;frame++){
@@ -388,11 +392,23 @@ static int upscale_pass(VulkanDevice *v){
         for(i=0;i<128*128*4;i++)if(!isfinite(pixels[i])){fprintf(stderr,"FSR3 nonfinite output frame=%u index=%u\n",frame,i);goto done;}
         for(i=0;i<3;i++)if(fabsf(pixels[(64+64*128)*4+i]-(i==0?64:i==1?128:191)/255.0f)>0.025f){
             fprintf(stderr,"FSR3 output mismatch frame=%u channel=%u value=%g\n",frame,i,pixels[(64+64*128)*4+i]);goto done;}
+        /* Real output is converted on the GPU, then UI is drawn in legacy
+         * coordinates at output resolution. It must not enter scene history. */
+        if(!vulkan_draw_blit_color(&composed,output,128,128) || !vulkan_draw_resume(&composed))goto done;
+        composed.material.color_mode=0;composed.material.alpha_mode=1;composed.material.alpha_function=7;
+        if(!draw_quad(&composed,2,2,10,10,0,1,0,0,1,NULL,0) || !vulkan_draw_finish(&composed,rgba,sizeof(rgba)))goto done;
+        if(rgba[(8+8*128)*4]!=255 || rgba[(8+8*128)*4+1]!=0 || rgba[(8+8*128)*4+2]!=0 ||
+           abs((int)rgba[(64+64*128)*4]-64)>7)goto done;
+        if(!vulkan_draw_read_scene(&composed,rgba,sizeof(rgba)))goto done;
+        for(i=0;i<sizeof(rgba);i++)if(rgba[i])goto done;
+        /* Legacy CPU consumers still receive their original dimensions. */
+        if(!vulkan_draw_blit_color(&draw,&composed.color,128,128) || !vulkan_draw_readback(&draw,rgba,sizeof(rgba)) ||
+           rgba[(4+4*64)*4]!=255 || rgba[(4+4*64)*4+1]!=0)goto done;
     }
     fsr3_upscaler_close(upscaler);upscaler=fsr3_upscaler_open(v,64,64,128,128);if(!upscaler)goto done;
-    printf("FSR3_UPSCALE_PASS frames=3 render=64x64 output=128x128 upstream_host=1 sharpen=checked reset=checked finite=checked recreate=checked\n");ok=1;
+    printf("FSR3_UPSCALE_PASS frames=3 render=64x64 output=128x128 upstream_host=1 sharpen=checked reset=checked finite=checked recreate=checked composition=checked legacy_readback=checked\n");ok=1;
 done:
-    fsr3_upscaler_close(upscaler);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&draw);return ok;
+    fsr3_upscaler_close(upscaler);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&composed);vulkan_draw_close(&draw);return ok;
 }
 #endif
 int main(int argc,char **argv){

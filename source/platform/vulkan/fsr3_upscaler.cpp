@@ -17,8 +17,15 @@ struct Fsr3Upscaler {
 namespace {
 Fsr3Upscaler *active=nullptr;FfxGetDeviceCapabilitiesFunc original_capabilities=nullptr;
 Fsr3Upscaler *creating=nullptr;FfxCreateBackendContextFunc original_create=nullptr;
+FfxCreateResourceFunc original_resource=nullptr;
+FfxErrorCode create_resource(FfxInterface *b,const FfxCreateResourceDescription *desc,FfxUInt32 id,FfxResourceInternal *out){
+    if(std::getenv("UPRISING_FSR3_TRACE"))std::fprintf(stderr,"FSR3 resource %ls format=%u size=%ux%u\n",desc->name,desc->resourceDescription.format,desc->resourceDescription.width,desc->resourceDescription.height);
+    FfxErrorCode result=original_resource(b,desc,id,out);
+    if(result!=FFX_OK)std::fprintf(stderr,"FSR3 resource failed: %ls code=%x\n",desc->name,result);return result;
+}
 FfxErrorCode create_backend(FfxInterface *b,FfxEffect effect,FfxEffectBindlessConfig *config,FfxUInt32 *id){
     FfxErrorCode result=original_create(b,effect,config,id);
+    if(result!=FFX_OK)std::fprintf(stderr,"FSR3 backend context failed: %x\n",result);
     if(result==FFX_OK && creating)creating->created=true;return result;
 }
 FfxErrorCode capabilities(FfxInterface *backend,FfxDeviceCapabilities *out){
@@ -41,6 +48,7 @@ extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint3
     if(ffxGetInterfaceVK(&desc.backendInterface,ffxGetDeviceVK(&device),s->scratch,desc.backendInterface.scratchBufferSize,1)!=FFX_OK)goto fail;
     original_capabilities=desc.backendInterface.fpGetDeviceCapabilities;desc.backendInterface.fpGetDeviceCapabilities=capabilities;
     original_create=desc.backendInterface.fpCreateBackendContext;desc.backendInterface.fpCreateBackendContext=create_backend;
+    original_resource=desc.backendInterface.fpCreateResource;desc.backendInterface.fpCreateResource=create_resource;
     creating=s;
     {FfxErrorCode result=ffxFsr3UpscalerContextCreate(&s->context,&desc);
     creating=nullptr;

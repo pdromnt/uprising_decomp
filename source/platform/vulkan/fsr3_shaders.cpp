@@ -7,6 +7,7 @@
 #include <new>
 #include <mutex>
 #include <cstdio>
+#include <cstdlib>
 #include "fsr3_prepare_inputs_spv.h"
 #include "fsr3_luma_pyramid_spv.h"
 #include "fsr3_shading_change_pyramid_spv.h"
@@ -53,6 +54,7 @@ extern "C" FfxErrorCode ffxGetPermutationBlobByIndex(FfxEffect effect,FfxPass pa
         std::fprintf(stderr,"FSR3 unsupported shader effect=%u pass=%u options=%u\n",effect,pass,options);return FFX_ERROR_INVALID_ARGUMENT;
     }
     Shader &s=shaders[pass];std::call_once(s.once,[&s]{s.reflect();});if(!s.valid)return FFX_ERROR_BACKEND_API_ERROR;
+    if(std::getenv("UPRISING_FSR3_TRACE"))std::fprintf(stderr,"FSR3 shader pass=%u bytes=%u\n",pass,s.bytes);
     auto &c=s.groups[0],&r=s.groups[1],&w=s.groups[2],&a=s.groups[3];
     new(out) FfxShaderBlob{reinterpret_cast<const uint8_t*>(s.data),s.bytes,c.size,r.size,w.size,0,0,a.size,0,
         c.names,c.slots,c.counts,c.spaces,r.names,r.slots,r.counts,r.spaces,w.names,w.slots,w.counts,w.spaces,

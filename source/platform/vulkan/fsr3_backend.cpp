@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <vector>
+#include <FidelityFX/host/ffx_fsr3upscaler.h>
 #define FSR_INSTANCE_FUNCTIONS(X) \
     X(vkEnumerateDeviceExtensionProperties) X(vkGetPhysicalDeviceMemoryProperties) \
     X(vkGetPhysicalDeviceProperties) X(vkGetPhysicalDeviceProperties2) \
@@ -13,7 +14,25 @@
 FSR_INSTANCE_FUNCTIONS(DECLARE)
 static PFN_vkCreateBuffer vkCreateBuffer;
 static PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+static VkResult VKAPI_CALL create_pool(VkDevice device,const VkDescriptorPoolCreateInfo *info,const VkAllocationCallbacks *allocator,VkDescriptorPool *out){
+    // One upscaler context, eleven supported passes, the SDK's four-frame/ten-
+    // usage descriptor rings. Bound each type by the shader interface maxima.
+    const uint32_t sets=(FFX_FSR3UPSCALER_PASS_COUNT-1)*FFX_MAX_QUEUED_FRAMES*10;
+    VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_SAMPLER,sets*2},{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,sets*FFX_MAX_NUM_SRVS},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,sets*FFX_MAX_NUM_UAVS},{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,sets*FFX_MAX_NUM_CONST_BUFFERS}};
+    VkDescriptorPoolCreateInfo bounded=*info;bounded.maxSets=sets;bounded.poolSizeCount=4;bounded.pPoolSizes=sizes;
+    auto function=reinterpret_cast<PFN_vkCreateDescriptorPool>(vkGetDeviceProcAddr(device,"vkCreateDescriptorPool"));
+    VkResult result=function(device,&bounded,allocator,out);
+    if(result!=VK_SUCCESS)fprintf(stderr,"FSR3 descriptor pool failed: %d\n",result);return result;
+}
+static VkResult VKAPI_CALL create_pipelines(VkDevice device,VkPipelineCache cache,uint32_t count,const VkComputePipelineCreateInfo *info,const VkAllocationCallbacks *allocator,VkPipeline *out){
+    auto function=reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddr(device,"vkCreateComputePipelines"));
+    VkResult result=function(device,cache,count,info,allocator,out);
+    if(result!=VK_SUCCESS)fprintf(stderr,"FSR3 compute pipeline failed: %d\n",result);return result;
+}
 extern "C" PFN_vkVoidFunction VKAPI_CALL fsr3_backend_device_proc(VkDevice device,const char *name){
+    if(!strcmp(name,"vkCreateDescriptorPool"))return reinterpret_cast<PFN_vkVoidFunction>(create_pool);
+    if(!strcmp(name,"vkCreateComputePipelines"))return reinterpret_cast<PFN_vkVoidFunction>(create_pipelines);
     PFN_vkVoidFunction function=vkGetDeviceProcAddr(device,name);if(function)return function;
     if(!strcmp(name,"vkGetBufferMemoryRequirements2KHR"))return vkGetDeviceProcAddr(device,"vkGetBufferMemoryRequirements2");
     if(!strcmp(name,"vkGetImageMemoryRequirements2KHR"))return vkGetDeviceProcAddr(device,"vkGetImageMemoryRequirements2");

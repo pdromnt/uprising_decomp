@@ -68,6 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           SDL_VIDEODRIVER: x11
+          UPRISING_FSR3_TRACE: '1'
         run: xvfb-run -a source/build/vulkan-native/bin/uprising_vulkan_probe --validation
       - name: Configure experimental game (Windows)
         if: runner.os == 'Windows'

@@ -8,6 +8,22 @@ static int result(VkResult r,const char *operation){
     fprintf(stderr,"Vulkan %s failed: VkResult=%d\n",operation,(int)r);return 0;
 }
 #define CHECK(call) do {if(!result((call),#call))goto fail;} while(0)
+int vulkan_runtime_prepare(void){
+#ifdef __APPLE__
+    const char *base=SDL_GetBasePath();char loader[4096],driver[4096];
+    /* Development probes may use an SDK. Bundled games use only their owned
+     * loader/ICD; Finder launches need no shell environment or system install. */
+    if(base && strstr(base,".app/Contents/MacOS/")){
+        if(SDL_snprintf(loader,sizeof(loader),"%s../Frameworks/libvulkan.1.dylib",base)>=(int)sizeof(loader) ||
+           SDL_snprintf(driver,sizeof(driver),"%s../Resources/vulkan/icd.d/libkosmickrisp_icd.json",base)>=(int)sizeof(driver))return SDL_SetError("Vulkan bundle path too long");
+        if(SDL_GetPathInfo(loader,NULL)==false || SDL_GetPathInfo(driver,NULL)==false)return SDL_SetError("Bundled Vulkan loader/driver missing");
+        /* The loader reads libc's environment, not SDL's cached copy. Set this
+         * before it is loaded, on the startup thread. */
+        if(!SDL_SetHint(SDL_HINT_VULKAN_LIBRARY,loader) || SDL_setenv_unsafe("VK_DRIVER_FILES",driver,1)!=0)return false;
+    }
+#endif
+    return 1;
+}
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_message(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
         VkDebugUtilsMessageTypeFlagsEXT type,const VkDebugUtilsMessengerCallbackDataEXT *message,void *context){
     VulkanDevice *v=context;(void)type;
@@ -33,10 +49,8 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
     for(i=0;i<required_count;i++)names[i]=required[i];
     app.pApplicationName="Uprising Vulkan/FSR3 dependency proof";app.apiVersion=VK_API_VERSION_1_2;
     instance.pApplicationInfo=&app;instance.ppEnabledExtensionNames=names;instance.enabledExtensionCount=required_count;
-#ifdef __APPLE__
-    names[instance.enabledExtensionCount++]=VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
-    instance.flags=VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-#endif
+    /* KosmicKrisp is conformant, not a portability-subset implementation.
+     * Do not request an unsupported extension simply because this is macOS. */
     if(validation){
         names[instance.enabledExtensionCount++]=VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
         instance.enabledLayerCount=1;instance.ppEnabledLayerNames=&layer;

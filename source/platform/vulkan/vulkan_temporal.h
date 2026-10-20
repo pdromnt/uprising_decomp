@@ -31,4 +31,6 @@ int vulkan_temporal_crop(VulkanTemporal *,VkCommandBuffer,const VulkanImage *col
  * pre-scene artwork come from the actual matching native MRTs. */
 int vulkan_temporal_compose(VulkanTemporal *,VkCommandBuffer,const VulkanImage *upscaled,
     const VulkanImage *scene,const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t output_width,uint32_t output_height);
+int vulkan_temporal_antialias(VulkanTemporal *,VkCommandBuffer,const VulkanImage *scene,
+    const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t output_width,uint32_t output_height);
 #endif

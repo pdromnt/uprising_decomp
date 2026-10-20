@@ -46,6 +46,7 @@ typedef struct VulkanImage {VkImage image;VkImageView view;VkDeviceMemory memory
 extern "C" {
 #endif
 int vulkan_device_open(VulkanDevice *,SDL_Window *,int validation);
+int vulkan_runtime_prepare(void); /* Before creating an SDL Vulkan window. */
 void vulkan_device_close(VulkanDevice *);
 int vulkan_buffer_create(VulkanDevice *,VulkanBuffer *,VkDeviceSize,VkBufferUsageFlags);
 void vulkan_buffer_destroy(VulkanDevice *,VulkanBuffer *);

@@ -68,8 +68,7 @@ the build derives a backend file with the memory/layout corrections.
 
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
-the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed. CI39356082409 passed all
+the x86 target is deliberately Vulkan-only, including its native GPU probe. Local RTX4060Ti dispatch passed. CI39356082409 passed all
 six application targets, including upscaler execution with Khronos validation on
 Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
 No local validation-layer pass is claimed. The newer game integration below
@@ -297,7 +296,7 @@ Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
 Six-platform application/upscaler-host CI passed, including Linux x64/ARM64 probe
 validation. Validation-layer coverage of level rendering remains pending, as do native Apple
-GPU execution, all supported views/material comparisons and Vulkan MSAA.
+GPU execution and all supported views/material comparisons.
 
 Windows/Linux use the installed Vulkan driver/loader. The new separate world
 targets explicitly require independent blending and R32F/RGBA32F color/sampled images;
@@ -311,10 +310,24 @@ export VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/libkosmickrisp_icd.json"
 ./uprising_vulkan_probe
 ```
 
-Bundling the loader/driver and their dependencies into our app is still pending;
-end users must not require an SDK in the eventual playable build. Current probe
-artifacts are developer executables, not game releases. Main's macOS app remains
-unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
+The experimental macOS app bundles its loader, KosmicKrisp ICD, transitive dylibs and SDK license files. The FSR3 workflow packages a separate ad-hoc signed DMG on macOS26; no system Vulkan installation is needed. Finder defaults this experimental app to Vulkan. Native Apple GPU execution still needs evidence. Main is unchanged; standalone developer probes use the SDK setup above.
+
+## Graphics controls
+
+Vulkan exposes FSR **OFF / UPSCALE / NATIVE AA**, plus sharpening0-100%.
+Native AA reconstructs640x480 ->640x480 (or the actual O crop), then presents it
+inside the fitted output; UPSCALE reconstructs directly to that fitted output.
+These are honest fixed-source modes, not AMD Quality/Balanced/Performance presets.
+Changing mode recreates the SDK context and resets history. FSR already supplies
+temporal AA. With FSR off, **EDGE AA** applies a lightweight spatial diagonal-edge
+filter to world pixels only, including O's cropped monitor. Artwork holes and
+later HUD/menu draws stay outside it. This also works on32-bit Vulkan without
+any AMD SDK build. Saved `display.vulkan_aa` and `display.fsr3_sharpness` preserve
+OpenGL's independent AA preference. Apply/Keep/Revert cover all these values.
+
+The native polygon path converts each surviving polygon vertex once and submits
+its triangles together. Culling/order and per-triangle motion rejection remain;
+motion-reference indexing is bounded constant-time rather than a vertex scan.
 
 ## Current renderer checks
 
@@ -339,7 +352,7 @@ profiles are intentionally terminated; clean shutdown uses the existing route.
 
 Final local x86/x64 application builds and GPU probes pass. The atlas comparison
 covers all pixels in four clamp/repeat and alpha/chroma cases. x64 SDK moving
-checks pass; x86 still reports its explicit SDK image-handle limitation. The
+checks pass; x86 deliberately omits the SDK. The
 existing64-frame resize/camera route passes and exits cleanly: Apply/Revert,
 context retirement, fractional O crop, letterboxing and same-owner history cuts.
 No local Khronos validation layer. Prior commit33f49d02 passed six-target CI.
@@ -377,7 +390,7 @@ above. Broader crowded-view profiling and temporal visual acceptance remain open
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
 - Need particle/layered-sky quality, broader scripted-camera coverage and
-  temporal-quality/performance acceptance, remaining shader variants, 32-bit safe handles,
+  temporal-quality/performance acceptance, remaining shader variants,
   KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 
 Primary references: [AMD integration](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-interpolation/),

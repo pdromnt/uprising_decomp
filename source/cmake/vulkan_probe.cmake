@@ -1,5 +1,6 @@
 # Isolated dependency proof; uses the same backend as the optional game target.
 include("${CMAKE_CURRENT_LIST_DIR}/vulkan.cmake")
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 include("${CMAKE_CURRENT_LIST_DIR}/fsr3_sdk.cmake")
 set(shader "${fsr3_source}/sdk/src/backends/vk/shaders/fsr3upscaler/ffx_fsr3upscaler_autogen_reactive_pass.glsl")
 set(spirv "${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3_reactive.spv")
@@ -10,6 +11,7 @@ add_custom_command(OUTPUT "${embedded}"
         "-I${fsr3_source}/sdk/include/FidelityFX/gpu" "${shader}" -o "${spirv}"
     COMMAND "${CMAKE_COMMAND}" "-DINPUT=${spirv}" "-DOUTPUT=${embedded}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
     DEPENDS ${fsr3_dependencies} cmake/embed_spirv.cmake VERBATIM)
+endif()
 add_executable(uprising_vulkan_probe tests/vulkan_probe.c "${embedded}")
 target_include_directories(uprising_vulkan_probe PRIVATE platform/vulkan "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(uprising_vulkan_probe PRIVATE uprising_vulkan)

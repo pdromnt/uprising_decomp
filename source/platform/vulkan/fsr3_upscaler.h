@@ -16,7 +16,7 @@ uint32_t fsr3_upscaler_jitter_phases(uint32_t render_width,uint32_t output_width
  * before destroying the context; commands use the caller's Vulkan device. */
 const VulkanImage *fsr3_upscaler_dispatch(Fsr3Upscaler *,VkCommandBuffer,
     const VulkanImage *color,const VulkanImage *depth,const VulkanImage *motion,const VulkanImage *rejection,
-    float jitter_x,float jitter_y,float elapsed_ms,float near_z,float vertical_fov,int reset,int sharpen);
+    float jitter_x,float jitter_y,float elapsed_ms,float near_z,float vertical_fov,int reset,float sharpness);
 #ifdef __cplusplus
 }
 #endif

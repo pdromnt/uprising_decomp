@@ -14,7 +14,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     VkPipelineLayoutCreateInfo layout={VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     VkShaderModuleCreateInfo module={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};VkShaderModule shader=VK_NULL_HANDLE;
     VkComputePipelineCreateInfo pipeline={VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    VkPushConstantRange view={VK_SHADER_STAGE_COMPUTE_BIT,0,16};unsigned i;
+    VkPushConstantRange view={VK_SHADER_STAGE_COMPUTE_BIT,0,32};unsigned i;
     if(t->device)return 0;
     memset(t,0,sizeof(*t));t->device=v;t->width=width;t->height=height;
     if(!width || !height || !vulkan_image_create(v,&t->rejection,VK_FORMAT_R8_UNORM,
@@ -119,18 +119,18 @@ int vulkan_temporal_crop(VulkanTemporal *t,VkCommandBuffer command,const VulkanI
     }
     t->crop_initialized=1;return 1;
 }
-int vulkan_temporal_compose(VulkanTemporal *t,VkCommandBuffer command,const VulkanImage *upscaled,
-        const VulkanImage *scene,const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t output_width,uint32_t output_height){
+static int compose(VulkanTemporal *t,VkCommandBuffer command,const VulkanImage *upscaled,
+        const VulkanImage *scene,const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t output_width,uint32_t output_height,int spatial){
     const VulkanImage *inputs[3]={upscaled,scene,native_final};VulkanDevice *v=t->device;
     VkDescriptorImageInfo images[4]={{0}};VkWriteDescriptorSet writes[4]={{0}};unsigned i;
-    int32_t crop[4]={(int32_t)x,(int32_t)y,(int32_t)t->width,(int32_t)t->height};
+    int32_t crop[8]={(int32_t)x,(int32_t)y,(int32_t)t->width,(int32_t)t->height,spatial,0,0,0};
     if(!command || !t->composition_pipeline || !output || !output->image || !output_width || !output_height ||
        x>INT32_MAX || y>INT32_MAX || t->width>INT32_MAX || t->height>INT32_MAX)return 0;
     for(i=0;i<3;i++){
         if(!inputs[i] || !inputs[i]->view || inputs[i]->image==output->image)return 0;
         images[i]=(VkDescriptorImageInfo){t->sampler,inputs[i]->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     }
-    if(inputs[0]->image==inputs[1]->image || inputs[0]->image==inputs[2]->image || inputs[1]->image==inputs[2]->image)return 0;
+    if((!spatial && inputs[0]->image==inputs[1]->image) || inputs[0]->image==inputs[2]->image || inputs[1]->image==inputs[2]->image)return 0;
     images[3]=(VkDescriptorImageInfo){VK_NULL_HANDLE,output->view,VK_IMAGE_LAYOUT_GENERAL};
     for(i=0;i<4;i++){
         writes[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;writes[i].dstSet=t->composition_set;writes[i].dstBinding=i;
@@ -138,13 +138,21 @@ int vulkan_temporal_compose(VulkanTemporal *t,VkCommandBuffer command,const Vulk
         writes[i].pImageInfo=images+i;
     }
     v->UpdateDescriptorSets(v->device,4,writes,0,NULL);
-    for(i=0;i<3;i++)transition(v,command,inputs[i]->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    for(i=spatial?1:0;i<3;i++)transition(v,command,inputs[i]->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     transition(v,command,output->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_GENERAL);
     v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,t->composition_pipeline);
     v->CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,t->composition_layout,0,1,&t->composition_set,0,NULL);
     v->CmdPushConstants(command,t->composition_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(crop),crop);
     v->CmdDispatch(command,(output_width+7)/8,(output_height+7)/8,1);
-    for(i=0;i<3;i++)transition(v,command,inputs[i]->image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    for(i=spatial?1:0;i<3;i++)transition(v,command,inputs[i]->image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     transition(v,command,output->image,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     return 1;
+}
+int vulkan_temporal_compose(VulkanTemporal *t,VkCommandBuffer command,const VulkanImage *upscaled,
+        const VulkanImage *scene,const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t width,uint32_t height){
+    return compose(t,command,upscaled,scene,native_final,output,x,y,width,height,0);
+}
+int vulkan_temporal_antialias(VulkanTemporal *t,VkCommandBuffer command,const VulkanImage *scene,
+        const VulkanImage *native_final,const VulkanImage *output,uint32_t x,uint32_t y,uint32_t width,uint32_t height){
+    return compose(t,command,scene,scene,native_final,output,x,y,width,height,1);
 }

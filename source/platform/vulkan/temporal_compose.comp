@@ -4,7 +4,27 @@ layout(set=0,binding=0) uniform sampler2D upscaled;
 layout(set=0,binding=1) uniform sampler2D scene;
 layout(set=0,binding=2) uniform sampler2D native_final;
 layout(set=0,binding=3,rgba8) uniform writeonly image2D output_color;
-layout(push_constant) uniform View {ivec4 crop;} view;
+layout(push_constant) uniform View {ivec4 crop;ivec4 options;} view;
+vec3 world_texel(ivec2 p,vec3 center){
+    p=clamp(p,view.crop.xy,view.crop.xy+view.crop.zw-1);
+    vec4 c=texelFetch(scene,p,0);
+    return c.a>0.0 || any(notEqual(c.rgb,vec3(0)))?c.rgb:center;
+}
+vec3 edge_aa(ivec2 p,vec3 c){
+    // Spatial edge filter on scene pixels only. Skip flat/low-contrast regions;
+    // blend across the edge normal, never along thin horizontal/vertical ink.
+    vec3 n=world_texel(p+ivec2(0,-1),c),s=world_texel(p+ivec2(0,1),c);
+    vec3 w=world_texel(p+ivec2(-1,0),c),e=world_texel(p+ivec2(1,0),c);
+    vec3 luma=vec3(.299,.587,.114);
+    float lc=dot(c,luma),ln=dot(n,luma),ls=dot(s,luma),lw=dot(w,luma),le=dot(e,luma);
+    float lo=min(lc,min(min(ln,ls),min(lw,le))),hi=max(lc,max(max(ln,ls),max(lw,le)));
+    if(hi-lo<max(.0312,hi*.125))return c;
+    float horizontal=abs(lw-le),vertical=abs(ln-ls);
+    // Corners/diagonals benefit most; preserve straight edges and isolated dots.
+    float balance=min(horizontal,vertical)/max(max(horizontal,vertical),.0001);
+    vec3 across=horizontal>vertical?(w+e)*.5:(n+s)*.5;
+    return mix(c,across,.5*balance);
+}
 vec3 sample_upscaled(vec2 uv){
     ivec2 extent=textureSize(upscaled,0);
     vec2 pixel=uv*vec2(extent)-0.5,weight=fract(pixel);ivec2 base=ivec2(floor(pixel));
@@ -29,7 +49,7 @@ void main(){
         // Both MRTs receive identical RGB blending. Their difference is the
         // surviving pre-scene artwork contribution, never temporal HUD data.
         vec3 artwork=max(final_color.rgb-current_scene.rgb,vec3(0));
-        final_color=vec4(sample_upscaled(uv)+artwork,1);
+        final_color=vec4((view.options.x!=0?edge_aa(source,current_scene.rgb):sample_upscaled(uv))+artwork,1);
     }
     imageStore(output_color,pixel,final_color);
 }

@@ -98,10 +98,11 @@ void transition(VulkanDevice *v,VkCommandBuffer command,VkImage image,VkImageLay
 }
 extern "C" const VulkanImage *fsr3_upscaler_dispatch(Fsr3Upscaler *s,VkCommandBuffer command,
         const VulkanImage *color,const VulkanImage *depth,const VulkanImage *motion,const VulkanImage *rejection,
-        float jitter_x,float jitter_y,float elapsed_ms,float near_z,float vertical_fov,int reset,int sharpen){
+        float jitter_x,float jitter_y,float elapsed_ms,float near_z,float vertical_fov,int reset,float sharpness){
     if(!s || !command || !color || !depth || !motion || !rejection || !std::isfinite(jitter_x) || !std::isfinite(jitter_y) ||
        std::fabs(jitter_x)>0.5f || std::fabs(jitter_y)>0.5f || !std::isfinite(elapsed_ms) || elapsed_ms<=0 ||
-       !std::isfinite(near_z) || near_z<=0 || !std::isfinite(vertical_fov) || vertical_fov<=0 || vertical_fov>=3.14159265f)return nullptr;
+       !std::isfinite(near_z) || near_z<=0 || !std::isfinite(vertical_fov) || vertical_fov<=0 || vertical_fov>=3.14159265f ||
+       !std::isfinite(sharpness) || sharpness<0 || sharpness>1)return nullptr;
     const VulkanImage *inputs[4]={color,depth,motion,rejection};
     for(auto image:inputs)transition(s->device,command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if(!s->initialized)for(auto &image:s->shared)transition(s->device,command,image.image,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
@@ -119,7 +120,7 @@ extern "C" const VulkanImage *fsr3_upscaler_dispatch(Fsr3Upscaler *s,VkCommandBu
     d.motionVectorScale={1,1};d.frameTimeDelta=elapsed_ms;d.preExposure=1;d.reset=reset || !s->initialized;
     // The SDK names describe device-depth endpoints, hence reversed order.
     d.cameraNear=FLT_MAX;d.cameraFar=near_z;d.cameraFovAngleVertical=vertical_fov;d.viewSpaceToMetersFactor=1;
-    d.enableSharpening=sharpen!=0;d.sharpness=0.2f;
+    d.enableSharpening=sharpness>0;d.sharpness=sharpness;
     FfxErrorCode result=ffxFsr3UpscalerContextDispatch(&s->context,&d);
     for(auto image:inputs)transition(s->device,command,image->image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     transition(s->device,command,s->output.image,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);

@@ -3,7 +3,9 @@
 #include "vulkan_present.h"
 #include "vulkan_temporal.h"
 #include "fsr3_upscaler.h"
+#ifdef UPRISING_FSR3_UPSCALER
 #include "fsr3_reactive_spv.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -104,7 +106,7 @@ static int read_image(VulkanDevice *v,const VulkanImage *image,uint32_t width,ui
 done:vulkan_buffer_destroy(v,&buffer);return ok;
 }
 static int temporal_monitor_pass(VulkanDevice *v){
-    VulkanDraw source={0},upscaled={0},output={0};VulkanTemporal temporal={0};int ok=0;unsigned i,x,y,frame;
+    VulkanDraw source={0},upscaled={0},output={0};VulkanTemporal temporal={0};int ok=0;unsigned i,x,y,frame=0,stage=0;
     const float blue[4]={0,0,1,1},black[4]={0,0,0,1};uint8_t native[64*64*4],scene[64*64*4],crop[31*23*4],final[128*128*4];
     float depth[64*64],motion[64*64*4],crop_depth[31*23],crop_motion[31*23*4];
     if(!vulkan_draw_open(&source,v,64,64) || !vulkan_draw_open(&upscaled,v,62,46) || !vulkan_draw_open(&output,v,128,128) ||
@@ -119,6 +121,14 @@ static int temporal_monitor_pass(VulkanDevice *v){
        !draw_quad(&source,8,26,39,35,.4f,1,0,0,1,NULL,3) ||
        !draw_quad(&source,8,20,20,26,.4f,1,0,0,1,NULL,3) ||
        !draw_quad(&source,26,20,39,26,.4f,1,0,0,1,NULL,3))goto done;
+    {
+        VulkanDrawVertex edge[3]={0};unsigned k;
+        for(k=0;k<3;k++){
+            edge[k].position[0]=k==1?38:30;edge[k].position[1]=k==2?34:28;edge[k].position[2]=.1f;
+            edge[k].color[0]=edge[k].color[1]=edge[k].color[2]=edge[k].color[3]=edge[k].uv[2]=1;
+        }
+        if(!vulkan_draw_triangles(&source,edge,3,NULL,3|VULKAN_DRAW_LEQUAL))goto done;
+    }
     for(i=0;i<source.vertex_count;i++){
         VulkanDrawVertex *vertex=source.staging+i;
         vertex->previous[0]=vertex->position[0]+4;vertex->previous[1]=vertex->position[1]-2;
@@ -130,6 +140,7 @@ static int temporal_monitor_pass(VulkanDevice *v){
        !vulkan_draw_begin(&output,black) || !vulkan_draw_finish(&output,NULL,0))goto done;
     output.material.extent[0]=output.material.extent[1]=64;
     for(frame=0;frame<3;frame++){
+        stage=1;
         VkCommandBuffer command;
         if(frame==2){
             vulkan_draw_close(&output);vulkan_draw_close(&upscaled);
@@ -146,12 +157,14 @@ static int temporal_monitor_pass(VulkanDevice *v){
            !read_image(v,temporal.cropped+1,31,23,crop_depth,sizeof(crop_depth)) ||
            !read_image(v,temporal.cropped+2,31,23,crop_motion,sizeof(crop_motion)))goto done;
         for(y=0;y<23;y++){
+            stage=2;
             if(memcmp(crop+y*31*4,scene+((y+12)*64+8)*4,31*4) ||
                memcmp(crop_depth+y*31,depth+(y+12)*64+8,31*sizeof(float)) ||
                memcmp(crop_motion+y*31*4,motion+((y+12)*64+8)*4,31*4*sizeof(float)))goto done;
         }
         /* Nearest reconstruction isolates composition from SDK quality here;
          * the separate upscaler pass and live game exercise actual FSR. */
+        stage=3;
         if(!vulkan_draw_blit_color(&upscaled,temporal.cropped,31,23) || !vulkan_command_begin(v,&command) ||
            !vulkan_temporal_compose(&temporal,command,&upscaled.color,&source.scene,&source.color,&output.color,8,12,output.width,output.height) ||
            !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_draw_resume(&output))goto done;
@@ -165,10 +178,28 @@ static int temporal_monitor_pass(VulkanDevice *v){
             if(abs(final[(y*output.width+x)*4+i]-expected)>1){fprintf(stderr,"Monitor composition mismatch %u/%u channel=%u\n",x,y,i);goto done;}
         }
         if(frame==2 && (!pixel(final,0,0,255,255,255) || final[(45*100+20)*4]!=255 || final[(45*100+20)*4+2]!=0 ||
-           abs((int)final[(22*100+22)*4]-128)>1 || abs((int)final[(22*100+22)*4+2]-128)>1))goto done;
+           abs((int)final[(22*100+22)*4]-128)>1 || abs((int)final[(22*100+22)*4+2]-128)>1)){fprintf(stderr,"Monitor fractional landmarks failed\n");goto done;}
+    }
+    {
+        stage=4;
+        VkCommandBuffer command;unsigned changed=0;
+        if(!vulkan_command_begin(v,&command) ||
+           !vulkan_temporal_antialias(&temporal,command,&source.scene,&source.color,&output.color,8,12,output.width,output.height) ||
+           !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_draw_resume(&output) ||
+           !draw_quad(&output,0,0,4,4,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&output,final,sizeof(final))){fprintf(stderr,"Spatial AA dispatch/readback failed\n");goto done;}
+        for(y=0;y<output.height;y++)for(x=0;x<output.width;x++)for(i=0;i<3;i++){
+            unsigned sx=(2*x+1)*64/(2*output.width),sy=(2*y+1)*64/(2*output.height);
+            int hud=(2*x+1)*64<8*output.width && (2*y+1)*64<8*output.height;
+            int covered=sx>=8 && sx<39 && sy>=12 && sy<35 && scene[(sy*64+sx)*4+3];
+            int difference=abs(final[(y*output.width+x)*4+i]-(hud?255:native[(sy*64+sx)*4+i]));
+            if(!hud && covered)changed+=difference>2;
+            else if(difference>1){fprintf(stderr,"Spatial AA changed artwork/HUD at %u,%u\n",x,y);goto done;}
+        }
+        if(!changed || !pixel(final,0,0,255,255,255)){fprintf(stderr,"Spatial AA diagonal unchanged: %u\n",changed);goto done;}
+        printf("VULKAN_SPATIAL_AA_PASS diagonal=filtered flat_artwork=preserved irregular_holes=preserved hud=preserved fractional_output=checked\n");
     }
     printf("VULKAN_MONITOR_COMPOSITION_PASS crop=31x23 offset=8/12 depth_motion_exact=checked irregular_artwork=checked translucency=checked hud=checked reuse=checked fractional_resize=checked\n");ok=1;
-done:vulkan_temporal_close(&temporal);vulkan_draw_close(&output);vulkan_draw_close(&upscaled);vulkan_draw_close(&source);return ok;
+done:if(!ok)fprintf(stderr,"Monitor check failed stage=%u frame=%u\n",stage,frame);vulkan_temporal_close(&temporal);vulkan_draw_close(&output);vulkan_draw_close(&upscaled);vulkan_draw_close(&source);return ok;
 }
 static int graphics_pass(VulkanDevice *v,SDL_Window *window){
     VulkanDraw draw={0};VulkanDrawTexture texture={0};VulkanPresent present={0};uint8_t rgba[64*64*4];unsigned frame;int ok=0;
@@ -470,6 +501,7 @@ done:
 
 /* Runs AMD's unmodified FSR3 reactive-mask shader. This proves a real SDK
  * compute pass, not temporal upscaling or frame generation. No game assets. */
+#ifdef UPRISING_FSR3_UPSCALER
 static int reactive_pass(VulkanDevice *v,float *reactive){
     enum {SIDE=8,PIXELS=SIDE*SIDE};int ok=0;unsigned i;
     VulkanImage image[3]={{0}};VulkanBuffer constants={0},settings={0},readback={0};
@@ -558,7 +590,6 @@ done:
 #undef VK
 #undef TRY
 }
-#ifdef UPRISING_FSR3_UPSCALER
 static int moving_quad(VulkanDraw *d,float left,float top,float right,float bottom,
         float depth,float r,float g,float b,float q,float previous_dx){
     size_t first=d->vertex_count,i;
@@ -682,16 +713,18 @@ int main(int argc,char **argv){
     }
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,"0");
     if(!SDL_Init(SDL_INIT_VIDEO))goto done;
+    if(!vulkan_runtime_prepare())goto done;
     if(!SDL_Vulkan_LoadLibrary(NULL))goto done;
     loaded=1;
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
-    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !temporal_monitor_pass(&device) || !reactive_pass(&device,&reactive))goto done;
+    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !temporal_monitor_pass(&device))goto done;
 #ifdef UPRISING_FSR3_UPSCALER
-    if(!upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
+    if(!reactive_pass(&device,&reactive) || !upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
 #else
-    printf("FSR3_HOST_UNAVAILABLE pointer_bits=32 reason=upstream_external_image_handle_width\n");
+    (void)reactive;
+    printf("VULKAN_ONLY_TARGET pointer_bits=32 fsr3=not-built\n");
 #endif
     if(show){SDL_PumpEvents();SDL_Delay(750);}
     if(device.validation_errors){fprintf(stderr,"Vulkan validation errors=%u\n",device.validation_errors);goto done;}

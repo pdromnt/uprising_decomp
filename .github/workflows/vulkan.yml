@@ -31,7 +31,7 @@ jobs:
           - platform: linux-arm64
             runner: ubuntu-24.04-arm
           - platform: macos-arm64
-            runner: macos-15
+            runner: macos-26
     steps:
       - uses: actions/checkout@v6
       - name: Windows shader compiler
@@ -56,6 +56,17 @@ jobs:
       - name: macOS shader compiler
         if: runner.os == 'macOS'
         run: brew install glslang
+      - uses: actions/cache@v4
+        if: runner.os == 'macOS'
+        with:
+          path: source/build/vulkan-sdk
+          key: macos-arm64-vulkan-sdk-1.4.363.0
+      - name: macOS bundled loader and KosmicKrisp inputs
+        if: runner.os == 'macOS'
+        run: |
+          bash source/scripts/macos-vulkan-sdk.sh "$PWD/source/build/vulkan-sdk"
+          echo "VULKAN_SDK=$PWD/source/build/vulkan-sdk/macOS" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=26.0" >> "$GITHUB_ENV"
       - name: Configure Windows
         if: runner.os == 'Windows'
         run: cmake -S source -B source/build/vulkan-native -A ${{ matrix.arch }} -DUPRISING_VULKAN_PROBE_ONLY=ON
@@ -84,6 +95,20 @@ jobs:
         run: cmake -S source -B source/build/vulkan-game -G Ninja -DCMAKE_BUILD_TYPE=Release -DUPRISING_EXPERIMENTAL_VULKAN=ON -DUPRISING_ASSET_DIRECTORY=${{ github.workspace }}/source/build/vulkan-game/bin -DUPRISING_EXECUTABLE_NAME=uprising
       - name: Compile experimental game integration
         run: cmake --build source/build/vulkan-game --config Release --parallel 2
+      - name: Package self-contained macOS experimental game
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: |
+          cmake --install source/build/vulkan-game --config Release --prefix source/build/vulkan-stage --component Runtime
+          if($LASTEXITCODE){throw 'Vulkan bundle installation failed'}
+          ./source/scripts/package-release.ps1 -Version FSR3-snapshot -Platform macos-arm64 -StageDirectory source/build/vulkan-stage
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'macOS'
+        with:
+          name: vulkan-game-macos-arm64
+          path: source/dist/*
+          if-no-files-found: error
+          retention-days: 7
       - name: Collect developer probe
         shell: pwsh
         run: |

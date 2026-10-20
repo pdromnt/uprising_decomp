@@ -582,6 +582,12 @@ int game_application_surface_polygon(GameApplication *a,const GameRenderVertex *
         vertices=mask;
     }
     for(i=0;i<count;++i)y[i]=vertices[i].y;n=game_screen_polygon_triangles(y,count,triangles);
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(gl1_current && gl1_current->vulkan && !gl1_current->sky_active){
+        if(!gl1_draw_ready())return 0;
+        return vk1_polygon(vertices,count,triangles,n);
+    }
+#endif
     for(i=0;i<n;++i)gl1_triangle(vertices+triangles[i][0],vertices+triangles[i][1],vertices+triangles[i][2]);
     return 1;
 }
@@ -653,7 +659,8 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         n->fsr_requested=requested;memcpy(n->fsr_output,output,sizeof(output));
         if(n->composed[gl1_current->back] && !vk1_flush(vk1_back(),0))return 0;
         n->composed[gl1_current->back]=0;
-        n->fsr_monitor=n->fsr_requested && mode==7;
+        n->spatial_view=!requested && game_display_antialias_samples(a)==1;
+        n->fsr_monitor=(n->fsr_requested || n->spatial_view) && mode==7;
         if(n->fsr_monitor){
             uint32_t left=game_memory_read_u32(&a->memory,0x6025e0),top=game_memory_read_u32(&a->memory,0x6025e4);
             uint32_t right=game_memory_read_u32(&a->memory,0x6025e8),bottom=game_memory_read_u32(&a->memory,0x6025ec);
@@ -666,10 +673,11 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         /* Subtracting the crop origin centers the actual monitor camera.
          * Previous-minus-current pixel vectors are translation invariant. */
         n->fsr_view=n->fsr_requested && fabsf(projection[0]-(crop[0]+crop[2]*.5f))<.01f && fabsf(projection[1]-(crop[1]+crop[3]*.5f))<.01f;
-        if(n->fsr_monitor && !n->fsr_view)return 0;
+        n->spatial_view=n->spatial_view && fabsf(projection[0]-(crop[0]+crop[2]*.5f))<.01f && fabsf(projection[1]-(crop[1]+crop[3]*.5f))<.01f;
+        if(n->fsr_monitor && !n->fsr_view && !n->spatial_view)return 0;
         if(!n->fsr_view){n->fsr_reset=1;n->fsr_time=0;}
 #ifdef UPRISING_FSR3_UPSCALER
-        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(crop[2],(uint32_t)(((uint64_t)crop[2]*output[0]+gl1_current->width-1)/gl1_current->width)),jitter);
+        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(crop[2],game_display_temporal_native(a)?crop[2]:(uint32_t)(((uint64_t)crop[2]*output[0]+gl1_current->width-1)/gl1_current->width)),jitter);
         else
 #endif
         if(n->jitter_enabled)render_motion_jitter(n->frames,8,jitter);

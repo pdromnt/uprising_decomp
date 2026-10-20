@@ -19,4 +19,7 @@ install(FILES third_party/SDL3-LICENSE.txt third_party/FreeType-FTL.txt third_pa
 install(FILES third_party/fsr/LICENSE.txt DESTINATION "${runtime_assets}" RENAME FSR-LICENSE.txt COMPONENT Runtime)
 if(APPLE)
     install(FILES "${asset_root}/README.TXT" DESTINATION . COMPONENT Runtime)
+    if(UPRISING_EXPERIMENTAL_VULKAN)
+        include("${CMAKE_CURRENT_LIST_DIR}/macos_vulkan.cmake")
+    endif()
 endif()

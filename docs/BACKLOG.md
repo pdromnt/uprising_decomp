@@ -1,7 +1,7 @@
 # Remaining work
 
 - `FSR3` branch: Vulkan renderer and FSR 3.1 temporal upscaling; frame generation
-  deferred. Stages, current proof and platform gaps: [experiment](FSR3.md).
+  deferred;32-bit builds are Vulkan-only. Stages, current proof and platform gaps: [experiment](FSR3.md).
 
 - Collect manual gameplay results on Windows ARM64 and Linux x64; extend the
   confirmed macOS ARM64 and CM5/Linux ARM64 runs to longer sessions and reloads.

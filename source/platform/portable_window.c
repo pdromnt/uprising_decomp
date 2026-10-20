@@ -19,6 +19,7 @@
 #include "level_world_surface.h"
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
 #include "vulkan_menu.h"
+#include "vulkan_device.h"
 #endif
 
 typedef struct MenuTextSurface {
@@ -322,6 +323,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     GameMemory *m=&a->memory;GameAddress p;int use_vulkan=0;
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     {const char *renderer=SDL_getenv("UPRISING_RENDERER");use_vulkan=renderer && !strcmp(renderer,"vulkan");}
+#ifdef __APPLE__
+    if(!SDL_getenv("UPRISING_RENDERER"))use_vulkan=1;
+#endif
 #endif
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
@@ -337,6 +341,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO))goto fail;
     w->sdl_initialized=1;
+#ifdef UPRISING_EXPERIMENTAL_VULKAN
+    if(use_vulkan && !vulkan_runtime_prepare())goto fail;
+#endif
     if(!use_vulkan && (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
        !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24) || !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8) ||
        !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1)))goto fail;

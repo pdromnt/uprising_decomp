@@ -25,6 +25,9 @@ typedef struct Vk1Device {
     uint32_t fsr_crop[4];int fsr_monitor;uint64_t fsr_monitor_frames;
     uint32_t fsr_output[2],fsr_context_output[2];
     VulkanTemporal temporal;int spatial_view;
+    /* Renderer-thread scratch, reused per polygon. Large local arrays caused
+     * a stack-growth probe on every polygon, including the GL comparator. */
+    VulkanDrawVertex polygon_source[32],polygon_output[90];
 #ifdef UPRISING_FSR3_UPSCALER
     Fsr3Upscaler *upscaler;
 #endif
@@ -304,7 +307,8 @@ static void vk1_triangle(const GameRenderVertex *a,const GameRenderVertex *b,con
 }
 static int vk1_polygon(const GameRenderVertex *vertices,unsigned count,const uint8_t triangles[30][3],unsigned n){
     Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();
-    VulkanDrawVertex converted[32],output[90];uint32_t known=0;unsigned i,j,used=0;
+    VulkanDrawVertex *converted=g->vulkan->polygon_source,*output=g->vulkan->polygon_output;
+    uint32_t known=0;unsigned i,j,used=0;
     if(count>32 || n>30 || !vk1_ready_draw())return 0;
     for(i=0;i<n;i++){
         const GameRenderVertex *a=vertices+triangles[i][0],*b=vertices+triangles[i][1],*c=vertices+triangles[i][2];

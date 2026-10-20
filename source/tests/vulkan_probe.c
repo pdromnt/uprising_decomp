@@ -705,17 +705,24 @@ done:
 }
 #endif
 int main(int argc,char **argv){
-    SDL_Window *window=NULL;VulkanDevice device={0};int show=0,validation=0,ok=0,i,loaded=0;float reactive=0;
+    SDL_Window *window=NULL;VulkanDevice device={0};int show=0,validation=0,ok=0,i,loaded=0,bundle_check=0;float reactive=0;
     for(i=1;i<argc;i++){
         if(!strcmp(argv[i],"--show"))show=1;
         else if(!strcmp(argv[i],"--validation"))validation=1;
-        else {fprintf(stderr,"Usage: %s [--show] [--validation]\n",argv[0]);return 2;}
+        else if(!strcmp(argv[i],"--bundle-loader-check"))bundle_check=1;
+        else {fprintf(stderr,"Usage: %s [--show] [--validation] [--bundle-loader-check]\n",argv[0]);return 2;}
     }
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,"0");
     if(!SDL_Init(SDL_INIT_VIDEO))goto done;
     if(!vulkan_runtime_prepare())goto done;
     if(!SDL_Vulkan_LoadLibrary(NULL))goto done;
     loaded=1;
+    if(bundle_check){
+        const char *loader=SDL_GetHint(SDL_HINT_VULKAN_LIBRARY),*driver=SDL_getenv("VK_DRIVER_FILES");
+        if(SDL_getenv("VULKAN_SDK") || SDL_getenv("DYLD_LIBRARY_PATH"))goto done;
+        if(!loader || !driver || !strstr(loader,".app/Contents/Frameworks/") || !strstr(driver,".app/Contents/Resources/"))goto done;
+        printf("VULKAN_BUNDLE_LOADER_PASS sdk_environment=absent loader=owned icd=owned gpu_execution=not-tested\n");ok=1;goto done;
+    }
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;

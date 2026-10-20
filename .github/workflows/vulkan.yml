@@ -101,6 +101,21 @@ jobs:
         run: |
           cmake --install source/build/vulkan-game --config Release --prefix source/build/vulkan-stage --component Runtime
           if($LASTEXITCODE){throw 'Vulkan bundle installation failed'}
+          # Exercise SDL's real Resources base path and loader with no SDK env.
+          # Temporarily give the existing probe the bundle's executable identity.
+          $exe='source/build/vulkan-stage/Uprising.app/Contents/MacOS/Uprising'
+          Move-Item $exe "$exe.game"
+          try {
+            Copy-Item source/build/vulkan-native/bin/uprising_vulkan_probe $exe
+            & chmod +x $exe
+            & codesign --force --deep --sign - source/build/vulkan-stage/Uprising.app
+            if($LASTEXITCODE){throw 'Probe bundle signing failed'}
+            & env -u VULKAN_SDK -u DYLD_LIBRARY_PATH -u VK_DRIVER_FILES -u VK_ICD_FILENAMES $exe --bundle-loader-check
+            if($LASTEXITCODE){throw 'Self-contained Vulkan loader check failed'}
+          } finally {
+            Remove-Item -LiteralPath $exe -ErrorAction SilentlyContinue
+            Move-Item "$exe.game" $exe
+          }
           ./source/scripts/package-release.ps1 -Version FSR3-snapshot -Platform macos-arm64 -StageDirectory source/build/vulkan-stage
       - uses: actions/upload-artifact@v7
         if: runner.os == 'macOS'

@@ -24,6 +24,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/libkosmickrisp_icd.json"
 install(CODE "
     include(BundleUtilities)
     set(app \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Uprising.app\")
+    get_filename_component(app \"\${app}\" ABSOLUTE)
     fixup_bundle(\"\${app}\"
         \"\${app}/Contents/Frameworks/libvulkan.1.dylib;\${app}/Contents/Frameworks/${driver_name}\"
         \"${UPRISING_VULKAN_SDK}/lib\")

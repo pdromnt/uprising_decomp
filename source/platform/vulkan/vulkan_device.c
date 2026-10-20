@@ -10,12 +10,14 @@ static int result(VkResult r,const char *operation){
 #define CHECK(call) do {if(!result((call),#call))goto fail;} while(0)
 int vulkan_runtime_prepare(void){
 #ifdef __APPLE__
-    const char *base=SDL_GetBasePath();char loader[4096],driver[4096];
+    const char *base=SDL_GetBasePath(),*contents=base?strstr(base,".app/Contents/"):NULL;char loader[4096],driver[4096];
     /* Development probes may use an SDK. Bundled games use only their owned
      * loader/ICD; Finder launches need no shell environment or system install. */
-    if(base && strstr(base,".app/Contents/MacOS/")){
-        if(SDL_snprintf(loader,sizeof(loader),"%s../Frameworks/libvulkan.1.dylib",base)>=(int)sizeof(loader) ||
-           SDL_snprintf(driver,sizeof(driver),"%s../Resources/vulkan/icd.d/libkosmickrisp_icd.json",base)>=(int)sizeof(driver))return SDL_SetError("Vulkan bundle path too long");
+    if(contents){
+        /* SDL defaults to Contents/Resources, not the executable directory. */
+        size_t prefix=(size_t)(contents-base)+strlen(".app/Contents/");
+        if(prefix>=sizeof(loader) || SDL_snprintf(loader,sizeof(loader),"%.*sFrameworks/libvulkan.1.dylib",(int)prefix,base)>=(int)sizeof(loader) ||
+           SDL_snprintf(driver,sizeof(driver),"%.*sResources/vulkan/icd.d/libkosmickrisp_icd.json",(int)prefix,base)>=(int)sizeof(driver))return SDL_SetError("Vulkan bundle path too long");
         if(SDL_GetPathInfo(loader,NULL)==false || SDL_GetPathInfo(driver,NULL)==false)return SDL_SetError("Bundled Vulkan loader/driver missing");
         /* The loader reads libc's environment, not SDL's cached copy. Set this
          * before it is loaded, on the startup thread. */

@@ -69,6 +69,8 @@ void main() {
     if(previous_coordinate.w>=0.99999 && previous_coordinate.z>0.0)
         output_motion=vec4(previous_coordinate.xy/previous_coordinate.z-(gl_FragCoord.xy-material.jitter),1,0);
     // The game leaves blending enabled for opaque terrain too. Only actual
-    // translucency rejects valid solid history; no-write effects always do.
-    if((material.padding.x&1u)!=0u || ((material.padding.x&2u)!=0u && alpha<0.99999))output_motion.w=1.0;
+    // translucency rejects valid solid history. A no-write, zero-alpha blended
+    // effect contributes no color and must preserve the underlying history.
+    if((material.padding.x&1u)!=0u)output_motion.w=(material.padding.x&2u)!=0u && alpha<=0.0?0.0:1.0;
+    else if((material.padding.x&2u)!=0u && alpha<0.99999)output_motion.w=1.0;
 }

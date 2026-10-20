@@ -273,7 +273,7 @@ static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32
     /* Blended effects can also write depth. Keep their solid depth/vector
      * output, but reject their changing color just like no-write translucency. */
     material.padding[0]=(flags&CAPTURE_REACTIVE?1u:0u)|
-        ((d->capture_depth || d->capture_background) && (flags&VULKAN_DRAW_BLEND)?2u:0u)|
+        (flags&VULKAN_DRAW_BLEND?2u:0u)|
         (d->capture_background?4u:0u);
     material.depth_scale=d->scene_depth_scale;
     material.jitter[0]=flags&CAPTURE_SCENE?d->scene_jitter[0]:0;

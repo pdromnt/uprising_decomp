@@ -310,9 +310,11 @@ static void vk1_swap(void){
     g->vulkan->composed[g->back]=0;
     ++g->vulkan->frames;
     if((g->vulkan->frames<=4 || !(g->vulkan->frames&63u)) && SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE"))
-        fprintf(stderr,"native Vulkan counters: frames=%llu submits=%llu uploads=%llu atlas_uploads=%llu tiles=%u cpu_ms=%.2f submit_ms=%.2f present_ms=%.2f\n",
+        fprintf(stderr,"native Vulkan counters: frames=%llu submits=%llu uploads=%llu atlas_uploads=%llu tiles=%u cpu_ms=%.2f submit_ms=%.2f present_ms=%.2f time_ns=%llu fsr_frames=%llu fsr_resets=%llu view=%u canvas=%ux%u\n",
             (unsigned long long)g->vulkan->frames,(unsigned long long)g->vulkan->submissions,(unsigned long long)g->vulkan->uploads,(unsigned long long)g->vulkan->atlas_uploads,g->vulkan->tile_count,
-            (before-g->vulkan->frame_start)/1000000.0,(submitted-before)/1000000.0,(SDL_GetTicksNS()-submitted)/1000000.0);
+            (before-g->vulkan->frame_start)/1000000.0,(submitted-before)/1000000.0,(SDL_GetTicksNS()-submitted)/1000000.0,
+            (unsigned long long)SDL_GetTicksNS(),(unsigned long long)g->vulkan->fsr_frames,(unsigned long long)g->vulkan->fsr_resets,
+            g->vulkan->history_mode,vk1_target(g->front)->width,vk1_target(g->front)->height);
     g->vulkan->frame_start=SDL_GetTicksNS();
 }
 static int vk1_map(int write,unsigned buffer,RenderPixelView *info){

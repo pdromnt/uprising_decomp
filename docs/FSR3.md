@@ -69,7 +69,7 @@ the build derives a backend file with the memory/layout corrections.
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
 the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed. CI39354481661 passed all
+is still needed there. Local RTX4060Ti dispatch passed. CI39356082409 passed all
 six application targets, including upscaler execution with Khronos validation on
 Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
 No local validation-layer pass is claimed. The newer game integration below
@@ -125,7 +125,10 @@ correspondence. Independent cloud/horizon layers raise rejection while preservin
 the base vector; a blended sky is not assigned one fictitious motion vector.
 The mask is allocated once and stays on the GPU; HUD never enters it.
 World effects now raise rejection even when depth testing is disabled. Unknown
-particles still lack stable vectors. Before scene submission, the actual rendered
+particles still lack stable vectors. Fully transparent blended no-write effects
+preserve existing history; zero-alpha draws without blending still replace RGB
+and reject history. The GPU fixture checks both cases, including a regression
+that failed before this correction. Before scene submission, the actual rendered
 view matrix detects same-camera jumps over45degrees or2048world units (half a
 spatial cell), skipped frames, backward time and gaps over250ms. These clear
 geometry/sky samples and reset FSR before new vectors are resolved. Rigid inverse
@@ -172,7 +175,15 @@ waits300ms without replacing that camera. Each case verifies an SDK reset and
 zero stale geometry/sky correspondences; ordinary history must recover afterward.
 Core checks cover angle wrapping, distant-origin turns, frame/time gaps and invalid poses.
 The FSR-enabled1740-frame Training1 movement/fire/weapon/save/reload/shutdown
-check passes with exact restored position/ammo. No matched FPS claim for this batch.
+check passes with exact restored position/ammo.
+The actual SDK moving fixture runs ten jittered frames: a near foreground moves
+and disappears over a farther surface, a translucent effect appears/disappears,
+then a reset changes the background. Readbacks check input depth/motion and
+output interiors within0.08 per channel, including vacated footprints. These are
+bounded numeric checks, not edge-quality or all-material acceptance.
+Live Priva additionally matches submitted particle pixels against their actual
+fog-adjusted scene colors and requires full GPU history rejection there. Fully
+fogged/occluded candidates do not establish visible particle coverage.
 
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
@@ -224,7 +235,8 @@ coverage. Unknown point particles reject history rather than inventing vectors.
 Priva's actual claim/power-up/O-return/citadel-camera/shutdown route also passed,
 including normalized native point RGB. Its fixture now uses native pixel views;
 the comparator's point check remains, with a Vulkan submission check added.
-Particle quality and broader scripted-camera discontinuities still need coverage.
+Visible Priva particle rejection and synthetic effect/disocclusion output are
+checked; broader moving-material quality and scripted-camera routes remain.
 
 Per-batch projection snapshots apply subpixel jitter to world geometry and skies;
 motion subtracts the current raster jitter and history keeps original positions.
@@ -258,17 +270,29 @@ closed normally. Runs were windowed, muted and isolated; stable EXEs were untouc
 The existing Training1 1,740-frame movement/fire/weapon/save/reload/shutdown check
 passed with exact saved position/ammo restored. Erudara's 320-frame O-view check
 passed remote sky/mask, camera rotation, return to tank, pause and window restore.
-These establish exercised routes, not complete visual equivalence or performance
-acceptance. Matched 15-second stationary Training1 samples without GDB now measure
-about 152 FPS Vulkan versus 141 FPS stable OpenGL with depth and motion capture on
-RTX4060Ti (640x480, windowed/muted/isolated). CPU texture comparison caches and
-sparse glyph spans removed the earlier ~53 FPS regression; uploads remain unchanged.
+These establish exercised routes, not complete visual equivalence. Current matched
+Erudara samples on RTX4060Ti use960x720 output, fixed seed1792110400, shared assets,
+windowed/muted/isolated launches and15-second bounds. GDB configures the real
+drawer/view, then disables every breakpoint before measurement. Native monotonic
+presentation timestamps measure6.7-8.1second intervals after4seconds of warmup:
+
+| View | FSR off | FSR on | Added frame time |
+| --- | --- | --- | --- |
+| Tank |118.63FPS /8.430ms |100.65FPS /9.935ms |1.505ms |
+| O monitor |129.19FPS /7.740ms |114.72FPS /8.717ms |0.977ms |
+
+All measured intervals had zero history resets. Input remains the original640x480;
+enabled FSR reconstructs to960x720 with separate HUD, disabled FSR presents the
+640x480 canvas at the same window size. This is reconstruction cost, not a speedup
+claim. These short samples do not establish heavy-combat/citadel performance,
+other GPUs, image-quality acceptance or equivalence to the release OpenGL renderer.
+Observe-mode counters now include timestamp, view, canvas and FSR frame/reset counts.
 The lower HUD capture is pixel-identical before/after; animated scene/sky pixels
 still differ. Sparse-text checks pass on x86/x64, including clipping, multiple
 strings, empty writes and rejected out-of-bounds writes. Gameplay/reload and O-view
 checks passed again; O-view now waits for real camera-sector coverage before
-returning, retaining every acceptance assertion. This removes the measured
-stationary regression, not the need for broader view/scene performance comparisons.
+returning, retaining every acceptance assertion. Broader view/scene performance
+comparisons remain necessary.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
 Six-platform application/upscaler-host CI passed, including Linux x64/ARM64 probe

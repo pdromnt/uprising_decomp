@@ -408,17 +408,21 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
         draw.capture_scene=0;draw.capture_depth=1;
         /* A world effect with depth testing disabled must reject history too. */
         if(!draw_quad(&draw,32,32,48,48,0,0,1,0,.5f,NULL,VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        /* Zero-alpha blending contributes nothing. An unblended zero-alpha
+         * draw still replaces RGB and must reject the previous color. */
+        if(!draw_quad(&draw,32,0,48,16,0,1,1,1,0,NULL,VULKAN_DRAW_BLEND) ||
+           !draw_quad(&draw,0,40,16,56,0,1,1,1,0,NULL,0)){ok=0;goto done;}
         draw.capture_depth=0;
         if(!draw_quad(&draw,0,0,64,64,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&draw,NULL,0) ||
            !vulkan_draw_read_motion(&draw,motion,sizeof(motion)) ||
            !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths))){ok=0;goto done;}
-        for(i=0;i<3;i++){
-            unsigned p=i==0?40+8*64:i==1?8+8*64:40+40*64;const float *m=motion+p*4;
+        for(i=0;i<4;i++){
+            unsigned p=i==0?40+8*64:i==1?8+8*64:i==2?40+40*64:8+44*64;const float *m=motion+p*4;
             if(depths[p]!=0 || fabsf(m[0]-4)>.001f || fabsf(m[1]+2)>.001f || m[2]!=1 || m[3]!=(i?1:0)){
                 fprintf(stderr,"Vulkan sky/effect: infinite depth, motion or rejection failed sample=%u\n",i);ok=0;goto done;
             }
         }
-        printf("VULKAN_SKY_MOTION_PASS infinite_depth=checked jitter=checked layers=checked no_depth_effect=checked hud=checked\n");
+        printf("VULKAN_SKY_MOTION_PASS infinite_depth=checked jitter=checked layers=checked no_depth_effect=checked invisible_effect=checked unblended_alpha=checked hud=checked\n");
     }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
@@ -515,6 +519,67 @@ done:
 #undef TRY
 }
 #ifdef UPRISING_FSR3_UPSCALER
+static int moving_quad(VulkanDraw *d,float left,float top,float right,float bottom,
+        float depth,float r,float g,float b,float q,float previous_dx){
+    size_t first=d->vertex_count,i;
+    if(!draw_quad(d,left,top,right,bottom,depth,r,g,b,1,NULL,3))return 0;
+    for(i=first;i<d->vertex_count;i++){
+        VulkanDrawVertex *p=d->staging+i;p->uv[2]=q;
+        p->previous[0]=p->position[0]+previous_dx;p->previous[1]=p->position[1];
+        p->previous[2]=p->previous[3]=1;
+    }
+    return 1;
+}
+static int upscale_motion_pass(VulkanDevice *v){
+    VulkanDraw draw={0},result={0};VulkanTemporal temporal={0};Fsr3Upscaler *upscaler=NULL;
+    const float black[4]={0,0,0,1};uint8_t rgba[128*128*4];float depths[64*64],motion[64*64*4];
+    unsigned frame,i;int ok=0;float previous_left=8;
+    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_draw_open(&result,v,128,128) ||
+       !vulkan_temporal_open(&temporal,v,64,64) || !vulkan_draw_begin(&result,black) ||
+       !vulkan_draw_finish(&result,NULL,0))goto done;
+    upscaler=fsr3_upscaler_open(v,64,64,128,128);if(!upscaler)goto done;
+    for(frame=0;frame<10;frame++){
+        VkCommandBuffer command;const VulkanImage *output;float jitter[2];
+        float left=frame<4?8:frame==4?24:40;int cut=frame==9;
+        /* Deterministic subpixel raster movement; vectors themselves are unjittered. */
+        jitter[0]=(frame&1)?.25f:-.25f;jitter[1]=(frame&2)?.125f:-.125f;
+        if(!vulkan_draw_projection(&draw,10,1,jitter[0],jitter[1]) || !vulkan_draw_begin(&draw,black))goto done;
+        draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+        if(!moving_quad(&draw,0,0,64,64,.8f,0,cut?1:0,cut?0:1,.001f,0))goto done;
+        if(frame<6 && !moving_quad(&draw,left,24,left+8,48,.2f,1,0,0,.01f,previous_left-left))goto done;
+        if(frame==2 || frame==3){
+            if(!draw_quad(&draw,48,8,60,20,.1f,1,0,0,.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND))goto done;
+        }
+        if(!vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths)) ||
+           !vulkan_draw_read_motion(&draw,motion,sizeof(motion)))goto done;
+        if(fabsf(depths[4+32*64]-.01f)>.00001f ||
+           (frame<6 && (fabsf(depths[(unsigned)(left+4)+32*64]-.1f)>.00001f ||
+            fabsf(motion[((unsigned)(left+4)+32*64)*4]-(previous_left-left))>.001f)))goto done;
+        if((frame==2 || frame==3) && motion[(54+14*64)*4+3]!=1)goto done;
+        if(!vulkan_command_begin(v,&command))goto done;
+        if(!vulkan_temporal_record(&temporal,command,&draw.motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);goto done;}
+        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,
+            jitter[0],jitter[1],16.667f,10,1,frame==0 || cut,0);
+        if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+           !vulkan_draw_blit_color(&result,output,128,128) || !vulkan_draw_readback(&result,rgba,sizeof(rgba)))goto done;
+        for(i=0;i<3;i++){
+            /* Foreground's vacated footprint, active foreground and an effect
+             * appearing/disappearing over stable blue. Stay clear of filter edges. */
+            unsigned x=i==0?(unsigned)(previous_left+4):i==1?(unsigned)(left+4):54,y=i==2?14:36;
+            const uint8_t *p=rgba+(x*2+y*2*128)*4;float expected[3]={0,cut?1:0,cut?0:1};unsigned channel;
+            if(i==0 && frame<4)continue;
+            if(i==1 && frame<6){expected[0]=1;expected[1]=expected[2]=0;}
+            if(i==2 && (frame==2 || frame==3)){expected[0]=expected[2]=.5f;}
+            for(channel=0;channel<3;channel++)if(fabsf(p[channel]/255.0f-expected[channel])>.08f){
+                fprintf(stderr,"FSR3 moving mismatch frame=%u sample=%u channel=%u value=%u expected=%g\n",frame,i,channel,p[channel],expected[channel]);goto done;
+            }
+        }
+        previous_left=left;
+    }
+    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked reset=checked\n");ok=1;
+done:
+    fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
+}
 static int upscale_pass(VulkanDevice *v){
     VulkanDraw draw={0},composed={0};VulkanTemporal temporal={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
     const float black[4]={0,0,0,1};float pixels[128*128*4];
@@ -584,7 +649,7 @@ int main(int argc,char **argv){
     if(show && !SDL_ShowWindow(window))goto done;
     if(!graphics_pass(&device,window) || !temporal_monitor_pass(&device) || !reactive_pass(&device,&reactive))goto done;
 #ifdef UPRISING_FSR3_UPSCALER
-    if(!upscale_pass(&device))goto done;
+    if(!upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
 #else
     printf("FSR3_HOST_UNAVAILABLE pointer_bits=32 reason=upstream_external_image_handle_width\n");
 #endif

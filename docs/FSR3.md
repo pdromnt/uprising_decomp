@@ -102,15 +102,16 @@ export VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/libkosmickrisp_icd.json"
 Local Windows x86/x64 application builds and GPU probes pass. Numeric fixtures
 check depth/motion/jitter, transparency masks, sky inputs, fractional HUD atlas
 sampling, irregular monitor composition and world-only spatial AA. The64-bit
-SDK moving fixture checks disocclusion/effect removal over10frames. Gameplay
-movement/fire/save/reload and Priva's citadel route were checked in earlier batches.
+SDK moving fixture checks disocclusion/effect removal over10frames. Gameplay movement/fire/save/reload/shutdown passes1740frames on both x86 Vulkan
+and x64 FSR with deferred submission; restored position/ammo match exactly.
+Priva's actual particle-mask, claim/O-return/citadel-camera route passes1479frames.
 The current120-frame Erudara route checks resize, camera resets, native AA,
 sharpening, spatial tank/O AA, SDK retirement/recreation and clean shutdown.
 Advanced-modal click routing/Apply/Revert/persistence passed; its capture was inspected.
 These fixtures do not establish complete temporal image-quality acceptance.
 Local Khronos layers are unavailable; Linux software-driver CI supplies validation.
-Six-target CI39365897032 passed, including the SDK-free macOS bundle-loader check
-and signed experimental DMG. Deferred-queue changes require the newer CI run.
+Six-target CI39366845037 passed for d852ce6a, including deferred-queue checks,
+Linux x64/ARM64 validation, the SDK-free macOS bundle-loader check and signed DMG.
 The GPU probe exercises both immediate and deferred submission, including the
 64-command bound, readback, host-buffer reuse and destruction.
 

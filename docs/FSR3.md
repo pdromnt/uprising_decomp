@@ -22,8 +22,8 @@ The game remains C. AMD's C++ host code is isolated behind a small C interface.
    Reversed-infinite perspective depth and opt-in scene jitter are connected.
    Scene-only color and jittered layered skies feed opt-in normal-view upscaling;
    HUD is rendered afterward at output resolution. Conservative GPU reactive/
-   composition masks are connected. Complete remote-monitor composition and
-   particle/sky/discontinuity history.
+   composition masks and cropped remote-monitor composition are connected.
+   Complete particle/sky/discontinuity history and variable output sizes.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -65,11 +65,11 @@ the build derives a backend file with the memory/layout corrections.
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
 the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed. CI39349662742 passed all
+is still needed there. Local RTX4060Ti dispatch passed. CI39350817763 passed all
 six application targets, including upscaler execution with Khronos validation on
 Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
 No local validation-layer pass is claimed. The newer game integration below
-still needs monitor crops, output-size selection and temporal-quality acceptance.
+still needs output-size selection and temporal-quality acceptance.
 
 The graphics foundation now buffers projected triangles, snapshots each batch's
 texture/depth/blend state, and renders into owned RGBA/depth targets. The probe
@@ -93,8 +93,12 @@ On 64-bit builds, `UPRISING_VULKAN_FSR3=1` dispatches the actual SDK on centered
 game cameras: 640x480 scene/depth/motion ->1280x960, then native HUD draws at that
 output resolution. Jitter uses the SDK's 32-phase sequence; vertical FOV comes
 from the real projection. Camera/projection changes, reload and long frame gaps
-reset history. Offset O-view monitors retain native rendering until cropped
-inputs/artwork composition are implemented; returning to tank resets history.
+reset history. O-view crops color, depth and motion to its actual camera rectangle,
+uses that crop's vertical FOV, and composites the 2x result into the full output.
+Pixel displacements survive the origin translation unchanged. Native MRT coverage
+and the retained pre-scene artwork contribution keep irregular glass/frame art
+outside temporal history. Later UI draws remain separate. The SDK/crop owner is
+rebuilt when view dimensions change; returning to tank resets history.
 The output remains 4:3; existing screenshots/pixel consumers get GPU-downsampled
 legacy dimensions. A renderer-owned compute pass extracts an R8 rejection mask
 from actual motion validity and surviving translucent coverage, feeding both SDK
@@ -118,6 +122,12 @@ Live Training1 mask readback contains both trusted and rejected coverage; its
 reload/shutdown and Priva's citadel power-up/O-return/camera route passed. The
 settled output was visually inspected. Broad effects/temporal-quality comparisons
 and matched FPS evidence remain pending.
+The monitor fixture verifies exact color/depth/motion crops at a nonzero origin,
+31x23 dimensions, irregular holes, translucent artwork composition and later HUD.
+Live Erudara uses a225x142 crop at403/317 ->450x284; rotation, tank return,
+pause/minimize/restore and shutdown with the cropped owner active passed. Its
+output and the normal-view settled capture were visually inspected. Alternate
+monitor layouts and broad temporal-quality comparisons still need coverage.
 
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
@@ -256,7 +266,7 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   software-driver validation. Native Apple GPU execution is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
-- Need monitor dispatch/composition, sky/particle history, variable output sizes and
+- Need sky/particle history, variable output sizes and
   temporal-quality/performance acceptance, remaining shader variants, 32-bit safe handles,
   KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 

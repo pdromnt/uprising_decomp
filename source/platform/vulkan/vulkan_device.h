@@ -20,7 +20,7 @@
  X(CreateSemaphore) X(DestroySemaphore) X(CreateSampler) X(DestroySampler) \
  X(CreateRenderPass) X(DestroyRenderPass) X(CreateFramebuffer) X(DestroyFramebuffer) \
  X(CreateGraphicsPipelines) X(CmdBeginRenderPass) X(CmdEndRenderPass) X(CmdClearAttachments) \
- X(CmdBindVertexBuffers) X(CmdPushConstants) X(CmdDraw) X(CmdCopyBufferToImage) X(CmdBlitImage)
+ X(CmdBindVertexBuffers) X(CmdPushConstants) X(CmdDraw) X(CmdCopyBufferToImage) X(CmdCopyImage) X(CmdBlitImage)
 
 typedef struct VulkanDevice {
     VkInstance instance;VkPhysicalDevice physical;VkDevice device;VkQueue queue;

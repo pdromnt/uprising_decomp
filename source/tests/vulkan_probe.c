@@ -51,6 +51,73 @@ static int temporal_mask_pass(VulkanDraw *draw,const float *motion){
     printf("VULKAN_TEMPORAL_MASK_PASS stable=%u rejected=%u translucency=checked occlusion=checked hud_excluded=checked reuse=checked\n",accepted,rejected);ok=1;
 done:vulkan_temporal_close(&temporal);vulkan_buffer_destroy(v,&buffer);return ok;
 }
+static int read_image(VulkanDevice *v,const VulkanImage *image,uint32_t width,uint32_t height,void *pixels,size_t bytes){
+    VulkanBuffer buffer={0};VkCommandBuffer command;VkBufferImageCopy copy={0};int ok=0;
+    VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    if(!vulkan_buffer_create(v,&buffer,bytes,VK_BUFFER_USAGE_TRANSFER_DST_BIT) || !vulkan_command_begin(v,&command))goto done;
+    copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){width,height,1};
+    v->CmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,buffer.buffer,1,&copy);
+    host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+    host.srcQueueFamilyIndex=host.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;host.buffer=buffer.buffer;host.size=VK_WHOLE_SIZE;
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+    ok=vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) && vulkan_buffer_read(v,&buffer,pixels,bytes);
+done:vulkan_buffer_destroy(v,&buffer);return ok;
+}
+static int temporal_monitor_pass(VulkanDevice *v){
+    VulkanDraw source={0},upscaled={0},output={0};VulkanTemporal temporal={0};int ok=0;unsigned i,x,y,frame;
+    const float blue[4]={0,0,1,1},black[4]={0,0,0,1};uint8_t native[64*64*4],scene[64*64*4],crop[31*23*4],final[128*128*4];
+    float depth[64*64],motion[64*64*4],crop_depth[31*23],crop_motion[31*23*4];
+    if(!vulkan_draw_open(&source,v,64,64) || !vulkan_draw_open(&upscaled,v,62,46) || !vulkan_draw_open(&output,v,128,128) ||
+       !vulkan_temporal_open(&temporal,v,31,23) || !vulkan_temporal_crop_open(&temporal) ||
+       !vulkan_draw_begin(&source,blue) || !vulkan_draw_projection(&source,10,1,0,0))goto done;
+    source.material.color_mode=0;source.material.alpha_mode=1;source.material.alpha_function=7;
+    /* Green artwork island inside an irregular glass opening; translucent red
+     * over blue also exercises the retained pre-scene background contribution. */
+    if(!draw_quad(&source,20,20,26,26,0,0,1,0,1,NULL,0))goto done;
+    source.capture_depth=1;
+    if(!draw_quad(&source,8,12,39,20,.4f,1,0,0,.5f,NULL,VULKAN_DRAW_BLEND) ||
+       !draw_quad(&source,8,26,39,35,.4f,1,0,0,1,NULL,3) ||
+       !draw_quad(&source,8,20,20,26,.4f,1,0,0,1,NULL,3) ||
+       !draw_quad(&source,26,20,39,26,.4f,1,0,0,1,NULL,3))goto done;
+    for(i=0;i<source.vertex_count;i++){
+        VulkanDrawVertex *vertex=source.staging+i;
+        vertex->previous[0]=vertex->position[0]+4;vertex->previous[1]=vertex->position[1]-2;
+        vertex->previous[2]=vertex->previous[3]=1;
+    }
+    if(!vulkan_draw_finish(&source,native,sizeof(native)) || !vulkan_draw_read_scene(&source,scene,sizeof(scene)) ||
+       !vulkan_draw_read_reciprocal_depth(&source,depth,sizeof(depth)) || !vulkan_draw_read_motion(&source,motion,sizeof(motion)) ||
+       !vulkan_draw_begin(&upscaled,black) || !vulkan_draw_finish(&upscaled,NULL,0) ||
+       !vulkan_draw_begin(&output,black) || !vulkan_draw_finish(&output,NULL,0))goto done;
+    output.material.extent[0]=output.material.extent[1]=64;
+    for(frame=0;frame<2;frame++){
+        VkCommandBuffer command;
+        if(!vulkan_command_begin(v,&command))goto done;
+        if(vulkan_temporal_crop(&temporal,command,&source.scene,&source.reciprocal_depth,&source.motion,64,12,64,64))goto done;
+        if(!vulkan_temporal_crop(&temporal,command,&source.scene,&source.reciprocal_depth,&source.motion,8,12,64,64) ||
+           !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+           !read_image(v,temporal.cropped,31,23,crop,sizeof(crop)) ||
+           !read_image(v,temporal.cropped+1,31,23,crop_depth,sizeof(crop_depth)) ||
+           !read_image(v,temporal.cropped+2,31,23,crop_motion,sizeof(crop_motion)))goto done;
+        for(y=0;y<23;y++){
+            if(memcmp(crop+y*31*4,scene+((y+12)*64+8)*4,31*4) ||
+               memcmp(crop_depth+y*31,depth+(y+12)*64+8,31*sizeof(float)) ||
+               memcmp(crop_motion+y*31*4,motion+((y+12)*64+8)*4,31*4*sizeof(float)))goto done;
+        }
+        /* Nearest reconstruction isolates composition from SDK quality here;
+         * the separate upscaler pass and live game exercise actual FSR. */
+        if(!vulkan_draw_blit_color(&upscaled,temporal.cropped,31,23) || !vulkan_command_begin(v,&command) ||
+           !vulkan_temporal_compose(&temporal,command,&upscaled.color,&source.scene,&source.color,&output.color,8,12,128,128) ||
+           !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_draw_resume(&output))goto done;
+        output.material.color_mode=0;output.material.alpha_mode=1;output.material.alpha_function=7;
+        if(!draw_quad(&output,0,0,4,4,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&output,final,sizeof(final)))goto done;
+        for(y=0;y<128;y++)for(x=0;x<128;x++)for(i=0;i<3;i++){
+            int expected=x<8 && y<8?255:native[((y/2)*64+x/2)*4+i];
+            if(abs(final[(y*128+x)*4+i]-expected)>1){fprintf(stderr,"Monitor composition mismatch %u/%u channel=%u\n",x,y,i);goto done;}
+        }
+    }
+    printf("VULKAN_MONITOR_COMPOSITION_PASS crop=31x23 offset=8/12 depth_motion_exact=checked irregular_artwork=checked translucency=checked hud=checked reuse=checked\n");ok=1;
+done:vulkan_temporal_close(&temporal);vulkan_draw_close(&output);vulkan_draw_close(&upscaled);vulkan_draw_close(&source);return ok;
+}
 static int graphics_pass(VulkanDevice *v,SDL_Window *window){
     VulkanDraw draw={0};VulkanDrawTexture texture={0};VulkanPresent present={0};uint8_t rgba[64*64*4];unsigned frame;int ok=0;
     const uint8_t texels[8]={255,255,255,255,255,255,255,0};const float clear[4]={0,0,0,1};
@@ -472,7 +539,7 @@ int main(int argc,char **argv){
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
-    if(!graphics_pass(&device,window) || !reactive_pass(&device,&reactive))goto done;
+    if(!graphics_pass(&device,window) || !temporal_monitor_pass(&device) || !reactive_pass(&device,&reactive))goto done;
 #ifdef UPRISING_FSR3_UPSCALER
     if(!upscale_pass(&device))goto done;
 #else

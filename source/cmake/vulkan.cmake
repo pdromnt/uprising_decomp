@@ -20,14 +20,17 @@ foreach(stage vert frag)
         DEPENDS "${source}" cmake/embed_spirv.cmake VERBATIM)
     list(APPEND graphics_headers "${header}")
 endforeach()
-set(mask_source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/temporal_mask.comp")
-set(mask_binary "${CMAKE_CURRENT_BINARY_DIR}/generated/temporal_mask.spv")
-set(mask_header "${CMAKE_CURRENT_BINARY_DIR}/generated/temporal_mask_spv.h")
-add_custom_command(OUTPUT "${mask_header}"
-    COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${mask_source}" -o "${mask_binary}"
-    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${mask_binary}" "-DOUTPUT=${mask_header}" "-DSYMBOL=temporal_mask_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-    DEPENDS "${mask_source}" cmake/embed_spirv.cmake VERBATIM)
-add_library(uprising_vulkan STATIC platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c platform/vulkan/vulkan_menu.c platform/vulkan/vulkan_temporal.c ${graphics_headers} "${mask_header}")
+foreach(pass mask compose)
+    set(temporal_source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/temporal_${pass}.comp")
+    set(temporal_binary "${CMAKE_CURRENT_BINARY_DIR}/generated/temporal_${pass}.spv")
+    set(temporal_header "${CMAKE_CURRENT_BINARY_DIR}/generated/temporal_${pass}_spv.h")
+    add_custom_command(OUTPUT "${temporal_header}"
+        COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${temporal_source}" -o "${temporal_binary}"
+        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${temporal_binary}" "-DOUTPUT=${temporal_header}" "-DSYMBOL=temporal_${pass}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+        DEPENDS "${temporal_source}" cmake/embed_spirv.cmake VERBATIM)
+    list(APPEND graphics_headers "${temporal_header}")
+endforeach()
+add_library(uprising_vulkan STATIC platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c platform/vulkan/vulkan_menu.c platform/vulkan/vulkan_temporal.c ${graphics_headers})
 target_include_directories(uprising_vulkan PUBLIC platform/vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(uprising_vulkan PUBLIC SDL3::SDL3-static Vulkan::Headers)
 if(NOT MSVC)

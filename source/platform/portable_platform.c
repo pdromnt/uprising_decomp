@@ -628,21 +628,30 @@ int game_application_scene_depth(GameApplication *a,int enabled){
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
     if(enabled && gl1_current->vulkan){
         Vk1Device *n=gl1_current->vulkan;float projection[5],jitter[2]={0,0};unsigned i;
+        uint32_t crop[4]={0,0,gl1_current->width,gl1_current->height};
         static const GameAddress fields[5]={0x6290c8,0x6290cc,0x6290f0,0x6290f4,0x574cb0};
         uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
         for(i=0;i<5;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
         if(a->memory.fault)return 0;
         if(n->composed[gl1_current->back] && !vk1_flush(vk1_back(),0))return 0;
         n->composed[gl1_current->back]=0;
-        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection))){render_motion_reset(&n->history);n->fsr_reset=1;}
+        n->fsr_monitor=n->fsr_requested && mode==7;
+        if(n->fsr_monitor){
+            uint32_t left=game_memory_read_u32(&a->memory,0x6025e0),top=game_memory_read_u32(&a->memory,0x6025e4);
+            uint32_t right=game_memory_read_u32(&a->memory,0x6025e8),bottom=game_memory_read_u32(&a->memory,0x6025ec);
+            if(a->memory.fault || right<=left || bottom<=top || right>gl1_current->width || bottom>gl1_current->height)return 0;
+            crop[0]=left;crop[1]=top;crop[2]=right-left;crop[3]=bottom-top;
+        }
+        if(camera!=n->history_camera || mode!=n->history_mode || memcmp(projection,n->history_projection,sizeof(projection)) || memcmp(crop,n->fsr_crop,sizeof(crop))){render_motion_reset(&n->history);n->fsr_reset=1;}
         n->history_camera=camera;n->history_mode=mode;memcpy(n->history_projection,projection,sizeof(projection));
-        /* SDK reprojection assumes a centered perspective image. Strategic
-         * monitors remain on the native renderer until their cropped inputs
-         * and artwork composition are implemented. Never invent their FOV. */
-        n->fsr_view=n->fsr_requested && fabsf(projection[0]-gl1_current->width*.5f)<.01f && fabsf(projection[1]-gl1_current->height*.5f)<.01f;
+        memcpy(n->fsr_crop,crop,sizeof(crop));
+        /* Subtracting the crop origin centers the actual monitor camera.
+         * Previous-minus-current pixel vectors are translation invariant. */
+        n->fsr_view=n->fsr_requested && fabsf(projection[0]-(crop[0]+crop[2]*.5f))<.01f && fabsf(projection[1]-(crop[1]+crop[3]*.5f))<.01f;
+        if(n->fsr_monitor && !n->fsr_view)return 0;
         if(!n->fsr_view){n->fsr_reset=1;n->fsr_time=0;}
 #ifdef UPRISING_FSR3_UPSCALER
-        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(gl1_current->width,gl1_current->width*2),jitter);
+        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(crop[2],crop[2]*2),jitter);
         else
 #endif
         if(n->jitter_enabled)render_motion_jitter(n->frames,8,jitter);

@@ -18,6 +18,7 @@ typedef struct Vk1Device {
     uint64_t motion_clipped;
     VulkanDraw output[2];int composed[2],fsr_requested,fsr_view,fsr_reset;
     Uint64 fsr_time;uint64_t fsr_frames,fsr_resets;
+    uint32_t fsr_crop[4];int fsr_monitor;uint64_t fsr_monitor_frames;
 #ifdef UPRISING_FSR3_UPSCALER
     Fsr3Upscaler *upscaler;
     VulkanTemporal temporal;
@@ -46,12 +47,16 @@ static int vk1_scene_complete(void){
     Gl1Device *g=gl1_current;Vk1Device *n=g->vulkan;VulkanDraw *scene=n->frame+g->back,*target=n->output+g->back;
     VulkanDevice *v=vulkan_menu_device(n->menu);VkCommandBuffer command;const VulkanImage *image;
     const float clear[4]={0,0,0,1};float focal,fov,elapsed;Uint64 now;
+    uint32_t width=n->fsr_crop[2],height=n->fsr_crop[3];const VulkanImage *color,*depth,*motion;
     if(!n->fsr_view)return 1;
     focal=n->history_projection[2]*n->history_projection[3]*n->history_projection[4];
     if(!isfinite(focal) || focal<=0)return 0;
-    fov=2*atanf((float)g->height/(2*focal));
+    fov=2*atanf((float)height/(2*focal));
     if(!isfinite(fov) || fov<=0 || fov>=3.14159265f)return 0;
-    if(!n->upscaler){n->upscaler=fsr3_upscaler_open(v,g->width,g->height,g->width*2,g->height*2);if(!n->upscaler)return 0;n->fsr_reset=1;}
+    if(n->upscaler && (n->temporal.width!=width || n->temporal.height!=height)){
+        fsr3_upscaler_close(n->upscaler);n->upscaler=NULL;vulkan_temporal_close(&n->temporal);n->fsr_reset=1;
+    }
+    if(!n->upscaler){n->upscaler=fsr3_upscaler_open(v,width,height,width*2,height*2);if(!n->upscaler)return 0;n->fsr_reset=1;}
     if(!target->device){
         if(!vulkan_draw_open(target,v,g->width*2,g->height*2) || !vulkan_draw_begin(target,clear) || !vulkan_draw_finish(target,NULL,0))return 0;
         /* Geometry stays in legacy screen coordinates; the viewport maps HUD
@@ -59,22 +64,31 @@ static int vk1_scene_complete(void){
         target->material.extent[0]=(float)g->width;target->material.extent[1]=(float)g->height;
     }
     if(!vk1_flush(scene,0))return 0;
-    if(!n->temporal.device && !vulkan_temporal_open(&n->temporal,v,g->width,g->height))return 0;
+    if(!n->temporal.device && !vulkan_temporal_open(&n->temporal,v,width,height))return 0;
+    if(n->fsr_monitor && !n->temporal.cropped[0].image && !vulkan_temporal_crop_open(&n->temporal))return 0;
     now=SDL_GetTicksNS();elapsed=n->fsr_time?(float)((now-n->fsr_time)/1000000.0):16.667f;
     if(elapsed>250){n->fsr_reset=1;elapsed=250;}if(elapsed<=0)elapsed=.001f;
     if(!vulkan_command_begin(v,&command))return 0;
-    if(!vulkan_temporal_record(&n->temporal,command,&scene->motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
-    image=fsr3_upscaler_dispatch(n->upscaler,command,&scene->scene,&scene->reciprocal_depth,&scene->motion,&n->temporal.rejection,
+    color=&scene->scene;depth=&scene->reciprocal_depth;motion=&scene->motion;
+    if(n->fsr_monitor){
+        if(!vulkan_temporal_crop(&n->temporal,command,color,depth,motion,n->fsr_crop[0],n->fsr_crop[1],g->width,g->height))goto command_fail;
+        color=n->temporal.cropped;depth=n->temporal.cropped+1;motion=n->temporal.cropped+2;
+    }
+    if(!vulkan_temporal_record(&n->temporal,command,motion))goto command_fail;
+    image=fsr3_upscaler_dispatch(n->upscaler,command,color,depth,motion,&n->temporal.rejection,
         scene->scene_jitter[0],scene->scene_jitter[1],elapsed,10,fov,n->fsr_reset,1);
-    if(!image){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
-    if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
-       !vulkan_draw_blit_color(target,image,g->width*2,g->height*2))return 0;
+    if(!image || !vulkan_temporal_compose(&n->temporal,command,image,&scene->scene,&scene->color,&target->color,
+        n->fsr_crop[0],n->fsr_crop[1],target->width,target->height))goto command_fail;
+    if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
     n->fsr_reset=0;n->composed[g->back]=1;
+    if(n->fsr_monitor)n->fsr_monitor_frames++;
     if(n->fsr_frames==1){char message[224];snprintf(message,sizeof(message),
         "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u masks=conservative-R8; HUD follows dispatch\n",
-        g->width,g->height,g->width*2,g->height*2,fov,fsr3_upscaler_jitter_phases(g->width,g->width*2));
+        width,height,width*2,height*2,fov,fsr3_upscaler_jitter_phases(width,width*2));
         game_application_log(g->application,"%s",message);}
+    return 1;
+command_fail:v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;
 #endif
     return 1;
 }

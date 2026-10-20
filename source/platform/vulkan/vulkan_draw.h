@@ -77,6 +77,6 @@ int vulkan_draw_read_scene(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_read_reciprocal_depth(VulkanDraw *,float *,size_t bytes);
 /* RGBA32F: previous-minus-current pixels, validity, conservative history rejection.
  * Unknown geometry rejects history. Translucent scene coverage raises rejection
- * without replacing the underlying solid motion. Composition work remains. */
+ * without replacing the underlying solid motion. */
 int vulkan_draw_read_motion(VulkanDraw *,float *,size_t bytes);
 #endif

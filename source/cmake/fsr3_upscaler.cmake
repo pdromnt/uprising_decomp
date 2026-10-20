@@ -22,6 +22,20 @@ foreach(entry IN LISTS SPIRV_REFLECT_SOURCES)
     endif()
 endforeach()
 set(fsr3_sdk "${fsr3_source}/sdk")
+# Replace only the SDK's discrete-only memory selector in a derived build file.
+# Original downloaded bytes and their checksum remain untouched.
+file(READ "${fsr3_sdk}/src/backends/vk/ffx_vk.cpp" backend)
+string(FIND "${backend}" "uint32_t findMemoryTypeIndex(" memory_begin)
+string(FIND "${backend}" "VkBufferUsageFlags ffxGetVKBufferUsageFlagsFromResourceUsage(" memory_end)
+if(memory_begin LESS 0 OR memory_end LESS memory_begin)
+    message(FATAL_ERROR "Pinned SDK memory selector changed")
+endif()
+math(EXPR memory_length "${memory_end}-${memory_begin}")
+string(SUBSTRING "${backend}" ${memory_begin} ${memory_length} original_memory)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_memory.inc" native_memory)
+string(REPLACE "${original_memory}" "${native_memory}\n" backend "${backend}")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3_backend_native.inc" CONTENT "${backend}" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_memory.inc")
 set(fsr3_headers)
 set(fsr3_passes prepare_inputs luma_pyramid shading_change_pyramid shading_change
     prepare_reactivity luma_instability accumulate accumulate_sharpen rcas debug_view autogen_reactive)
@@ -55,7 +69,8 @@ add_library(uprising_fsr3 STATIC platform/vulkan/fsr3_backend.cpp platform/vulka
 target_compile_features(uprising_fsr3 PRIVATE cxx_std_17)
 if(NOT WIN32)
     target_compile_options(uprising_fsr3 PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include>"
-        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_portability.h>")
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_portability.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-g1>")
 endif()
 target_include_directories(uprising_fsr3 PRIVATE "${fsr3_sdk}/include" "${fsr3_sdk}/src/shared"
     "${fsr3_sdk}/src/backends/shared" "${fsr3_sdk}/src/backends/vk" "${reflect_source}"

@@ -60,7 +60,7 @@ static VkResult VKAPI_CALL enabled_extensions(VkPhysicalDevice physical,const ch
 // The upscaler-only interface exposes no frame-generation presenter callback.
 // Read its guarded declaration first, then leave that optional table slot null.
 #define ffxSetFrameGenerationConfigToSwapchainVK nullptr
-#include <ffx_vk.cpp>
+#include "fsr3_backend_native.inc"
 #undef ffxSetFrameGenerationConfigToSwapchainVK
 #undef vkEnumerateDeviceExtensionProperties
 extern "C" int fsr3_backend_load(VkInstance instance,VkDevice device,PFN_vkGetInstanceProcAddr instance_proc,PFN_vkGetDeviceProcAddr device_proc){

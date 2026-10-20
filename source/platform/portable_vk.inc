@@ -20,6 +20,7 @@ typedef struct Vk1Device {
     Uint64 fsr_time;uint64_t fsr_frames,fsr_resets;
 #ifdef UPRISING_FSR3_UPSCALER
     Fsr3Upscaler *upscaler;
+    VulkanTemporal temporal;
 #endif
 } Vk1Device;
 static VulkanDraw *vk1_target(unsigned index){
@@ -58,18 +59,20 @@ static int vk1_scene_complete(void){
         target->material.extent[0]=(float)g->width;target->material.extent[1]=(float)g->height;
     }
     if(!vk1_flush(scene,0))return 0;
+    if(!n->temporal.device && !vulkan_temporal_open(&n->temporal,v,g->width,g->height))return 0;
     now=SDL_GetTicksNS();elapsed=n->fsr_time?(float)((now-n->fsr_time)/1000000.0):16.667f;
     if(elapsed>250){n->fsr_reset=1;elapsed=250;}if(elapsed<=0)elapsed=.001f;
     if(!vulkan_command_begin(v,&command))return 0;
-    image=fsr3_upscaler_dispatch(n->upscaler,command,&scene->scene,&scene->reciprocal_depth,&scene->motion,
+    if(!vulkan_temporal_record(&n->temporal,command,&scene->motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
+    image=fsr3_upscaler_dispatch(n->upscaler,command,&scene->scene,&scene->reciprocal_depth,&scene->motion,&n->temporal.rejection,
         scene->scene_jitter[0],scene->scene_jitter[1],elapsed,10,fov,n->fsr_reset,1);
     if(!image){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
     if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
        !vulkan_draw_blit_color(target,image,g->width*2,g->height*2))return 0;
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
     n->fsr_reset=0;n->composed[g->back]=1;
-    if(n->fsr_frames==1){char message[192];snprintf(message,sizeof(message),
-        "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u; HUD follows dispatch\n",
+    if(n->fsr_frames==1){char message[224];snprintf(message,sizeof(message),
+        "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u masks=conservative-R8; HUD follows dispatch\n",
         g->width,g->height,g->width*2,g->height*2,fov,fsr3_upscaler_jitter_phases(g->width,g->width*2));
         game_application_log(g->application,"%s",message);}
 #endif
@@ -115,6 +118,7 @@ static void vk1_close(void){
     vk1_sky_release();vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->remote_mask);vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->tiles);
 #ifdef UPRISING_FSR3_UPSCALER
     fsr3_upscaler_close(g->vulkan->upscaler);
+    vulkan_temporal_close(&g->vulkan->temporal);
 #endif
     for(i=0;i<2;i++){vulkan_draw_close(g->vulkan->output+i);vulkan_draw_close(g->vulkan->frame+i);}
     render_motion_release(&g->vulkan->history);

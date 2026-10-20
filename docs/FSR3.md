@@ -21,8 +21,9 @@ The game remains C. AMD's C++ host code is isolated behind a small C interface.
    including camera/object motion and owned clipping-edge provenance.
    Reversed-infinite perspective depth and opt-in scene jitter are connected.
    Scene-only color and jittered layered skies feed opt-in normal-view upscaling;
-   HUD is rendered afterward at output resolution. Complete remote-monitor
-   composition, particle/discontinuity coverage and reactive masks.
+   HUD is rendered afterward at output resolution. Conservative GPU reactive/
+   composition masks are connected. Complete remote-monitor composition and
+   particle/sky/discontinuity history.
    Isolate HUD/cockpit/minimap. Reset history on camera cuts,
    mission reload, output-size changes and discontinuities; handle transparency
    and animated skies with reactive/composition masks.
@@ -64,12 +65,11 @@ the build derives a backend file with the memory/layout corrections.
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
 the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed. CI39347059876 passed all
+is still needed there. Local RTX4060Ti dispatch passed. CI39349662742 passed all
 six application targets, including upscaler execution with Khronos validation on
 Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
 No local validation-layer pass is claimed. The newer game integration below
-still needs reactive/composition extraction, monitor crops, output-size selection
-and temporal-quality acceptance.
+still needs monitor crops, output-size selection and temporal-quality acceptance.
 
 The graphics foundation now buffers projected triangles, snapshots each batch's
 texture/depth/blend state, and renders into owned RGBA/depth targets. The probe
@@ -96,8 +96,14 @@ from the real projection. Camera/projection changes, reload and long frame gaps
 reset history. Offset O-view monitors retain native rendering until cropped
 inputs/artwork composition are implemented; returning to tank resets history.
 The output remains 4:3; existing screenshots/pixel consumers get GPU-downsampled
-legacy dimensions. This is experimental, with fixed 2x output, no reactive masks
-yet and incomplete moving-sky/particle history. No image-quality or speedup claim.
+legacy dimensions. A renderer-owned compute pass extracts an R8 rejection mask
+from actual motion validity and surviving translucent coverage, feeding both SDK
+mask inputs. Stable opaque pixels retain history even when blending is enabled;
+depth-writing effects with effective alpha below one reject it. Unknown geometry
+and skies conservatively reject history until their motion is implemented.
+The mask is allocated once and stays on the GPU; HUD never enters it.
+This remains experimental, with fixed 2x output and incomplete moving-sky/particle
+history. No complete image-quality or speedup claim.
 
 Local RTX4060Ti checks exercise real gameplay/reload and normal/O-view transitions.
 A settled-frame visual comparison found black world silhouettes: the previous
@@ -106,6 +112,12 @@ now restores the low-resolution back owner immediately. Corrected captures show
 textured terrain/trees; a focused fixed-seed regression checks that handoff and
 terrain samples. The GPU probe checks output conversion, HUD composition outside
 scene history, and legacy-size readbacks. These do not establish all-view parity.
+Mask checks compare every GPU texel for stable/unknown motion, surviving versus
+occluded translucency, opaque blending, depth-writing effects and HUD exclusion.
+Live Training1 mask readback contains both trusted and rejected coverage; its
+reload/shutdown and Priva's citadel power-up/O-return/camera route passed. The
+settled output was visually inspected. Broad effects/temporal-quality comparisons
+and matched FPS evidence remain pending.
 
 The existing indexed menu surface, fonts and widgets feed a persistent RGBA
 texture/upload buffer, native triangle pipeline and aspect-preserving presenter.
@@ -244,7 +256,7 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   software-driver validation. Native Apple GPU execution is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
-- Need monitor dispatch/composition, reactive masks, variable output sizes and
+- Need monitor dispatch/composition, sky/particle history, variable output sizes and
   temporal-quality/performance acceptance, remaining shader variants, 32-bit safe handles,
   KosmicKrisp native execution and hardware coverage beyond the initial GPU.
 

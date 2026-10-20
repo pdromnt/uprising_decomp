@@ -8,6 +8,7 @@
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
 #include "vulkan_menu.h"
 #include "vulkan_draw.h"
+#include "vulkan_temporal.h"
 #ifdef UPRISING_FSR3_UPSCALER
 #include "fsr3_upscaler.h"
 #endif

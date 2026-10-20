@@ -1,6 +1,7 @@
 #include "vulkan_device.h"
 #include "vulkan_draw.h"
 #include "vulkan_present.h"
+#include "vulkan_temporal.h"
 #include "fsr3_upscaler.h"
 #include "fsr3_reactive_spv.h"
 #include <stdio.h>
@@ -25,6 +26,30 @@ static int pixel(const uint8_t *rgba,unsigned x,unsigned y,unsigned r,unsigned g
     if(abs((int)p[0]-(int)r)>1 || abs((int)p[1]-(int)g)>1 || abs((int)p[2]-(int)b)>1){
         fprintf(stderr,"Vulkan draw pixel %u,%u: %u,%u,%u expected %u,%u,%u\n",x,y,p[0],p[1],p[2],r,g,b);return 0;
     }return 1;
+}
+static int temporal_mask_pass(VulkanDraw *draw,const float *motion){
+    VulkanDevice *v=draw->device;VulkanTemporal temporal={0};VulkanBuffer buffer={0};
+    uint8_t pixels[64*64];unsigned frame,i,accepted=0,rejected=0;int ok=0;
+    if(!vulkan_temporal_open(&temporal,v,64,64) || !vulkan_buffer_create(v,&buffer,sizeof(pixels),VK_BUFFER_USAGE_TRANSFER_DST_BIT))goto done;
+    for(frame=0;frame<2;frame++){
+        VkCommandBuffer command;VkBufferImageCopy copy={0};VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        if(!vulkan_command_begin(v,&command))goto done;
+        if(!vulkan_temporal_record(&temporal,command,&draw->motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);goto done;}
+        copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){64,64,1};
+        v->CmdCopyImageToBuffer(command,temporal.rejection.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,buffer.buffer,1,&copy);
+        host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+        host.srcQueueFamilyIndex=host.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;host.buffer=buffer.buffer;host.size=VK_WHOLE_SIZE;
+        v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
+        if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_buffer_read(v,&buffer,pixels,sizeof(pixels)))goto done;
+        for(i=0;i<64*64;i++){
+            unsigned expected=motion[i*4+2]<.99999f || motion[i*4+3]>=1?255:0;
+            if(pixels[i]!=expected){fprintf(stderr,"Temporal mask mismatch pixel=%u got=%u expected=%u\n",i,pixels[i],expected);goto done;}
+            if(pixels[i])rejected++;else accepted++;
+        }
+    }
+    if(!accepted || !rejected)goto done;
+    printf("VULKAN_TEMPORAL_MASK_PASS stable=%u rejected=%u translucency=checked occlusion=checked hud_excluded=checked reuse=checked\n",accepted,rejected);ok=1;
+done:vulkan_temporal_close(&temporal);vulkan_buffer_destroy(v,&buffer);return ok;
 }
 static int graphics_pass(VulkanDevice *v,SDL_Window *window){
     VulkanDraw draw={0};VulkanDrawTexture texture={0};VulkanPresent present={0};uint8_t rgba[64*64*4];unsigned frame;int ok=0;
@@ -146,7 +171,7 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
             triangle[i].previous[0]=triangle[i].position[0]-4;triangle[i].previous[1]=triangle[i].position[1]+2;
             triangle[i].previous[2]=triangle[i].previous[3]=1;
         }
-        if(!vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_LEQUAL) || !vulkan_draw_finish(&draw,NULL,0) ||
+        if(!vulkan_draw_triangles(&draw,triangle,3,NULL,3|VULKAN_DRAW_BLEND|VULKAN_DRAW_LEQUAL) || !vulkan_draw_finish(&draw,NULL,0) ||
            !vulkan_draw_resume(&draw)){ok=0;goto done;}
         draw.capture_depth=0;
         if(!draw_quad(&draw,0,0,32,32,0.1f,0,0,1,1,NULL,0) || !vulkan_draw_finish(&draw,NULL,0) ||
@@ -167,6 +192,22 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
         if(fabsf(m[0]+4)>0.00001f || fabsf(m[1]-2)>0.00001f || m[2]!=1 || m[3]!=1 || occluded[2]!=1 || occluded[3]!=0){
             fprintf(stderr,"Vulkan reactive coverage: occlusion/vector preservation failed\n");ok=0;goto done;}}
         printf("VULKAN_REACTIVE_COVERAGE_PASS translucent=checked occlusion=checked motion_preserved=checked ui_excluded=checked\n");
+        if(!temporal_mask_pass(&draw,motion)){ok=0;goto done;}
+        {
+            VulkanDrawVertex blended[3];memcpy(blended,triangle,sizeof(blended));
+            for(i=0;i<3;i++){
+                blended[i].position[0]=i==1?16:0;blended[i].position[1]=i==2?48:32;
+                blended[i].position[2]=.1f;blended[i].color[3]=.5f;
+                blended[i].previous[0]=blended[i].position[0]-4;blended[i].previous[1]=blended[i].position[1]+2;
+            }
+            draw.capture_depth=1;
+            if(!vulkan_draw_resume(&draw) || !vulkan_draw_triangles(&draw,blended,3,NULL,3|VULKAN_DRAW_BLEND|VULKAN_DRAW_LEQUAL) ||
+               !vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_motion(&draw,motion,sizeof(motion)) ||
+               motion[(4+36*64)*4+2]!=1 || motion[(4+36*64)*4+3]!=1 || !temporal_mask_pass(&draw,motion)){
+                fprintf(stderr,"Vulkan depth-writing translucency lost motion/rejection\n");ok=0;goto done;
+            }
+            printf("VULKAN_DEPTH_WRITING_TRANSLUCENCY_PASS vector_and_rejection=checked\n");
+        }
         /* Different previous w across the triangle must use projective division,
          * not interpolation of already divided previous pixel positions. */
         triangle[1].previous[0]*=2;triangle[1].previous[1]*=2;triangle[1].previous[2]=2;
@@ -365,10 +406,10 @@ done:
 }
 #ifdef UPRISING_FSR3_UPSCALER
 static int upscale_pass(VulkanDevice *v){
-    VulkanDraw draw={0},composed={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
+    VulkanDraw draw={0},composed={0};VulkanTemporal temporal={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
     const float black[4]={0,0,0,1};float pixels[128*128*4];
     uint8_t rgba[128*128*4];
-    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_buffer_create(v,&readback,sizeof(pixels),VK_BUFFER_USAGE_TRANSFER_DST_BIT))goto done;
+    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_temporal_open(&temporal,v,64,64) || !vulkan_buffer_create(v,&readback,sizeof(pixels),VK_BUFFER_USAGE_TRANSFER_DST_BIT))goto done;
     if(fsr3_upscaler_jitter_phases(64,128)!=32 || fsr3_upscaler_jitter_phases(64,64)!=8 ||
        !vulkan_draw_open(&composed,v,128,128) || !vulkan_draw_begin(&composed,black) || !vulkan_draw_finish(&composed,NULL,0))goto done;
     composed.material.extent[0]=composed.material.extent[1]=64;
@@ -379,9 +420,15 @@ static int upscale_pass(VulkanDevice *v){
         VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};float jitter=frame?0.25f:-0.25f;
         if(!vulkan_draw_projection(&draw,10,1,jitter,-jitter) || !vulkan_draw_begin(&draw,black))goto done;
         draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
-        if(!draw_quad(&draw,0,0,64,64,0.4f,0.25f,0.5f,0.75f,1,NULL,3) ||
-           !vulkan_draw_finish(&draw,NULL,0) || !vulkan_command_begin(v,&command))goto done;
-        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,jitter,-jitter,16.667f,10,1,frame==2,frame==1);
+        if(!draw_quad(&draw,0,0,64,64,0.4f,0.25f,0.5f,0.75f,1,NULL,3))goto done;
+        if(frame)for(i=0;i<draw.vertex_count;i++){
+            VulkanDrawVertex *vertex=draw.staging+i;
+            vertex->previous[0]=vertex->position[0];vertex->previous[1]=vertex->position[1];vertex->previous[2]=vertex->previous[3]=1;
+        }
+        if(frame==2 && !draw_quad(&draw,0,0,32,32,0.1f,0.25f,0.5f,0.75f,.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND))goto done;
+        if(!vulkan_draw_finish(&draw,NULL,0) || !vulkan_command_begin(v,&command))goto done;
+        if(!vulkan_temporal_record(&temporal,command,&draw.motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);goto done;}
+        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,jitter,-jitter,16.667f,10,1,frame==2,frame==1);
         if(!output)goto done;
         copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){128,128,1};
         v->CmdCopyImageToBuffer(command,output->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&copy);
@@ -406,9 +453,9 @@ static int upscale_pass(VulkanDevice *v){
            rgba[(4+4*64)*4]!=255 || rgba[(4+4*64)*4+1]!=0)goto done;
     }
     fsr3_upscaler_close(upscaler);upscaler=fsr3_upscaler_open(v,64,64,128,128);if(!upscaler)goto done;
-    printf("FSR3_UPSCALE_PASS frames=3 render=64x64 output=128x128 upstream_host=1 sharpen=checked reset=checked finite=checked recreate=checked composition=checked legacy_readback=checked\n");ok=1;
+    printf("FSR3_UPSCALE_PASS frames=3 render=64x64 output=128x128 upstream_host=1 sharpen=checked reset=checked finite=checked recreate=checked composition=checked legacy_readback=checked masks=invalid/opaque/translucent\n");ok=1;
 done:
-    fsr3_upscaler_close(upscaler);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&composed);vulkan_draw_close(&draw);return ok;
+    fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&composed);vulkan_draw_close(&draw);return ok;
 }
 #endif
 int main(int argc,char **argv){

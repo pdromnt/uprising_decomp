@@ -97,12 +97,12 @@ void transition(VulkanDevice *v,VkCommandBuffer command,VkImage image,VkImageLay
 }
 }
 extern "C" const VulkanImage *fsr3_upscaler_dispatch(Fsr3Upscaler *s,VkCommandBuffer command,
-        const VulkanImage *color,const VulkanImage *depth,const VulkanImage *motion,
+        const VulkanImage *color,const VulkanImage *depth,const VulkanImage *motion,const VulkanImage *rejection,
         float jitter_x,float jitter_y,float elapsed_ms,float near_z,float vertical_fov,int reset,int sharpen){
-    if(!s || !command || !color || !depth || !motion || !std::isfinite(jitter_x) || !std::isfinite(jitter_y) ||
+    if(!s || !command || !color || !depth || !motion || !rejection || !std::isfinite(jitter_x) || !std::isfinite(jitter_y) ||
        std::fabs(jitter_x)>0.5f || std::fabs(jitter_y)>0.5f || !std::isfinite(elapsed_ms) || elapsed_ms<=0 ||
        !std::isfinite(near_z) || near_z<=0 || !std::isfinite(vertical_fov) || vertical_fov<=0 || vertical_fov>=3.14159265f)return nullptr;
-    const VulkanImage *inputs[3]={color,depth,motion};
+    const VulkanImage *inputs[4]={color,depth,motion,rejection};
     for(auto image:inputs)transition(s->device,command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if(!s->initialized)for(auto &image:s->shared)transition(s->device,command,image.image,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
     transition(s->device,command,s->output.image,s->initialized?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
@@ -110,6 +110,7 @@ extern "C" const VulkanImage *fsr3_upscaler_dispatch(Fsr3Upscaler *s,VkCommandBu
     d.color=resource(color,FFX_SURFACE_FORMAT_R8G8B8A8_UNORM,s->width,s->height,FFX_RESOURCE_STATE_COMPUTE_READ);
     d.depth=resource(depth,FFX_SURFACE_FORMAT_R32_FLOAT,s->width,s->height,FFX_RESOURCE_STATE_COMPUTE_READ);
     d.motionVectors=resource(motion,FFX_SURFACE_FORMAT_R32G32B32A32_FLOAT,s->width,s->height,FFX_RESOURCE_STATE_COMPUTE_READ);
+    d.reactive=d.transparencyAndComposition=resource(rejection,FFX_SURFACE_FORMAT_R8_UNORM,s->width,s->height,FFX_RESOURCE_STATE_COMPUTE_READ);
     d.dilatedDepth=resource(s->shared,FFX_SURFACE_FORMAT_R32_FLOAT,s->width,s->height,FFX_RESOURCE_STATE_UNORDERED_ACCESS);
     d.dilatedMotionVectors=resource(s->shared+1,FFX_SURFACE_FORMAT_R16G16_FLOAT,s->width,s->height,FFX_RESOURCE_STATE_UNORDERED_ACCESS);
     d.reconstructedPrevNearestDepth=resource(s->shared+2,FFX_SURFACE_FORMAT_R32_UINT,s->width,s->height,FFX_RESOURCE_STATE_UNORDERED_ACCESS);

@@ -137,6 +137,7 @@ static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     Gl1Device *g=gl1_current;unsigned i;const float clear[4]={0,0,0,0};
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
+    vulkan_menu_device(menu)->defer_submissions=1;
     g->vulkan->observe=SDL_getenv("UPRISING_RECOMP_NATIVE_OBSERVE")!=NULL;
     {const char *jitter=SDL_getenv("UPRISING_VULKAN_JITTER");g->vulkan->jitter_enabled=jitter && !strcmp(jitter,"1");}
     g->width=640;g->height=480;g->front=0;g->back=1;
@@ -175,6 +176,7 @@ static void vk1_close(void){
     vulkan_temporal_close(&g->vulkan->temporal);
     for(i=0;i<2;i++){vulkan_draw_close(g->vulkan->output+i);vulkan_draw_close(g->vulkan->frame+i);}
     render_motion_release(&g->vulkan->history);
+    vulkan_menu_device(g->vulkan->menu)->defer_submissions=0;
     free(g->vulkan);g->vulkan=NULL;
 }
 static void vk1_refresh(Gl1Texture *texture){

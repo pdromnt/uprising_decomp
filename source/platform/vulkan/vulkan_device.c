@@ -145,6 +145,7 @@ int vulkan_device_open(VulkanDevice *v,SDL_Window *window,int validation){
 fail:vulkan_device_close(v);return 0;
 }
 void vulkan_device_close(VulkanDevice *v){
+    vulkan_queue_drain(v);
     if(v->device && v->DeviceWaitIdle)v->DeviceWaitIdle(v->device);
     if(v->commands && v->DestroyCommandPool)v->DestroyCommandPool(v->device,v->commands,NULL);
     if(v->device && v->DestroyDevice)v->DestroyDevice(v->device,NULL);
@@ -168,6 +169,7 @@ int vulkan_buffer_create(VulkanDevice *v,VulkanBuffer *b,VkDeviceSize size,VkBuf
 fail:vulkan_buffer_destroy(v,b);return 0;
 }
 void vulkan_buffer_destroy(VulkanDevice *v,VulkanBuffer *b){
+    if(b->buffer)vulkan_queue_drain(v);
     if(b->buffer)v->DestroyBuffer(v->device,b->buffer,NULL);
     if(b->mapping)v->UnmapMemory(v->device,b->memory);
     if(b->memory)v->FreeMemory(v->device,b->memory,NULL);
@@ -176,6 +178,7 @@ void vulkan_buffer_destroy(VulkanDevice *v,VulkanBuffer *b){
 static int buffer_transfer(VulkanDevice *v,VulkanBuffer *b,void *data,size_t size,int write){
     VkMappedMemoryRange range={VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};void *mapped=b->mapping;VkResult r=VK_SUCCESS;
     if(size>b->size || !mapped)return 0;
+    if(!vulkan_queue_drain(v))return 0;
     range.memory=b->memory;range.size=VK_WHOLE_SIZE;
     if(write){memcpy(mapped,data,size);if(!b->coherent)r=v->FlushMappedMemoryRanges(v->device,1,&range);}
     else {if(!b->coherent)r=v->InvalidateMappedMemoryRanges(v->device,1,&range);if(r==VK_SUCCESS)memcpy(data,mapped,size);}
@@ -205,6 +208,7 @@ int vulkan_image_create_aspect(VulkanDevice *v,VulkanImage *image,VkFormat forma
 fail:vulkan_image_destroy(v,image);return 0;
 }
 void vulkan_image_destroy(VulkanDevice *v,VulkanImage *image){
+    if(image->image)vulkan_queue_drain(v);
     if(image->view)v->DestroyImageView(v->device,image->view,NULL);
     if(image->image)v->DestroyImage(v->device,image->image,NULL);
     if(image->memory)v->FreeMemory(v->device,image->memory,NULL);
@@ -218,16 +222,35 @@ int vulkan_command_begin(VulkanDevice *v,VkCommandBuffer *command){
     if(result(v->BeginCommandBuffer(*command,&b),"begin command buffer"))return 1;
     v->FreeCommandBuffers(v->device,v->commands,1,command);return 0;
 }
+static void queue_retire(VulkanDevice *v){
+    if(v->pending_count)v->FreeCommandBuffers(v->device,v->commands,v->pending_count,v->pending);
+    v->pending_count=0;
+}
+int vulkan_queue_drain(VulkanDevice *v){
+    int ok;if(!v->pending_count)return 1;
+    ok=result(v->QueueWaitIdle(v->queue),"deferred queue completion");
+    if(!ok)v->DeviceWaitIdle(v->device);
+    queue_retire(v);return ok;
+}
 int vulkan_command_submit(VulkanDevice *v,VkCommandBuffer command,VkSemaphore wait,VkSemaphore signal){
     VkFenceCreateInfo create={VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};VkFence fence=VK_NULL_HANDLE;int ok=0;
     VkSubmitInfo submit={VK_STRUCTURE_TYPE_SUBMIT_INFO};VkPipelineStageFlags stage=VK_PIPELINE_STAGE_TRANSFER_BIT;
     if(!result(v->EndCommandBuffer(command),"end command buffer"))goto fail;
+    submit.commandBufferCount=1;submit.pCommandBuffers=&command;
+    if(v->defer_submissions && !wait && !signal){
+        if(v->pending_count==64 && !vulkan_queue_drain(v))goto fail;
+        CHECK(v->QueueSubmit(v->queue,1,&submit,VK_NULL_HANDLE));
+        v->pending[v->pending_count++]=command;return 1;
+    }
     CHECK(v->CreateFence(v->device,&create,NULL,&fence));submit.commandBufferCount=1;submit.pCommandBuffers=&command;
     if(wait){submit.waitSemaphoreCount=1;submit.pWaitSemaphores=&wait;submit.pWaitDstStageMask=&stage;}
     if(signal){submit.signalSemaphoreCount=1;submit.pSignalSemaphores=&signal;}
     CHECK(v->QueueSubmit(v->queue,1,&submit,fence));CHECK(v->WaitForFences(v->device,1,&fence,VK_TRUE,5000000000ull));ok=1;
 fail:
     if(!ok)v->DeviceWaitIdle(v->device);
+    /* This fence (or the failure-path idle) covers every earlier submission
+     * on the same queue. None of their command buffers is freed while in use. */
+    queue_retire(v);
     if(fence)v->DestroyFence(v->device,fence,NULL);
     v->FreeCommandBuffers(v->device,v->commands,1,&command);
     return ok;

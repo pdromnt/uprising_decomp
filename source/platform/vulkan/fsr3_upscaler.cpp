@@ -70,6 +70,7 @@ extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint3
 fail:fsr3_upscaler_close(s);return nullptr;
 }
 extern "C" void fsr3_upscaler_close(Fsr3Upscaler *s){
+    if(s && s->device)vulkan_queue_drain(s->device);
     if(!s)return;s->device->DeviceWaitIdle(s->device->device);
     if(s->created)ffxFsr3UpscalerContextDestroy(&s->context);
     for(auto &image:s->shared)vulkan_image_destroy(s->device,&image);

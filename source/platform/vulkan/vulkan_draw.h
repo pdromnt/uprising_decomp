@@ -69,8 +69,8 @@ int vulkan_draw_reset_reciprocal_depth(VulkanDraw *);
 int vulkan_draw_triangles(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
 int vulkan_draw_points(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
 int vulkan_draw_lines(VulkanDraw *,const VulkanDrawVertex *,uint32_t count,VulkanDrawTexture *,uint32_t flags);
-/* Synchronous completion for parity/readback consumers. rgba may be NULL.
- * A later frame ring can overlap work without changing submission semantics. */
+/* rgba readbacks always complete. Without readback, an opted-in deferred queue
+ * may keep commands in flight until presentation or the next host reuse. */
 int vulkan_draw_finish(VulkanDraw *,uint8_t *rgba,size_t bytes);
 int vulkan_draw_readback(VulkanDraw *,uint8_t *rgba,size_t bytes);
 /* Scene-only color: world and sky under their actual depth/alpha/mask tests.

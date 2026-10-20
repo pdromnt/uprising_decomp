@@ -64,6 +64,7 @@ fail:return 0;
 }
 void vulkan_draw_texture_destroy(VulkanDraw *d,VulkanDrawTexture *t){
     VulkanDevice *v=d->device;unsigned i;
+    if(t->descriptor)vulkan_queue_drain(v);
     if(t->descriptor)v->FreeDescriptorSets(v->device,t->pool,1,&t->descriptor);
     for(i=0;i<8;i++)if(t->variants[i])v->FreeDescriptorSets(v->device,t->pool,1,t->variants+i);
     if(t->sampler)v->DestroySampler(v->device,t->sampler,NULL);
@@ -199,6 +200,7 @@ fail:
     vulkan_draw_close(d);return 0;
 }
 void vulkan_draw_close(VulkanDraw *d){
+    if(d->device)vulkan_queue_drain(d->device);
     VulkanDevice *v=d->device;unsigned i;if(!v)return;
     v->DeviceWaitIdle(v->device);vulkan_draw_texture_destroy(d,&d->white);
     for(i=0;i<1728;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);

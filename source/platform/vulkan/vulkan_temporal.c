@@ -58,6 +58,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
 fail:if(shader)v->DestroyShaderModule(v->device,shader,NULL);vulkan_temporal_close(t);return 0;
 }
 void vulkan_temporal_close(VulkanTemporal *t){
+    if(t->device)vulkan_queue_drain(t->device);
     VulkanDevice *v=t->device;if(!v)return;
     if(t->pipeline)v->DestroyPipeline(v->device,t->pipeline,NULL);
     if(t->composition_pipeline)v->DestroyPipeline(v->device,t->composition_pipeline,NULL);

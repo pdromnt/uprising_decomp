@@ -35,6 +35,7 @@ typedef struct VulkanDevice {
     PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug;VkDebugUtilsMessengerEXT debug;
     unsigned validation_errors;
     int fsr3_storage_supported;
+    int defer_submissions;unsigned pending_count;VkCommandBuffer pending[64];
 #define DECLARE(name) PFN_vk##name name;
     VK_DEVICE_FUNCTIONS(DECLARE)
 #undef DECLARE
@@ -57,6 +58,9 @@ int vulkan_image_create_aspect(VulkanDevice *,VulkanImage *,VkFormat,VkImageUsag
 void vulkan_image_destroy(VulkanDevice *,VulkanImage *);
 int vulkan_command_begin(VulkanDevice *,VkCommandBuffer *);
 int vulkan_command_submit(VulkanDevice *,VkCommandBuffer,VkSemaphore,VkSemaphore);
+/* Optional renderer-thread batching. Reads/host writes/destruction drain first;
+ * semaphore submissions retire earlier commands after their completion fence. */
+int vulkan_queue_drain(VulkanDevice *);
 #ifdef __cplusplus
 }
 #endif

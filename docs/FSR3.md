@@ -43,7 +43,10 @@ cover all options. Changing SDK input/output dimensions recreates its context.
 - Polygon vertices are converted once per polygon; triangles retain order,
   culling and per-triangle motion rejection. Scratch belongs to the renderer,
   avoiding large per-call stack probes. Adjacent batches reuse compatible draw
-  state only inside one command buffer. Submission remains synchronous.
+  state only inside one command buffer. Interior GPU submissions are queued without
+  a per-submit fence; presentation retires them together. Host reads/writes and
+  resource destruction drain the queue before reuse. The pending list is bounded
+  to64 commands; this is intraframe overlap, not a multiframe render ring.
 
 The selected SDK profile is LDR/FP32, native subgroup width, low-resolution
 motion and reversed-infinite depth. Other permutations fail explicitly rather
@@ -106,19 +109,27 @@ sharpening, spatial tank/O AA, SDK retirement/recreation and clean shutdown.
 Advanced-modal click routing/Apply/Revert/persistence passed; its capture was inspected.
 These fixtures do not establish complete temporal image-quality acceptance.
 Local Khronos layers are unavailable; Linux software-driver CI supplies validation.
+Six-target CI39365897032 passed, including the SDK-free macOS bundle-loader check
+and signed experimental DMG. Deferred-queue changes require the newer CI run.
+The GPU probe exercises both immediate and deferred submission, including the
+64-command bound, readback, host-buffer reuse and destruction.
 
 Training3 first-attack archive, seed1792110400, FSR640x480 ->960x720, normal fire,
 windowed/muted/isolated. Sequential25s samples exclude the first5s:
 
 | View | Previous polygon path | Current path |
 | --- | --- | --- |
-| Citadel, pitch200 |69.31FPS |69.43FPS |
-| O monitor |100.96FPS |101.25FPS |
+| Citadel, pitch200 |69.31FPS |96.07FPS |
+| O monitor |100.96FPS |110.38FPS |
 
-No measured-interval resets and no demonstrated FPS gain. The citadel capture
+No measured-interval resets; these samples improved about39%/9% respectively
+after removing interior fence waits. The earlier CPU-only change showed no FPS
+gain. The citadel capture
 looks at terrain/walls, not a dense battle; severe crowded-view slowdown remains
 unresolved. Observe-only preparation/scene/flush/reconstruction wall times can
-overlap and are not exclusive GPU timings. Short profiles are guard-terminated;
+overlap and are not exclusive GPU timings. With deferred submission, recording
+scopes exclude GPU completion; compare full present intervals for performance.
+Short profiles are guard-terminated;
 clean shutdown is checked separately. A speculative arena-access change was
 dropped after timings failed to justify it.
 

@@ -727,6 +727,14 @@ int main(int argc,char **argv){
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
     if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !temporal_monitor_pass(&device))goto done;
+    device.defer_submissions=1;
+    for(i=0;i<65;i++){
+        VkCommandBuffer command;
+        if(!vulkan_command_begin(&device,&command) || !vulkan_command_submit(&device,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+           device.pending_count!=(unsigned)(i%64+1))goto done;
+    }
+    if(!graphics_pass(&device,window) || !temporal_monitor_pass(&device) || !vulkan_queue_drain(&device) || device.pending_count)goto done;
+    printf("VULKAN_DEFERRED_QUEUE_PASS bounded_queue=checked draw=checked readback=checked reuse=checked destruction=checked retirement=checked\n");
 #ifdef UPRISING_FSR3_UPSCALER
     if(!reactive_pass(&device,&reactive) || !upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
 #else

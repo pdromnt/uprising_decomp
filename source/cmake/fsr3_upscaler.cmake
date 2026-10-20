@@ -34,6 +34,12 @@ math(EXPR memory_length "${memory_end}-${memory_begin}")
 string(SUBSTRING "${backend}" ${memory_begin} ${memory_length} original_memory)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_memory.inc" native_memory)
 string(REPLACE "${original_memory}" "${native_memory}\n" backend "${backend}")
+# EffectContext is alignas(32); align the header and every packed region in
+# both the size query and pointer construction, not merely the outer buffer.
+string(REPLACE ", sizeof(uint32_t))" ", size_t(32))" backend "${backend}")
+string(REPLACE "FFX_ALIGN_UP(sizeof(BackendContext_VK) +" "FFX_ALIGN_UP(FFX_ALIGN_UP(sizeof(BackendContext_VK), size_t(32)) +" backend "${backend}")
+string(REPLACE "(uint8_t*)((BackendContext_VK*)(backendContext + 1))"
+    "reinterpret_cast<uint8_t*>(backendContext) + FFX_ALIGN_UP(sizeof(BackendContext_VK), size_t(32))" backend "${backend}")
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3_backend_native.inc" CONTENT "${backend}" @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_memory.inc")
 set(fsr3_headers)

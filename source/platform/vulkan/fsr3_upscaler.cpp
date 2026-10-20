@@ -7,11 +7,12 @@
 #include <new>
 #include <cmath>
 #include <cfloat>
+#include <cstring>
 static_assert(sizeof(void*)==8 && sizeof(VkImage)==8,"SDK external image handles require 64-bit pointers");
 extern "C" int fsr3_backend_load(VkInstance,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr);
 extern "C" PFN_vkVoidFunction VKAPI_CALL fsr3_backend_device_proc(VkDevice,const char *);
 struct Fsr3Upscaler {
-    VulkanDevice *device;FfxFsr3UpscalerContext context{};void *scratch=nullptr;bool created=false,initialized=false;
+    VulkanDevice *device;alignas(32) FfxFsr3UpscalerContext context{};void *scratch=nullptr;bool created=false,initialized=false;
     uint32_t width,height,output_width,output_height;VulkanImage shared[3]{},output{};
 };
 namespace {
@@ -44,7 +45,8 @@ extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint3
     desc.maxRenderSize={width,height};desc.maxUpscaleSize={output_width,output_height};
     desc.flags=FFX_FSR3UPSCALER_ENABLE_DEPTH_INVERTED|FFX_FSR3UPSCALER_ENABLE_DEPTH_INFINITE|FFX_FSR3UPSCALER_ENABLE_AUTO_EXPOSURE;
     desc.backendInterface.scratchBufferSize=ffxGetScratchMemorySizeVK(v->physical,1);
-    s->scratch=std::calloc(1,desc.backendInterface.scratchBufferSize);if(!s->scratch)goto fail;
+    s->scratch=::operator new(desc.backendInterface.scratchBufferSize,std::align_val_t(32),std::nothrow);if(!s->scratch)goto fail;
+    std::memset(s->scratch,0,desc.backendInterface.scratchBufferSize);
     if(ffxGetInterfaceVK(&desc.backendInterface,ffxGetDeviceVK(&device),s->scratch,desc.backendInterface.scratchBufferSize,1)!=FFX_OK)goto fail;
     original_capabilities=desc.backendInterface.fpGetDeviceCapabilities;desc.backendInterface.fpGetDeviceCapabilities=capabilities;
     original_create=desc.backendInterface.fpCreateBackendContext;desc.backendInterface.fpCreateBackendContext=create_backend;
@@ -66,7 +68,7 @@ extern "C" void fsr3_upscaler_close(Fsr3Upscaler *s){
     if(s->created)ffxFsr3UpscalerContextDestroy(&s->context);
     for(auto &image:s->shared)vulkan_image_destroy(s->device,&image);
     vulkan_image_destroy(s->device,&s->output);
-    std::free(s->scratch);if(active==s)active=nullptr;delete s;
+    ::operator delete(s->scratch,std::align_val_t(32));if(active==s)active=nullptr;delete s;
 }
 namespace {
 FfxResource resource(const VulkanImage *image,FfxSurfaceFormat format,uint32_t width,uint32_t height,FfxResourceStates state){

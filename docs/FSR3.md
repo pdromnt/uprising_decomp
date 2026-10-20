@@ -54,12 +54,19 @@ fail explicitly. The adapter resolves promoted memory-query entry points through
 SDL's loader and exposes only enabled/promoted functionality to the SDK. The
 frame-generation presenter callback is absent. Required storage-image features
 are checked. C++ is used only inside this optional SDK integration.
+The adapter also bounds descriptor reservations, supports unified device memory,
+and aligns every SDK scratch region to its declared 32-byte requirement. Unix
+uses bounded CRT helpers and a larger opaque context for native four-byte
+`wchar_t`; the SDK's size assertion is preserved. Original downloads stay intact;
+the build derives a backend file with the memory/layout corrections.
 
 The upstream external-resource API stores Vulkan image handles in `void*`.
 The FSR host is therefore disabled on x86 rather than truncating 64-bit handles;
 the x86 Vulkan renderer/reactive probe remain supported. A handle-safe SDK adapter
-is still needed there. Local RTX4060Ti dispatch passed; full host cross-platform
-CI is pending. No local validation-layer pass is claimed. This is not yet
+is still needed there. Local RTX4060Ti dispatch passed. CI39347059876 passed all
+six application targets, including upscaler execution with Khronos validation on
+Linux x64/ARM64. macOS/Windows ARM64 have compile evidence, not native GPU evidence.
+No local validation-layer pass is claimed. This is not yet
 in-game upscaling: scene/HUD output composition, real view metadata and camera
 resets, reactive/composition extraction, resizing and temporal quality remain.
 
@@ -181,8 +188,8 @@ returning, retaining every acceptance assertion. This removes the measured
 stationary regression, not the need for broader view/scene performance comparisons.
 Retain the OpenGL release. The bounded timed samples
 were deliberately terminated by the launcher; clean shutdown was checked above.
-Six-platform application CI passed with scene color. New upscaler-host CI
-and validation-layer coverage of level rendering remain pending, as do native Apple
+Six-platform application/upscaler-host CI passed, including Linux x64/ARM64 probe
+validation. Validation-layer coverage of level rendering remains pending, as do native Apple
 GPU execution, all supported views/material comparisons and Vulkan MSAA.
 
 Windows/Linux use the installed Vulkan driver/loader. The new separate world
@@ -214,7 +221,8 @@ unchanged. Unsupported hardware keeps the existing game until Vulkan parity.
   profile locally. This does not establish in-game temporal quality, frame
   generation, full shader-variant coverage or a performance gain.
 - The SDK v1.1.4 upscaler Vulkan backend already contains non-Windows paths;
-  cross-platform host build/runtime evidence is still pending.
+  the selected profile now builds across the 64-bit targets and runs with Linux
+  software-driver validation. Native Apple GPU execution is still pending.
   Its separate frame-generation presenter directly uses Win32 threads/events/QPC;
   omitting that component avoids its platform port for upscale-only integration.
 - Need game dispatch/composition, remaining shader variants, 32-bit safe handles,

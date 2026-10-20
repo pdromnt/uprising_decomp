@@ -58,6 +58,11 @@ int vulkan_present_image(VulkanPresent *p,VkImage image,uint32_t width,uint32_t 
     VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkClearColorValue black={{0,0,0,1}};VkImageBlit blit={0};
     VkPresentInfoKHR present={VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     if(!width || !height || !image)return 0;
+    {int pixels_w,pixels_h;
+     if(!SDL_GetWindowSizeInPixels(p->window,&pixels_w,&pixels_h))return 0;
+     if(pixels_w<=0 || pixels_h<=0)return 1;
+     if((uint32_t)pixels_w!=p->extent.width || (uint32_t)pixels_h!=p->extent.height)p->recreate=1;
+    }
     if(p->recreate){SDL_Window *window=p->window;vulkan_present_close(p);if(!vulkan_present_open(p,v,window))return 0;}
     if(!p->swapchain)return 1;
     status=v->AcquireNextImageKHR(v->device,p->swapchain,5000000000ull,p->acquired,VK_NULL_HANDLE,&index);

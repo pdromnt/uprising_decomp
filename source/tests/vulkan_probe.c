@@ -89,8 +89,15 @@ static int temporal_monitor_pass(VulkanDevice *v){
        !vulkan_draw_begin(&upscaled,black) || !vulkan_draw_finish(&upscaled,NULL,0) ||
        !vulkan_draw_begin(&output,black) || !vulkan_draw_finish(&output,NULL,0))goto done;
     output.material.extent[0]=output.material.extent[1]=64;
-    for(frame=0;frame<2;frame++){
+    for(frame=0;frame<3;frame++){
         VkCommandBuffer command;
+        if(frame==2){
+            vulkan_draw_close(&output);vulkan_draw_close(&upscaled);
+            if(!vulkan_draw_open(&output,v,100,100) || !vulkan_draw_open(&upscaled,v,49,36) ||
+               !vulkan_draw_begin(&output,black) || !vulkan_draw_finish(&output,NULL,0) ||
+               !vulkan_draw_begin(&upscaled,black) || !vulkan_draw_finish(&upscaled,NULL,0))goto done;
+            output.material.extent[0]=output.material.extent[1]=64;
+        }
         if(!vulkan_command_begin(v,&command))goto done;
         if(vulkan_temporal_crop(&temporal,command,&source.scene,&source.reciprocal_depth,&source.motion,64,12,64,64))goto done;
         if(!vulkan_temporal_crop(&temporal,command,&source.scene,&source.reciprocal_depth,&source.motion,8,12,64,64) ||
@@ -106,16 +113,21 @@ static int temporal_monitor_pass(VulkanDevice *v){
         /* Nearest reconstruction isolates composition from SDK quality here;
          * the separate upscaler pass and live game exercise actual FSR. */
         if(!vulkan_draw_blit_color(&upscaled,temporal.cropped,31,23) || !vulkan_command_begin(v,&command) ||
-           !vulkan_temporal_compose(&temporal,command,&upscaled.color,&source.scene,&source.color,&output.color,8,12,128,128) ||
+           !vulkan_temporal_compose(&temporal,command,&upscaled.color,&source.scene,&source.color,&output.color,8,12,output.width,output.height) ||
            !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_draw_resume(&output))goto done;
         output.material.color_mode=0;output.material.alpha_mode=1;output.material.alpha_function=7;
         if(!draw_quad(&output,0,0,4,4,0,1,1,1,1,NULL,0) || !vulkan_draw_finish(&output,final,sizeof(final)))goto done;
-        for(y=0;y<128;y++)for(x=0;x<128;x++)for(i=0;i<3;i++){
-            int expected=x<8 && y<8?255:native[((y/2)*64+x/2)*4+i];
-            if(abs(final[(y*128+x)*4+i]-expected)>1){fprintf(stderr,"Monitor composition mismatch %u/%u channel=%u\n",x,y,i);goto done;}
+        for(y=0;y<output.height;y++)for(x=0;x<output.width;x++)for(i=0;i<3;i++){
+            unsigned sx=(2*x+1)*64/(2*output.width),sy=(2*y+1)*64/(2*output.height);
+            int hud=(2*x+1)*64<8*output.width && (2*y+1)*64<8*output.height;
+            if(frame==2 && !hud && sx>=8 && sx<39 && sy>=12 && sy<35 && scene[(sy*64+sx)*4+3])continue;
+            int expected=hud?255:native[(sy*64+sx)*4+i];
+            if(abs(final[(y*output.width+x)*4+i]-expected)>1){fprintf(stderr,"Monitor composition mismatch %u/%u channel=%u\n",x,y,i);goto done;}
         }
+        if(frame==2 && (!pixel(final,0,0,255,255,255) || final[(45*100+20)*4]!=255 || final[(45*100+20)*4+2]!=0 ||
+           abs((int)final[(22*100+22)*4]-128)>1 || abs((int)final[(22*100+22)*4+2]-128)>1))goto done;
     }
-    printf("VULKAN_MONITOR_COMPOSITION_PASS crop=31x23 offset=8/12 depth_motion_exact=checked irregular_artwork=checked translucency=checked hud=checked reuse=checked\n");ok=1;
+    printf("VULKAN_MONITOR_COMPOSITION_PASS crop=31x23 offset=8/12 depth_motion_exact=checked irregular_artwork=checked translucency=checked hud=checked reuse=checked fractional_resize=checked\n");ok=1;
 done:vulkan_temporal_close(&temporal);vulkan_draw_close(&output);vulkan_draw_close(&upscaled);vulkan_draw_close(&source);return ok;
 }
 static int graphics_pass(VulkanDevice *v,SDL_Window *window){

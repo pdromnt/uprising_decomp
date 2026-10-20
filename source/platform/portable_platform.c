@@ -629,10 +629,17 @@ int game_application_scene_depth(GameApplication *a,int enabled){
     if(enabled && gl1_current->vulkan){
         Vk1Device *n=gl1_current->vulkan;float projection[5],jitter[2]={0,0};unsigned i;
         uint32_t crop[4]={0,0,gl1_current->width,gl1_current->height};
+        uint32_t output[2];int requested=game_display_temporal_output(a,output);
         static const GameAddress fields[5]={0x6290c8,0x6290cc,0x6290f0,0x6290f4,0x574cb0};
         uint32_t camera=game_memory_read_u32(&a->memory,0x58f890),mode=game_memory_read_u32(&a->memory,0x604760);
         for(i=0;i<5;i++){uint32_t bits=game_memory_read_u32(&a->memory,fields[i]);memcpy(projection+i,&bits,4);}
         if(a->memory.fault)return 0;
+        if(!output[0] || !output[1]){
+            output[0]=n->fsr_output[0]?n->fsr_output[0]:gl1_current->width;
+            output[1]=n->fsr_output[1]?n->fsr_output[1]:gl1_current->height;
+        }
+        if(requested!=n->fsr_requested || memcmp(output,n->fsr_output,sizeof(output))){render_motion_reset(&n->history);n->fsr_reset=1;n->fsr_time=0;}
+        n->fsr_requested=requested;memcpy(n->fsr_output,output,sizeof(output));
         if(n->composed[gl1_current->back] && !vk1_flush(vk1_back(),0))return 0;
         n->composed[gl1_current->back]=0;
         n->fsr_monitor=n->fsr_requested && mode==7;
@@ -651,7 +658,7 @@ int game_application_scene_depth(GameApplication *a,int enabled){
         if(n->fsr_monitor && !n->fsr_view)return 0;
         if(!n->fsr_view){n->fsr_reset=1;n->fsr_time=0;}
 #ifdef UPRISING_FSR3_UPSCALER
-        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(crop[2],crop[2]*2),jitter);
+        if(n->fsr_view)render_motion_jitter(n->frames,fsr3_upscaler_jitter_phases(crop[2],(uint32_t)(((uint64_t)crop[2]*output[0]+gl1_current->width-1)/gl1_current->width)),jitter);
         else
 #endif
         if(n->jitter_enabled)render_motion_jitter(n->frames,8,jitter);

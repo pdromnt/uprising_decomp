@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "portable_fsr.inc"
+#ifdef UPRISING_FSR3_UPSCALER
+#include "vulkan_menu.h"
+#include "vulkan_device.h"
+#endif
 
 typedef struct DisplayOptions {int width,height,fullscreen,fsr,aa;} DisplayOptions;
 typedef struct DisplayMode {int width,height;} DisplayMode;
@@ -18,11 +22,19 @@ struct GameDisplay {
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
     int open,focus,armed,mouse_x,mouse_y,countdown_pixels,aa_limit;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
-    DisplayFsr fsr;
+    DisplayFsr fsr;int vulkan,fsr_available;
 };
 typedef struct GameDisplay GameDisplay;
 static void display_redraw(GameDisplay *d){game_memory_write_u32(&d->application->memory,0x58fd3cu,1);}
 int game_display_antialias_samples(GameApplication *a){return a->display?a->display->active.aa:0;}
+int game_display_temporal_output(GameApplication *a,uint32_t size[2]){
+    GameDisplay *d=a->display;int width,height,viewport[4];size[0]=size[1]=0;
+    if(!d || !d->vulkan || !d->fsr_available || !d->active.fsr)return 0;
+    if(!SDL_GetWindowSizeInPixels(d->window,&width,&height) || width<=0 || height<=0)return 1;
+    game_display_viewport(width,height,640,480,viewport);
+    size[0]=(uint32_t)(viewport[2]<640?640:viewport[2]);size[1]=(uint32_t)(viewport[3]<480?480:viewport[3]);
+    return 1;
+}
 void game_display_antialias_unavailable(GameApplication *a){
     GameDisplay *d=a->display;if(!d)return;
     d->active.aa=d->draft.aa=d->aa_limit=0;
@@ -96,8 +108,8 @@ static int display_configure(GameDisplay *d,DisplayOptions options){
     return c && game_config_set_number(c,"display","width",options.width) &&
         game_config_set_number(c,"display","height",options.height) &&
         game_config_set_number(c,"display","fullscreen",options.fullscreen) &&
-        game_config_set_number(c,"display","fsr1",options.fsr) &&
-        game_config_set_number(c,"display","msaa_samples",options.aa);
+        game_config_set_number(c,"display",d->vulkan?"fsr3":"fsr1",options.fsr) &&
+        ((d->vulkan && d->aa_limit<2) || game_config_set_number(c,"display","msaa_samples",options.aa));
 }
 static int display_persist(GameDisplay *d){
     if(display_configure(d,d->active) && game_application_config_flush(d->application))return 1;
@@ -110,8 +122,10 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
     if(!d)return 0;
     a->display=d;d->application=a;d->window=window;d->fonts=fonts;d->armed=-1;
     d->active=(DisplayOptions){640,480,0,0,0};
-    if(!(SDL_GetWindowFlags(window)&SDL_WINDOW_VULKAN)){
+    d->vulkan=(SDL_GetWindowFlags(window)&SDL_WINDOW_VULKAN)!=0;
+    if(!d->vulkan){
     display_fsr_begin(&d->fsr,a);
+    d->fsr_available=d->fsr.available;
     if((SDL_GL_ExtensionSupported("GL_ARB_framebuffer_object") ||
         (SDL_GL_ExtensionSupported("GL_EXT_framebuffer_multisample") && SDL_GL_ExtensionSupported("GL_EXT_framebuffer_blit"))) &&
        (SDL_GL_GetProcAddress("glRenderbufferStorageMultisample") || SDL_GL_GetProcAddress("glRenderbufferStorageMultisampleEXT")) &&
@@ -119,6 +133,9 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
         glGetIntegerv(GL_MAX_SAMPLES,&d->aa_limit);
     if(d->aa_limit>8)d->aa_limit=8;
     }
+#ifdef UPRISING_FSR3_UPSCALER
+    else {VulkanMenu *menu=game_menu_vulkan(a);d->fsr_available=menu && vulkan_menu_device(menu)->fsr3_storage_supported;}
+#endif
     d->canvas=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_RGBA32);
     d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(4);
     if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,colors,0,4) ||
@@ -127,10 +144,14 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
         DisplayOptions saved={(int)game_config_number(c,"display","width",640),
             (int)game_config_number(c,"display","height",480),
             game_config_number(c,"display","fullscreen",0)==1,
-            game_config_number(c,"display","fsr1",0)==1 && d->fsr.available,
+            game_config_number(c,"display",d->vulkan?"fsr3":"fsr1",0)==1 && d->fsr_available,
             (int)game_config_number(c,"display","msaa_samples",0)};
         if((saved.aa!=2 && saved.aa!=4 && saved.aa!=8) || saved.aa>d->aa_limit)saved.aa=0;
         if(!display_set(d,saved)){(void)display_set(d,d->active);SDL_ClearError();}
+    }
+    if(d->vulkan){const char *force=SDL_getenv("UPRISING_VULKAN_FSR3");
+        if(force && !strcmp(force,"1") && !d->fsr_available){SDL_SetError("FSR3 host unavailable on this architecture/device");return 0;}
+        if(force && (!strcmp(force,"1") || !strcmp(force,"0")))d->active.fsr=!strcmp(force,"1");
     }
     d->draft=d->active;display_modes(d);return 1;
 }
@@ -174,7 +195,7 @@ static void display_action(GameDisplay *d,int action,int direction){
         if(d->draft.fullscreen)break;
         index=display_mode_index(d);index=(index+direction+d->mode_count)%d->mode_count;
         d->draft.width=d->modes[index].width;d->draft.height=d->modes[index].height;break;
-    case 2:if(d->fsr.available)d->draft.fsr=!d->draft.fsr;break;
+    case 2:if(d->fsr_available)d->draft.fsr=!d->draft.fsr;break;
     case 11:{
         static const int samples[]={0,2,4,8};int count=1;
         while(count<4 && samples[count]<=d->aa_limit)++count;
@@ -328,7 +349,7 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
         }else{
             display_label(d,"DISPLAY MODE",138,185,315,2,2);
             display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,223,315,2,2);
-            display_label(d,"FSR 1 UPSCALING",138,261,315,2,2);
+            display_label(d,d->vulkan?"FSR 3.1 (3D)":"FSR 1 UPSCALING",138,261,315,2,2);
             display_label(d,"3D ANTI-ALIASING",138,299,315,2,2);
             display_fill(s,138,210,364,1,display_color(s,29,42,29));
             display_fill(s,138,248,364,1,display_color(s,29,42,29));
@@ -343,12 +364,12 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
                 }else snprintf(text,sizeof(text),"DESKTOP 4:3");
             }
             display_selector(d,s,1,text,!d->draft.fullscreen);
-            display_selector(d,s,2,!d->fsr.available?"UNAVAILABLE":d->draft.fsr?"ON":"OFF",d->fsr.available);
+            display_selector(d,s,2,!d->fsr_available?"UNAVAILABLE":d->draft.fsr?"ON":"OFF",d->fsr_available);
             if(d->draft.aa)snprintf(text,sizeof(text),"MSAA %dx",d->draft.aa);else snprintf(text,sizeof(text),"OFF");
             display_selector(d,s,3,d->aa_limit>=2?text:"UNAVAILABLE",d->aa_limit>=2);
             display_button(d,s,170,357,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
             display_button(d,s,330,357,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
-            display_label(d,d->status[0]?d->status:"3D AA: next mission load. FSR scales all screens.",138,334,505,0,2);
+            display_label(d,d->status[0]?d->status:d->vulkan?"FSR 3.1: gameplay. Menus and HUD stay separate.":"3D AA: next mission load. FSR scales all screens.",138,334,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};

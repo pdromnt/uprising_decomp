@@ -5,18 +5,31 @@ layout(set=0,binding=1) uniform sampler2D scene;
 layout(set=0,binding=2) uniform sampler2D native_final;
 layout(set=0,binding=3,rgba8) uniform writeonly image2D output_color;
 layout(push_constant) uniform View {ivec4 crop;} view;
+vec3 sample_upscaled(vec2 uv){
+    ivec2 extent=textureSize(upscaled,0);
+    vec2 pixel=uv*vec2(extent)-0.5,weight=fract(pixel);ivec2 base=ivec2(floor(pixel));
+    // Manual bilinear sampling avoids requiring float32 linear-filter support.
+    vec3 a=texelFetch(upscaled,clamp(base,ivec2(0),extent-1),0).rgb;
+    vec3 b=texelFetch(upscaled,clamp(base+ivec2(1,0),ivec2(0),extent-1),0).rgb;
+    vec3 c=texelFetch(upscaled,clamp(base+ivec2(0,1),ivec2(0),extent-1),0).rgb;
+    vec3 d=texelFetch(upscaled,clamp(base+ivec2(1,1),ivec2(0),extent-1),0).rgb;
+    return mix(mix(a,b,weight.x),mix(c,d,weight.x),weight.y);
+}
 void main(){
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
     if(any(greaterThanEqual(pixel,imageSize(output_color))))return;
-    ivec2 source=pixel/2,local=pixel-view.crop.xy*2;
+    ivec2 logical=textureSize(native_final,0);
+    vec2 screen=(vec2(pixel)+0.5)*vec2(logical)/vec2(imageSize(output_color));
+    ivec2 source=clamp(ivec2(screen),ivec2(0),logical-1);
+    vec2 uv=(screen-vec2(view.crop.xy))/vec2(view.crop.zw);
     vec4 final_color=texelFetch(native_final,source,0);
     vec4 current_scene=texelFetch(scene,source,0);
     bool covered=current_scene.a>0.0 || any(notEqual(current_scene.rgb,vec3(0)));
-    if(all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,view.crop.zw*2)) && covered){
+    if(all(greaterThanEqual(uv,vec2(0))) && all(lessThan(uv,vec2(1))) && covered){
         // Both MRTs receive identical RGB blending. Their difference is the
         // surviving pre-scene artwork contribution, never temporal HUD data.
         vec3 artwork=max(final_color.rgb-current_scene.rgb,vec3(0));
-        final_color=vec4(texelFetch(upscaled,local,0).rgb+artwork,1);
+        final_color=vec4(sample_upscaled(uv)+artwork,1);
     }
     imageStore(output_color,pixel,final_color);
 }

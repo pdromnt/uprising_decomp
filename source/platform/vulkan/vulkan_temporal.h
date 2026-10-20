@@ -26,7 +26,7 @@ int vulkan_temporal_record(VulkanTemporal *,VkCommandBuffer,const VulkanImage *m
 int vulkan_temporal_crop_open(VulkanTemporal *);
 int vulkan_temporal_crop(VulkanTemporal *,VkCommandBuffer,const VulkanImage *color,
     const VulkanImage *depth,const VulkanImage *motion,uint32_t x,uint32_t y,uint32_t source_width,uint32_t source_height);
-/* Compose 2x temporal crop into a completed 2x full-screen color target. Source
+/* Compose temporal crop into a completed full-screen color target. Source
  * images and output enter/leave TRANSFER_SRC_OPTIMAL. Coverage and retained
  * pre-scene artwork come from the actual matching native MRTs. */
 int vulkan_temporal_compose(VulkanTemporal *,VkCommandBuffer,const VulkanImage *upscaled,

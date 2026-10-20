@@ -13,4 +13,7 @@ int game_display_present(GameApplication *,unsigned texture,int width,int height
 void game_display_viewport(int width,int height,int source_width,int source_height,int rect[4]);
 int game_display_antialias_samples(GameApplication *);
 void game_display_antialias_unavailable(GameApplication *);
+/* Enabled temporal backend, with fitted drawable size (zero while unavailable).
+ * Logical game coordinates remain640x480; sub-native outputs use native size. */
+int game_display_temporal_output(GameApplication *,uint32_t size[2]);
 #endif

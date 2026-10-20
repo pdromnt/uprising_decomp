@@ -19,6 +19,7 @@ typedef struct Vk1Device {
     VulkanDraw output[2];int composed[2],fsr_requested,fsr_view,fsr_reset;
     Uint64 fsr_time;uint64_t fsr_frames,fsr_resets;
     uint32_t fsr_crop[4];int fsr_monitor;uint64_t fsr_monitor_frames;
+    uint32_t fsr_output[2],fsr_context_output[2];
 #ifdef UPRISING_FSR3_UPSCALER
     Fsr3Upscaler *upscaler;
     VulkanTemporal temporal;
@@ -48,17 +49,28 @@ static int vk1_scene_complete(void){
     VulkanDevice *v=vulkan_menu_device(n->menu);VkCommandBuffer command;const VulkanImage *image;
     const float clear[4]={0,0,0,1};float focal,fov,elapsed;Uint64 now;
     uint32_t width=n->fsr_crop[2],height=n->fsr_crop[3];const VulkanImage *color,*depth,*motion;
-    if(!n->fsr_view)return 1;
+    uint32_t output_width=(uint32_t)(((uint64_t)width*n->fsr_output[0]+g->width-1)/g->width);
+    uint32_t output_height=(uint32_t)(((uint64_t)height*n->fsr_output[1]+g->height-1)/g->height);
+    if(!n->fsr_view){
+        if(!n->fsr_requested && n->upscaler){fsr3_upscaler_close(n->upscaler);n->upscaler=NULL;vulkan_temporal_close(&n->temporal);}
+        return 1;
+    }
     focal=n->history_projection[2]*n->history_projection[3]*n->history_projection[4];
     if(!isfinite(focal) || focal<=0)return 0;
     fov=2*atanf((float)height/(2*focal));
     if(!isfinite(fov) || fov<=0 || fov>=3.14159265f)return 0;
-    if(n->upscaler && (n->temporal.width!=width || n->temporal.height!=height)){
+    if(n->upscaler && (n->temporal.width!=width || n->temporal.height!=height || n->fsr_context_output[0]!=output_width || n->fsr_context_output[1]!=output_height)){
         fsr3_upscaler_close(n->upscaler);n->upscaler=NULL;vulkan_temporal_close(&n->temporal);n->fsr_reset=1;
     }
-    if(!n->upscaler){n->upscaler=fsr3_upscaler_open(v,width,height,width*2,height*2);if(!n->upscaler)return 0;n->fsr_reset=1;}
+    if(!n->upscaler){
+        n->upscaler=fsr3_upscaler_open(v,width,height,output_width,output_height);if(!n->upscaler)return 0;n->fsr_reset=1;
+        n->fsr_context_output[0]=output_width;n->fsr_context_output[1]=output_height;
+    }
+    if(target->device && (target->width!=n->fsr_output[0] || target->height!=n->fsr_output[1])){
+        if(!vk1_flush(target,0))return 0;vulkan_draw_close(target);
+    }
     if(!target->device){
-        if(!vulkan_draw_open(target,v,g->width*2,g->height*2) || !vulkan_draw_begin(target,clear) || !vulkan_draw_finish(target,NULL,0))return 0;
+        if(!vulkan_draw_open(target,v,n->fsr_output[0],n->fsr_output[1]) || !vulkan_draw_begin(target,clear) || !vulkan_draw_finish(target,NULL,0))return 0;
         /* Geometry stays in legacy screen coordinates; the viewport maps HUD
          * edges directly onto the larger output, after temporal reconstruction. */
         target->material.extent[0]=(float)g->width;target->material.extent[1]=(float)g->height;
@@ -85,7 +97,7 @@ static int vk1_scene_complete(void){
     if(n->fsr_monitor)n->fsr_monitor_frames++;
     if(n->fsr_frames==1){char message[224];snprintf(message,sizeof(message),
         "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u masks=conservative-R8; HUD follows dispatch\n",
-        width,height,width*2,height*2,fov,fsr3_upscaler_jitter_phases(width,width*2));
+        width,height,output_width,output_height,fov,fsr3_upscaler_jitter_phases(width,output_width));
         game_application_log(g->application,"%s",message);}
     return 1;
 command_fail:v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;
@@ -97,10 +109,6 @@ static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
     {const char *jitter=SDL_getenv("UPRISING_VULKAN_JITTER");g->vulkan->jitter_enabled=jitter && !strcmp(jitter,"1");}
-    {const char *fsr=SDL_getenv("UPRISING_VULKAN_FSR3");g->vulkan->fsr_requested=fsr && !strcmp(fsr,"1");}
-#ifndef UPRISING_FSR3_UPSCALER
-    if(g->vulkan->fsr_requested){gl1_fail("FSR3 host is unavailable on this architecture");goto fail;}
-#endif
     g->width=640;g->height=480;g->front=0;g->back=1;
     g->lfb=malloc((size_t)g->width*g->height*2);g->rgba=malloc((size_t)g->width*g->height*4);
     if(!g->lfb || !g->rgba)goto fail;

@@ -58,3 +58,14 @@ The 64-bit experimental upscaler uses Khronos SPIRV-Reflect, tag
 2017-2022 Google Inc.; Apache-2.0, in `source/third_party/SPIRV-Reflect-LICENSE.txt`.
 Its bundled SPIR-V header retains the Khronos MIT notice. Files are downloaded
 with per-file SHA256 checks and stay in the build cache.
+
+Experimental macOS Vulkan game bundles include the Khronos Vulkan Loader and
+Mesa KosmicKrisp from LunarG SDK1.4.363.0, plus their non-system dynamic-library
+dependencies. SDK license files are retained under `Vulkan-Licenses` in the app's
+Resources directory. Vulkan header, AMD SDK and SPIRV-Reflect notices are included
+alongside the other runtime notices. The stable OpenGL release is unchanged.
+Matching loader licenses are from tag `vulkan-sdk-1.4.363`; Mesa's license set and
+licensing guide are from SDK tag `vulkan-sdk-1.4.363.0`, revision
+`269a955c898df283fc36f4827643769068cf3d29` in `aitor/mesa` on freedesktop.org.
+Copies live in `source/third_party/vulkan-loader-licenses` and
+`source/third_party/kosmickrisp-licenses`.

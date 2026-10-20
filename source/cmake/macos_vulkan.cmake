@@ -29,13 +29,8 @@ install(CODE "
         \"${UPRISING_VULKAN_SDK}/lib\")
     verify_app(\"\${app}\")
 " COMPONENT Runtime)
-file(GLOB_RECURSE sdk_licenses LIST_DIRECTORIES FALSE "${UPRISING_VULKAN_SDK}/*LICENSE*"
-    "${UPRISING_VULKAN_SDK}/*COPYING*" "${UPRISING_VULKAN_SDK}/*license*")
-if(NOT sdk_licenses)
-    message(FATAL_ERROR "Vulkan SDK redistribution licenses not found")
-endif()
-foreach(license IN LISTS sdk_licenses)
-    file(RELATIVE_PATH relative "${UPRISING_VULKAN_SDK}" "${license}")
-    get_filename_component(directory "${relative}" DIRECTORY)
-    install(FILES "${license}" DESTINATION "Uprising.app/Contents/Resources/Vulkan-Licenses/${directory}" COMPONENT Runtime)
-endforeach()
+# SDK1.4.363.0 does not install these under macOS/. Retain the matching upstream
+# license sets in source control, independently of installer layout/caches.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/kosmickrisp-licenses"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-loader-licenses"
+    DESTINATION Uprising.app/Contents/Resources/Vulkan-Licenses COMPONENT Runtime)

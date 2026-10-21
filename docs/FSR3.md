@@ -145,8 +145,8 @@ Reported infantry/explosion stripes traced to late billboards rendered after
 FSR: composition replaced output color but retained previous-frame output depth.
 Each new composition now requests a depth-only clear before late draws resume.
 The focused GPU regression fails without that clear and passes with it, preserving
-composed color. The earlier coverage-mask change did not resolve this report;
-close-up gameplay confirmation of the depth fix is pending.
+composed color. The earlier coverage-mask change did not resolve this report.
+User manual testing confirmed the sprite smearing fixed and looking correct.
 
 Remaining: real crowded-target performance, broad moving-edge/particle/layered-sky
 quality and scripted-camera/alternate-monitor coverage, native Apple GPU execution,

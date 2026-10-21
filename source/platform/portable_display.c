@@ -340,9 +340,11 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
         display_metal(s,115,108,410,296);
         display_fill(s,123,116,394,280,display_color(s,9,14,11));
         display_fill(s,126,119,388,274,display_color(s,15,22,17));
-        display_fill(s,128,121,384,33,display_color(s,30,34,24));
-        display_fill(s,128,154,384,1,display_color(s,66,83,47));
+        display_fill(s,128,121,384,49,display_color(s,30,34,24));
+        display_fill(s,128,170,384,1,display_color(s,66,83,47));
         display_label(d,"ADVANCED GRAPHICS",140,130,485,3,2);
+        display_label(d,d->vulkan?"AA affects the world; menus and HUD stay separate.":
+            "3D AA: next mission load. FSR scales all screens.",140,155,505,0,2);
         display_fill(s,493,131,7,7,display_color(s,27,49,16));
         display_fill(s,495,133,3,3,display_color(s,148,255,72));
         display_rivet(s,119,112);display_rivet(s,520,112);
@@ -387,7 +389,7 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
             }else display_selector(d,s,3,d->aa_limit>=2?text:"UNAVAILABLE",d->aa_limit>=2);
             display_button(d,s,170,357,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
             display_button(d,s,330,357,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
-            display_label(d,d->status[0]?d->status:d->vulkan?"AA affects the world; menus and HUD stay separate.":"3D AA: next mission load. FSR scales all screens.",138,d->vulkan?348:334,505,0,2);
+            if(d->status[0])display_label(d,d->status,138,d->vulkan?348:334,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};

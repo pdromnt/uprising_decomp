@@ -236,6 +236,19 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
     printf("VULKAN_GRAPHICS_PASS frames=3 depth=checked alpha=checked projective_uv=checked hud_order=checked resume=checked\n");ok=1;
     printf("VULKAN_PRESENT_PASS frames=3 swapchain_rebuild=checked aspect=preserved\n");
     {
+        /* FSR replaces output color each frame, but late sprites resume the
+         * same output owner. A previous sprite must not occlude the new frame. */
+        if(!vulkan_draw_begin(&draw,clear) ||
+           !draw_quad(&draw,8,8,32,32,.2f,1,0,0,1,NULL,3) ||
+           !vulkan_draw_finish(&draw,NULL,0)){ok=0;goto done;}
+        draw.clear_depth_on_resume=1;
+        if(!vulkan_draw_resume(&draw) ||
+           !draw_quad(&draw,16,16,40,40,.4f,0,1,0,1,NULL,3) ||
+           !vulkan_draw_finish(&draw,rgba,sizeof(rgba)) ||
+           !pixel(rgba,20,20,0,255,0) || !pixel(rgba,10,10,255,0,0)){ok=0;goto done;}
+        printf("VULKAN_OUTPUT_DEPTH_FRAME_PASS stale_sprite_depth=cleared composed_color=preserved\n");
+    }
+    {
         const uint8_t keyed[8]={255,0,255,255,0,255,0,255};const float black[4]={0,0,0,1};
         if(!vulkan_draw_texture_update(&draw,&texture,keyed,sizeof(keyed)) || !vulkan_draw_begin(&draw,black)){ok=0;goto done;}
         draw.material.color_mode=2;draw.material.alpha_mode=2;draw.material.chroma=0x1ff00ff;

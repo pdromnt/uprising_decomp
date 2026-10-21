@@ -42,7 +42,7 @@ typedef struct VulkanDraw {
      * unquantized q. UI/skies and draws without depth writes preserve it. */
     /* Background capture writes motion at infinite depth (zero near/z).
      * Other scene-only layers raise rejection without replacing vectors. */
-    int capture_depth,capture_scene,capture_background,clear_reciprocal;
+    int capture_depth,capture_scene,capture_background,clear_reciprocal,clear_depth_on_resume;
     float scene_jitter[2],scene_depth_scale;
 } VulkanDraw;
 /* q=numerator/z becomes reversed infinite perspective depth near/z. Hardware

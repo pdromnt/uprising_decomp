@@ -119,6 +119,9 @@ static int vk1_scene_complete(void){
     }
     if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
     if(n->observe)n->fsr_cost_ns+=SDL_GetTicksNS()-now;
+    /* Composition replaces only color. Late billboard/HUD draws resume this
+     * owner, so retire the previous frame's depth before those draws begin. */
+    target->clear_depth_on_resume=1;
     n->composed[g->back]=1;
     if(n->spatial_view)return 1;
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;

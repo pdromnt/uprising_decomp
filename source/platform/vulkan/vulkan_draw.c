@@ -221,7 +221,7 @@ void vulkan_draw_close(VulkanDraw *d){
 }
 int vulkan_draw_begin(VulkanDraw *d,const float clear[4]){
     if(!d->pass || d->recording)return 0;
-    d->vertex_count=d->batch_count=0;memcpy(d->clear,clear,sizeof(d->clear));d->recording=1;d->resuming=0;d->clear_reciprocal=0;return 1;
+    d->vertex_count=d->batch_count=0;memcpy(d->clear,clear,sizeof(d->clear));d->recording=1;d->resuming=0;d->clear_reciprocal=d->clear_depth_on_resume=0;return 1;
 }
 int vulkan_draw_resume(VulkanDraw *d){
     if(d->recording || !d->has_frame)return 0;
@@ -315,6 +315,11 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     clear[3].color.float32[3]=1;
     begin.renderPass=d->resuming?d->resume_pass:d->pass;begin.framebuffer=d->framebuffer;begin.renderArea.extent=(VkExtent2D){d->width,d->height};begin.clearValueCount=5;begin.pClearValues=clear;
     v->CmdBeginRenderPass(command,&begin,VK_SUBPASS_CONTENTS_INLINE);
+    if(d->clear_depth_on_resume){
+        VkClearAttachment reset={0};VkClearRect area={{{0,0},{d->width,d->height}},0,1};
+        reset.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;reset.clearValue.depthStencil.depth=d->clear_depth;
+        v->CmdClearAttachments(command,1,&reset,1,&area);d->clear_depth_on_resume=0;
+    }
     if(d->clear_reciprocal){
         VkClearAttachment reset[3]={{0}};VkClearRect area={{{0,0},{d->width,d->height}},0,1};
         reset[0].aspectMask=reset[1].aspectMask=reset[2].aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;

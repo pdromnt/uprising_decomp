@@ -7,7 +7,7 @@
 int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32_t height){
     VkDescriptorSetLayoutBinding bindings[4]={{0}};
     VkDescriptorSetLayoutCreateInfo descriptors={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    VkDescriptorPoolSize sizes[2]={{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,4},{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,2}};
+    VkDescriptorPoolSize sizes[2]={{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,5},{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,3}};
     VkDescriptorPoolCreateInfo pool={VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     VkDescriptorSetAllocateInfo allocation={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     VkSamplerCreateInfo sampler={VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -19,11 +19,14 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     memset(t,0,sizeof(*t));t->device=v;t->width=width;t->height=height;
     if(!width || !height || !vulkan_image_create(v,&t->rejection,VK_FORMAT_R8_UNORM,
        VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,width,height))goto fail;
-    bindings[0].binding=0;bindings[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].binding=1;bindings[1].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    bindings[0].descriptorCount=bindings[1].descriptorCount=1;
-    bindings[0].stageFlags=bindings[1].stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
-    descriptors.bindingCount=2;descriptors.pBindings=bindings;
+    for(i=0;i<2;i++)if(!vulkan_image_create(v,t->coverage_history+i,VK_FORMAT_R8_UNORM,
+        VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,width,height))goto fail;
+    for(i=0;i<4;i++){
+        bindings[i].binding=i;bindings[i].descriptorCount=1;
+        bindings[i].descriptorType=(i&1)?VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[i].stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    descriptors.bindingCount=4;descriptors.pBindings=bindings;
     CHECK(v->CreateDescriptorSetLayout(v->device,&descriptors,NULL,&t->descriptors));
     pool.maxSets=2;pool.poolSizeCount=2;pool.pPoolSizes=sizes;
     CHECK(v->CreateDescriptorPool(v->device,&pool,NULL,&t->pool));
@@ -33,6 +36,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     sampler.addressModeU=sampler.addressModeV=sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     CHECK(v->CreateSampler(v->device,&sampler,NULL,&t->sampler));
     layout.setLayoutCount=1;layout.pSetLayouts=&t->descriptors;
+    view.size=16;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&view;
     CHECK(v->CreatePipelineLayout(v->device,&layout,NULL,&t->layout));
     module.codeSize=sizeof(temporal_mask_spv);module.pCode=temporal_mask_spv;
     CHECK(v->CreateShaderModule(v->device,&module,NULL,&shader));
@@ -48,7 +52,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     CHECK(v->CreateDescriptorSetLayout(v->device,&descriptors,NULL,&t->composition_descriptors));
     allocation.pSetLayouts=&t->composition_descriptors;
     CHECK(v->AllocateDescriptorSets(v->device,&allocation,&t->composition_set));
-    layout.pSetLayouts=&t->composition_descriptors;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&view;
+    view.size=32;layout.pSetLayouts=&t->composition_descriptors;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&view;
     CHECK(v->CreatePipelineLayout(v->device,&layout,NULL,&t->composition_layout));
     module.codeSize=sizeof(temporal_compose_spv);module.pCode=temporal_compose_spv;
     CHECK(v->CreateShaderModule(v->device,&module,NULL,&shader));
@@ -69,6 +73,7 @@ void vulkan_temporal_close(VulkanTemporal *t){
     if(t->composition_descriptors)v->DestroyDescriptorSetLayout(v->device,t->composition_descriptors,NULL);
     if(t->sampler)v->DestroySampler(v->device,t->sampler,NULL);
     for(unsigned i=0;i<3;i++)vulkan_image_destroy(v,t->cropped+i);
+    for(unsigned i=0;i<2;i++)vulkan_image_destroy(v,t->coverage_history+i);
     vulkan_image_destroy(v,&t->rejection);memset(t,0,sizeof(*t));
 }
 static void transition(VulkanDevice *v,VkCommandBuffer command,VkImage image,VkImageLayout from,VkImageLayout to){
@@ -80,24 +85,33 @@ static void transition(VulkanDevice *v,VkCommandBuffer command,VkImage image,VkI
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&b);
 }
 int vulkan_temporal_record(VulkanTemporal *t,VkCommandBuffer command,const VulkanImage *motion){
-    VulkanDevice *v=t->device;VkDescriptorImageInfo images[2]={{0}};VkWriteDescriptorSet writes[2]={{0}};unsigned i;
+    VulkanDevice *v=t->device;VkDescriptorImageInfo images[4]={{0}};VkWriteDescriptorSet writes[4]={{0}};unsigned i;
+    unsigned current=t->initialized?(t->coverage_index^1u):0,previous=current^1u;
+    const int32_t history[4]={t->initialized,0,0,0};
     if(!t->pipeline || !command || !motion || !motion->image || !motion->view)return 0;
     images[0].sampler=t->sampler;images[0].imageView=motion->view;images[0].imageLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     images[1].imageView=t->rejection.view;images[1].imageLayout=VK_IMAGE_LAYOUT_GENERAL;
-    for(i=0;i<2;i++){
+    images[2]=(VkDescriptorImageInfo){t->sampler,t->coverage_history[previous].view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    images[3]=(VkDescriptorImageInfo){VK_NULL_HANDLE,t->coverage_history[current].view,VK_IMAGE_LAYOUT_GENERAL};
+    for(i=0;i<4;i++){
         writes[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;writes[i].dstSet=t->set;writes[i].dstBinding=i;
-        writes[i].descriptorCount=1;writes[i].descriptorType=i?VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].descriptorCount=1;writes[i].descriptorType=(i&1)?VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo=images+i;
     }
-    v->UpdateDescriptorSets(v->device,2,writes,0,NULL);
+    v->UpdateDescriptorSets(v->device,4,writes,0,NULL);
     transition(v,command,motion->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     transition(v,command,t->rejection.image,t->initialized?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
+    transition(v,command,t->coverage_history[previous].image,t->initialized?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transition(v,command,t->coverage_history[current].image,t->initialized?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
     v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,t->pipeline);
     v->CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,t->layout,0,1,&t->set,0,NULL);
+    v->CmdPushConstants(command,t->layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(history),history);
     v->CmdDispatch(command,(t->width+7)/8,(t->height+7)/8,1);
     transition(v,command,motion->image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     transition(v,command,t->rejection.image,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    t->initialized=1;return 1;
+    transition(v,command,t->coverage_history[previous].image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    transition(v,command,t->coverage_history[current].image,VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    t->coverage_index=current;t->initialized=1;return 1;
 }
 int vulkan_temporal_crop_open(VulkanTemporal *t){
     static const VkFormat formats[3]={VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_R32_SFLOAT,VK_FORMAT_R32G32B32A32_SFLOAT};

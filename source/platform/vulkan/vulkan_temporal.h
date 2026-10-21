@@ -4,10 +4,12 @@
 
 /* Renderer-owned GPU extraction, independent of the SDK. No readback or
  * allocation per frame. One conservative mask serves reactive and composition
- * rejection until separate sky/particle history is available. */
+ * rejection until separate sky/particle history is available. Raw coverage is
+ * retained for one reprojected frame to reject vacated sprite/effect pixels. */
 typedef struct VulkanTemporal {
     VulkanDevice *device;uint32_t width,height;int initialized;
-    VulkanImage rejection;VkSampler sampler;VkDescriptorPool pool;
+    VulkanImage rejection,coverage_history[2];unsigned coverage_index;
+    VkSampler sampler;VkDescriptorPool pool;
     VkDescriptorSetLayout descriptors;VkDescriptorSet set;
     VkPipelineLayout layout;VkPipeline pipeline;
     VulkanImage cropped[3];int crop_initialized;

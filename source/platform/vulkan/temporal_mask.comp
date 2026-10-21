@@ -2,13 +2,32 @@
 layout(local_size_x=8,local_size_y=8) in;
 layout(set=0,binding=0) uniform sampler2D motion;
 layout(set=0,binding=1,r8) uniform writeonly image2D rejection;
+layout(set=0,binding=2) uniform sampler2D previous_coverage;
+layout(set=0,binding=3,r8) uniform writeonly image2D current_coverage;
+layout(push_constant) uniform History {ivec4 state;} history_state;
 void main(){
     ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
     if(any(greaterThanEqual(pixel,imageSize(rejection))))return;
-    vec2 history=texelFetch(motion,pixel,0).zw;
+    vec4 vectors=texelFetch(motion,pixel,0);
+    vec2 history=vectors.zw;
     // Z validates the solid vector; W records surviving translucent coverage.
     // Unknown geometry/background samples have no trustworthy correspondence.
     float reject=any(isnan(history)) || any(isinf(history)) || history.x<0.99999?
         1.0:clamp(history.y,0.0,1.0);
+    // Store only this frame's coverage, never the union: an effect's footprint
+    // expires after one following frame instead of growing a permanent mask.
+    imageStore(current_coverage,pixel,vec4(reject));
+    if(history_state.state.x!=0 && reject<1.0 &&
+       !any(isnan(vectors.xy)) && !any(isinf(vectors.xy))){
+        vec2 previous=vec2(pixel)+vectors.xy;
+        ivec2 extent=textureSize(previous_coverage,0);
+        if(all(greaterThanEqual(previous,vec2(0))) && all(lessThan(previous,vec2(extent)))){
+            ivec2 center=ivec2(floor(previous));
+            // Cover the pixel footprint and subpixel raster jitter. Motion is
+            // unjittered; a disappearing thin marker otherwise survives in FSR.
+            for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++)
+                reject=max(reject,texelFetch(previous_coverage,clamp(center+ivec2(x,y),ivec2(0),extent-1),0).r);
+        }
+    }
     imageStore(rejection,pixel,vec4(reject));
 }

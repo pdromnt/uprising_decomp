@@ -35,6 +35,8 @@ cover all options. Changing SDK input/output dimensions recreates its context.
 - Opaque base skies have texture-space motion at infinite depth. Independent
   layers, unknown geometry and surviving translucent coverage conservatively
   reject history. Invisible blended no-write effects preserve underlying history.
+  Reprojected raw rejection coverage protects vacated sprite/effect pixels for
+  one following frame; it expires rather than feeding the combined mask back.
 - O-view crops actual color/depth/motion and uses its own FOV. MRT coverage and
   retained artwork contribution preserve irregular monitor frames and holes.
   Screenshots and legacy pixel consumers retain their original dimensions.
@@ -138,6 +140,10 @@ scopes exclude GPU completion; compare full present intervals for performance.
 Short profiles are guard-terminated;
 clean shutdown is checked separately. A speculative arena-access change was
 dropped after timings failed to justify it.
+
+Reported infantry/target-marker trails reproduced a vacated-coverage gap in the
+GPU fixture. The one-frame reprojection fix passes rejection/expiry and game
+resize/view checks; visual confirmation in the reported combat scene is pending.
 
 Remaining: real crowded-target performance, broad moving-edge/particle/layered-sky
 quality and scripted-camera/alternate-monitor coverage, native Apple GPU execution,

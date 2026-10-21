@@ -85,6 +85,17 @@ static int temporal_mask_pass(VulkanDraw *draw,const float *motion){
         if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) || !vulkan_buffer_read(v,&buffer,pixels,sizeof(pixels)))goto done;
         for(i=0;i<64*64;i++){
             unsigned expected=motion[i*4+2]<.99999f || motion[i*4+3]>=1?255:0;
+            if(frame && !expected){
+                float px=(float)(i%64)+motion[i*4],py=(float)(i/64)+motion[i*4+1];
+                if(px>=0 && py>=0 && px<64 && py<64){
+                    int x,y;for(y=-1;y<=1;y++)for(x=-1;x<=1;x++){
+                        int sx=(int)floorf(px)+x,sy=(int)floorf(py)+y;unsigned sample;
+                        if(sx<0)sx=0;if(sx>63)sx=63;if(sy<0)sy=0;if(sy>63)sy=63;
+                        sample=(unsigned)(sx+sy*64);
+                        if(motion[sample*4+2]<.99999f || motion[sample*4+3]>=1)expected=255;
+                    }
+                }
+            }
             if(pixels[i]!=expected){fprintf(stderr,"Temporal mask mismatch pixel=%u got=%u expected=%u\n",i,pixels[i],expected);goto done;}
             if(pixels[i])rejected++;else accepted++;
         }
@@ -603,7 +614,7 @@ static int moving_quad(VulkanDraw *d,float left,float top,float right,float bott
 }
 static int upscale_motion_pass(VulkanDevice *v){
     VulkanDraw draw={0},result={0};VulkanTemporal temporal={0};Fsr3Upscaler *upscaler=NULL;
-    const float black[4]={0,0,0,1};uint8_t rgba[128*128*4];float depths[64*64],motion[64*64*4];
+    const float black[4]={0,0,0,1};uint8_t rgba[128*128*4],mask[64*64];float depths[64*64],motion[64*64*4];
     unsigned frame,i;int ok=0;float previous_left=8;
     if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_draw_open(&result,v,128,128) ||
        !vulkan_temporal_open(&temporal,v,64,64) || !vulkan_draw_begin(&result,black) ||
@@ -633,6 +644,12 @@ static int upscale_motion_pass(VulkanDevice *v){
             jitter[0],jitter[1],16.667f,10,1,frame==0 || cut,0);
         if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
            !vulkan_draw_blit_color(&result,output,128,128) || !vulkan_draw_readback(&result,rgba,sizeof(rgba)))goto done;
+        /* A sprite/marker leaves no solid depth footprint. Protect its vacated
+         * pixels for the following frame, without feeding rejection back forever. */
+        if(!read_image(v,&temporal.rejection,64,64,mask,sizeof(mask)) ||
+           mask[54+14*64]!=(frame>=2 && frame<=4?255:0)){
+            fprintf(stderr,"FSR3 vacated effect rejection failed frame=%u\n",frame);goto done;
+        }
         for(i=0;i<3;i++){
             /* Foreground's vacated footprint, active foreground and an effect
              * appearing/disappearing over stable blue. Stay clear of filter edges. */
@@ -647,7 +664,7 @@ static int upscale_motion_pass(VulkanDevice *v){
         }
         previous_left=left;
     }
-    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked reset=checked\n");ok=1;
+    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked vacated_coverage=checked coverage_expiry=checked reset=checked\n");ok=1;
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
 }

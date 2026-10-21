@@ -322,10 +322,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     const char *stage="video initialization";
     GameMemory *m=&a->memory;GameAddress p;int use_vulkan=0;
 #ifdef UPRISING_EXPERIMENTAL_VULKAN
-    {const char *renderer=SDL_getenv("UPRISING_RENDERER");use_vulkan=renderer && !strcmp(renderer,"vulkan");}
-#ifdef __APPLE__
-    if(!SDL_getenv("UPRISING_RENDERER"))use_vulkan=1;
-#endif
+    /* Vulkan distributions must work from a normal desktop launch. Keep the
+     * OpenGL override for developer comparisons, not as a prerequisite for FSR. */
+    {const char *renderer=SDL_getenv("UPRISING_RENDERER");use_vulkan=!renderer || strcmp(renderer,"opengl")!=0;}
 #endif
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;

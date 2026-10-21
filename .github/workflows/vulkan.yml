@@ -117,10 +117,16 @@ jobs:
             Move-Item "$exe.game" $exe
           }
           ./source/scripts/package-release.ps1 -Version FSR3-snapshot -Platform macos-arm64 -StageDirectory source/build/vulkan-stage
+      - name: Package Windows and Linux games
+        if: runner.os != 'macOS'
+        shell: pwsh
+        run: |
+          cmake --install source/build/vulkan-game --config Release --prefix source/build/vulkan-stage --component Runtime
+          if($LASTEXITCODE){throw 'Vulkan runtime installation failed'}
+          ./source/scripts/package-release.ps1 -Version FSR3-snapshot -Platform '${{ matrix.platform }}' -StageDirectory source/build/vulkan-stage
       - uses: actions/upload-artifact@v7
-        if: runner.os == 'macOS'
         with:
-          name: vulkan-game-macos-arm64
+          name: vulkan-game-${{ matrix.platform }}
           path: source/dist/*
           if-no-files-found: error
           retention-days: 7

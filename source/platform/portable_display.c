@@ -378,7 +378,7 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
                 }else snprintf(text,sizeof(text),"DESKTOP 4:3");
             }
             display_selector(d,s,1,text,!d->draft.fullscreen);
-            display_selector(d,s,2,!d->fsr_available?"UNAVAILABLE":d->draft.fsr==2?"NATIVE AA":d->draft.fsr?(d->vulkan?"UPSCALE":"ON"):"OFF",d->fsr_available);
+            display_selector(d,s,2,!d->fsr_available?(d->vulkan?(sizeof(void*)==4?"64-BIT ONLY":"GPU UNSUPPORTED"):"UNAVAILABLE"):d->draft.fsr==2?"NATIVE AA":d->draft.fsr?(d->vulkan?"UPSCALE":"ON"):"OFF",d->fsr_available);
             if(d->draft.aa)snprintf(text,sizeof(text),"MSAA %dx",d->draft.aa);else snprintf(text,sizeof(text),"OFF");
             if(d->vulkan){
                 display_selector(d,s,3,d->draft.fsr?"TEMPORAL":d->draft.aa?"EDGE AA":"OFF",!d->draft.fsr);

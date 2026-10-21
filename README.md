@@ -6,7 +6,12 @@ A behavior-focused reconstruction of **Uprising: Join or Die**, the 1997 game
 by Cyclone Studios. Game data is included alongside the source; original game
 content and third-party components retain their separate ownership and terms.
 
-The game runs ordinary C with native OpenGL rendering, without CPU/x87 emulation,
+This `FSR3` branch provides Vulkan game packages with optional FSR 3.1 upscaling
+on 64-bit systems. Download the **vulkan-game-...** CI artifact for your platform;
+it launches normally, without flags. See [Vulkan / FSR3](docs/FSR3.md) for build
+instructions and current validation limits. Stable `main` remains unchanged.
+
+The game runs ordinary C with native rendering, without CPU/x87 emulation,
 generated instruction execution, Glide or loading the original executable.
 Recovered IDs and bounded legacy layouts remain where they preserve behavior;
 this is still a decompilation, not a new engine.
@@ -41,11 +46,13 @@ Options → Graphics → **ADVANCED** provides:
 
 - **Display mode:** windowed or desktop fullscreen. The game stays 4:3 with black
   borders on wide monitors; windowed resolutions are 4:3 only.
-- **FSR1:** upscales gameplay, HUD and menus. Off uses a pixel-art scaling filter.
-  FSR requires an OpenGL 4.3 compatibility context; the base renderer does not.
-  macOS uses the default scaling filter because its OpenGL lacks this context.
-- **3D anti-aliasing:** Off or supported MSAA 2×/4×/8×, applied on the next mission
-  load. HUD, text, menus and 2D overlay draws remain outside the AA pass.
+- **FSR 3.1 (3D):** Off, Upscale or Native AA, with adjustable sharpening.
+  Available on supported 64-bit Vulkan devices; 32-bit builds use native Vulkan.
+  FSR processes the world separately from HUD and menus.
+- **3D anti-aliasing:** Edge AA when FSR is off; temporal AA when FSR is enabled.
+  HUD, text, menus and 2D artwork remain outside the AA pass.
+
+OpenGL comparator builds retain FSR1 and supported MSAA 2×/4×/8× controls.
 
 **Apply → KEEP** saves the choice. Unconfirmed changes revert after 20 seconds.
 Music and effects volume affect the game only. Movies continue while unfocused.

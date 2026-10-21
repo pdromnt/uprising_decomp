@@ -1,7 +1,8 @@
 # Vulkan / FSR3 experiment
 
-Branch `FSR3`, based on stable main `c620bc4b` (0.2.0). Main and its release
-executables remain unchanged. Vulkan rendering is native C; the optional AMD
+Branch `FSR3`, based on stable main `c620bc4b` (0.2.0). Main and its releases
+remain unchanged. Local root executables now contain this branch's
+Vulkan candidate for manual testing. Vulkan rendering is native C; the optional AMD
 FSR3.1 upscaler host is C++ behind a small C interface. No frame generation.
 **32-bit builds are Vulkan-only by design; FSR3 is exclusive to64-bit builds.**
 
@@ -58,8 +59,12 @@ independent blending and the required R32F/RGBA32F attachment/storage formats.
 Configure the game with `-DUPRISING_EXPERIMENTAL_VULKAN=ON`. Keep output under
 `source/build/vulkan-game/bin`, away from the root release executables. Requires
 C11/C++17 and glslang/glslangValidator (`UPRISING_GLSLANG` overrides the compiler).
-`UPRISING_RENDERER=vulkan` selects the backend; OpenGL remains the comparator.
-The experimental macOS app defaults to Vulkan. `UPRISING_VULKAN_FSR3=0/1` can
+Vulkan-enabled builds and all Vulkan CI game artifacts start in Vulkan without
+flags or environment settings. Open **Options > Graphics > Advanced** and select
+**FSR 3.1 (3D): UPSCALE** or **NATIVE AA**, then **Apply > Keep**. The selection
+persists between launches. FSR starts off on a fresh configuration. 32-bit builds
+show **64-BIT ONLY**; unsupported 64-bit GPUs show **GPU UNSUPPORTED**.
+`UPRISING_RENDERER=opengl` retains the developer comparator. `UPRISING_VULKAN_FSR3=0/1` can
 force startup off/upscale; subsequent UI changes still work.
 Use existing assets via `UPRISING_ASSET_DIRECTORY` and isolate tests through
 `UPRISING_USER_DIRECTORY`; no asset copies are needed.

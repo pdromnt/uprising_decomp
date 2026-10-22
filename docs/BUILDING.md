@@ -61,6 +61,22 @@ reads on case-sensitive filesystems. No original EXE or legacy support DLL is us
 create no diagnostic log. `UPRISING_RECOMP_NATIVE_OBSERVE=1` enables a replaced log;
 `UPRISING_USER_DIRECTORY` selects isolated user data and also enables logging.
 
+## Windows debugger launcher
+
+Double-click `source/scripts/debug-game.bat` for manual testing through the normal
+menus. It defaults to the root `uprising64.exe`, uses GDB from PATH or
+`C:/TDM-GCC-64/bin`, and requires GDB's Python support. Local builds with debug
+symbols provide the most useful stacks. The game starts muted in a 960x720 window
+with physical controls enabled; FSR preferences and bindings come from your normal
+settings. Use `debug-game.bat -Unmuted` to enable sound.
+
+Logs are overwritten under `runtime-logs/debug-game/`; `debugger.log` captures
+errors/stacks and is capped at 8 MiB. The separate game log and diagnostic saves
+live under `runtime-logs/debug-game/user/`. Your normal saves/settings stay intact.
+Copy failure logs before another run. Close any existing game first. No direct
+`.lfl` argument is supplied, so mission endings retain their normal debrief flow.
+`debug-game.ps1 -Check` verifies the setup without launching the game.
+
 ## CI and releases
 
 Main/PR builds produce six runtime packages. Windows packages use `uprising.exe`

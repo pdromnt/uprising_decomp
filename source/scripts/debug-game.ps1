@@ -2,7 +2,7 @@
 param(
     [string]$Executable,
     [string]$Debugger,
-    [switch]$Unmuted,
+    [switch]$Muted,
     [switch]$Check
 )
 $ErrorActionPreference='Stop'
@@ -125,7 +125,7 @@ try {
     $env:UPRISING_USER_DIRECTORY=$user
     $env:UPRISING_RECOMP_WINDOWED='1'
     $env:UPRISING_RECOMP_ISOLATED_INPUT='0'
-    if(!$Unmuted){$env:UPRISING_RECOMP_MUTE='1';$env:UPRISING_RECOMP_SILENT_NATIVE_SOUND='1'}
+    if($Muted){$env:UPRISING_RECOMP_MUTE='1';$env:UPRISING_RECOMP_SILENT_NATIVE_SOUND='1'}
     # No .lfl argument: it enables direct-level mode, which skips debriefing.
     $arguments='--batch -x "'+$script.Replace('\','/')+'" --args "'+$Executable.Replace('\','/')+'" -dontshowintro'
     Write-Host 'Starting normal menus with keyboard/mouse enabled (960 x 720).'

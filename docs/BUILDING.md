@@ -66,9 +66,9 @@ create no diagnostic log. `UPRISING_RECOMP_NATIVE_OBSERVE=1` enables a replaced 
 Double-click `source/scripts/debug-game.bat` for manual testing through the normal
 menus. It defaults to the root `uprising64.exe`, uses GDB from PATH or
 `C:/TDM-GCC-64/bin`, and requires GDB's Python support. Local builds with debug
-symbols provide the most useful stacks. The game starts muted in a 960x720 window
+symbols provide the most useful stacks. The game starts with sound in a 960x720 window
 with physical controls enabled; FSR preferences and bindings come from your normal
-settings. Use `debug-game.bat -Unmuted` to enable sound.
+settings. Use `debug-game.bat -Muted` to disable sound.
 
 Logs are overwritten under `runtime-logs/debug-game/`; `debugger.log` captures
 errors/stacks and is capped at 8 MiB. The separate game log and diagnostic saves

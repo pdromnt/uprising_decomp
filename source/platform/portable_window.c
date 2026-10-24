@@ -1,4 +1,5 @@
 #include "app_identity.h"
+#include "application_archives.h"
 #include "portable_sdl.h"
 #include "portable_font.h"
 #include "portable_display.h"

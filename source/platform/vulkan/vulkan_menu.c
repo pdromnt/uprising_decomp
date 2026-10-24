@@ -7,11 +7,13 @@ struct VulkanMenu {
     VulkanDevice device;VulkanDraw draw;VulkanPresent present;
     VulkanDrawTexture texture;int loader;
 };
-VulkanMenu *vulkan_menu_open(SDL_Window *window,int validation){
+VulkanMenu *vulkan_menu_open(SDL_Window *window,int validation,const char *cache_path){
     VulkanMenu *m=calloc(1,sizeof(*m));if(!m)return NULL;
     if(!SDL_Vulkan_LoadLibrary(NULL))goto fail;
     m->loader=1;
-    if(!vulkan_device_open(&m->device,window,validation) || !vulkan_draw_open(&m->draw,&m->device,640,480) ||
+    if(!vulkan_device_open(&m->device,window,validation))goto fail;
+    vulkan_device_cache_open(&m->device,cache_path);
+    if(!vulkan_draw_open(&m->draw,&m->device,640,480) ||
        !vulkan_present_open(&m->present,&m->device,window))goto fail;
     return m;
 fail:vulkan_menu_close(m);return NULL;

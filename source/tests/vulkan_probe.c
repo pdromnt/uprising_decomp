@@ -908,6 +908,52 @@ static int upscale_pass(VulkanDevice *v){
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&composed);vulkan_draw_close(&draw);return ok;
 }
+static int pipeline_cache_pass(VulkanDevice *v){
+    char *directory=SDL_GetPrefPath("Uprising","VulkanProbe");char path[4128]={0};
+    VulkanDraw draw={0};FILE *file=NULL;size_t saved=0;uint64_t hash=0;int ok=0;
+    SDL_PathInfo before,after;
+    if(!directory || SDL_snprintf(path,sizeof(path),"%spipelines.bin",directory)>=(int)sizeof(path))goto done;
+    (void)SDL_RemovePath(path);
+    vulkan_device_cache_open(v,path);if(!v->pipeline_cache || v->cache_bytes)goto done;
+    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_draw_warmup(&draw,1))goto done;
+    vulkan_draw_close(&draw);vulkan_device_cache_save(v);
+    saved=v->cache_bytes;hash=v->cache_hash;
+    if(!saved || !SDL_GetPathInfo(path,&before))goto done;
+    vulkan_device_cache_save(v);
+    if(!SDL_GetPathInfo(path,&after) || before.modify_time!=after.modify_time)goto done;
+    v->DestroyPipelineCache(v->device,v->pipeline_cache,NULL);v->pipeline_cache=VK_NULL_HANDLE;v->cache_bytes=0;
+    vulkan_device_cache_open(v,path);
+    if(!v->pipeline_cache || v->cache_bytes!=saved || v->cache_hash!=hash)goto done;
+    /* Corruption, incompatible drivers and truncated blobs must become cold
+     * starts before their bytes reach vkCreatePipelineCache. */
+    file=fopen(path,"r+b");if(!file)goto done;
+    {int last;
+     if(fseek(file,-1,SEEK_END) || (last=fgetc(file))==EOF || fseek(file,-1,SEEK_END) || fputc(last^1,file)==EOF)goto done;
+     if(fclose(file)){file=NULL;goto done;}file=NULL;
+     v->DestroyPipelineCache(v->device,v->pipeline_cache,NULL);v->pipeline_cache=VK_NULL_HANDLE;
+     vulkan_device_cache_open(v,path);if(!v->pipeline_cache || v->cache_bytes)goto done;
+     file=fopen(path,"r+b");if(!file || fseek(file,-1,SEEK_END) || fputc(last,file)==EOF)goto done;
+     if(fclose(file)){file=NULL;goto done;}file=NULL;}
+    file=fopen(path,"r+b");if(!file)goto done;
+    {uint32_t incompatible=v->properties.driverVersion^1u;
+     if(fwrite(&incompatible,1,sizeof(incompatible),file)!=sizeof(incompatible))goto done;}
+    if(fclose(file)){file=NULL;goto done;}file=NULL;
+    v->DestroyPipelineCache(v->device,v->pipeline_cache,NULL);v->pipeline_cache=VK_NULL_HANDLE;v->cache_bytes=0;
+    vulkan_device_cache_open(v,path);if(!v->pipeline_cache || v->cache_bytes)goto done;
+    file=fopen(path,"wb");if(!file)goto done;
+    if(fwrite("bad",1,3,file)!=3)goto done;
+    if(fclose(file)){file=NULL;goto done;}file=NULL;
+    v->DestroyPipelineCache(v->device,v->pipeline_cache,NULL);v->pipeline_cache=VK_NULL_HANDLE;v->cache_bytes=0;
+    vulkan_device_cache_open(v,path);if(!v->pipeline_cache || v->cache_bytes)goto done;
+    printf("VULKAN_PIPELINE_CACHE_PASS cold=checked reuse=checked unchanged_write=skipped corruption=checked driver_mismatch=checked truncated=checked warmup=checked\n");ok=1;
+done:
+    if(file)fclose(file);
+    vulkan_draw_close(&draw);
+    if(*path)(void)SDL_RemovePath(path);
+    SDL_free(directory);
+    /* Keep the in-memory cache for the remaining GPU comparisons, no test file. */
+    *v->cache_path=0;return ok;
+}
 int main(int argc,char **argv){
     SDL_Window *window=NULL;VulkanDevice device={0};int show=0,validation=0,ok=0,i,loaded=0,bundle_check=0;float reactive=0;
     for(i=1;i<argc;i++){
@@ -929,6 +975,7 @@ int main(int argc,char **argv){
     }
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
+    if(!pipeline_cache_pass(&device))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
     if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !spatial_scale_pass(&device) || !output_depth_pass(&device) || !temporal_monitor_pass(&device))goto done;
     device.defer_submissions=1;

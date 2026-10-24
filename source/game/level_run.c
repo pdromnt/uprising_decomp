@@ -19,6 +19,7 @@
 #include "scene_projection_storage.h"
 #include "level_effects.h"
 #include "level_player_slots.h"
+extern int game_application_renderer_warmup(GameApplication *);
 #include <stdio.h>
 #include <string.h>
 extern int game_level_selection_load(GameApplication *);
@@ -115,6 +116,8 @@ int game_level_run(GameApplication *a) {
     stage="display retirement";if(!game_level_display_end(a))goto done;
     stage="display initialization";if(!game_level_display_begin(a))goto done;
     stage="world loading";if(!game_level_world_load(a))goto done;
+    stage="renderer warmup";if(!game_application_renderer_warmup(a))goto done;
+    stage="progress cleanup";if(!game_level_progress_end(a))goto done;
     stage="display transition";
     {GameUiFrameOps ops={a,mask,present,palette,fullscreen};
         if(!game_ui_frame_run(m,get(a,0x597f88)?GAME_UI_FRAME_PALETTE_TRANSITION:GAME_UI_FRAME_CLEAR,&ops))goto done;}

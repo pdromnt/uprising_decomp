@@ -7,7 +7,6 @@
 #include "portable_sdl.h"
 #include "portable_display.h"
 #include "host_file.h"
-#include <SDL3/SDL_opengl.h>
 #include "game_initial_data.h"
 #include "application_config.h"
 #include <stdio.h>
@@ -622,6 +621,35 @@ int game_application_scene_translucency(GameApplication *a,int enabled){
     PortablePlatform *p=a->platform;
     if(!p || !p->renderer_initialized )return 0;
     render_alpha_blend(enabled);render_depth_mask(enabled?0:1);return 1;
+}
+/* Run while the loading page is still presented. No world ticks, synthetic
+ * input or fake temporal history: only resources used by the first tank view. */
+int game_application_renderer_warmup(GameApplication *a){
+    RenderDevice *g=render_current;Vk1Device *n;VulkanDevice *v;uint32_t output[2];
+    const float clear[4]={0,0,0,1};Uint64 started=SDL_GetTicksNS();int temporal;
+    if(!g || g->application!=a || !render_ready() || !(n=g->vulkan))return 0;
+    v=vulkan_menu_device(n->menu);temporal=game_display_temporal_output(a,output);
+    for(unsigned i=0;i<2;i++)if(!vulkan_draw_warmup(n->frame+i,1))return 0;
+    if(temporal){
+        uint32_t width=g->width,height=g->height;
+        uint32_t ow=game_display_temporal_native(a)?width:output[0],oh=game_display_temporal_native(a)?height:output[1];
+        if(!n->upscaler){
+            n->upscaler=fsr3_upscaler_open(v,width,height,ow,oh);if(!n->upscaler)return 0;
+            n->fsr_context_output[0]=ow;n->fsr_context_output[1]=oh;n->fsr_reset=1;
+        }
+        if(!n->temporal.device && !vulkan_temporal_open(&n->temporal,v,width,height))return 0;
+        for(unsigned i=0;i<2;i++){
+            VulkanDraw *d=n->output+i;
+            if(!d->device && (!vulkan_draw_open(d,v,output[0],output[1]) || !vulkan_draw_begin(d,clear) || !vulkan_draw_finish(d,NULL,0)))return 0;
+            d->material.extent[0]=(float)width;d->material.extent[1]=(float)height;
+            if(!vulkan_draw_warmup(d,0))return 0;
+        }
+    }
+    if(!vulkan_queue_drain(v))return 0;
+    vulkan_device_cache_save(v);
+    {char message[128];snprintf(message,sizeof(message),"native renderer warmup: %.2f ms; temporal=%d\n",(SDL_GetTicksNS()-started)/1000000.0,temporal);
+     game_application_log(a,"%s",message);}
+    return !a->memory.fault;
 }
 int game_application_scene_depth(GameApplication *a,int enabled){
     if(!render_current || render_current->application!=a || !render_ready())return 0;

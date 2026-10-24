@@ -332,7 +332,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
      if(!icon)goto fail;
      int ok=SDL_SetWindowIcon(w->window,icon);SDL_DestroySurface(icon);if(!ok)goto fail;}
     stage="Vulkan device creation";
-    w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL);
+    {char cache_path[4128];
+     if(!game_application_file_path(a,"CONFIG/vulkan-pipelines.bin",1,cache_path,sizeof(cache_path)))goto fail;
+     w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL,cache_path);}
     if(!w->vulkan)goto fail;
     game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics and shared level device");
     stage="display settings";

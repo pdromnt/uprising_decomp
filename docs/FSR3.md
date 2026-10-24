@@ -25,6 +25,14 @@ without filtering menus, HUD or pre-scene artwork. This is a spatial filter, not
 preferences are removed on load. Apply/Keep/Revert and persistence
 cover all options. Changing SDK input/output dimensions recreates its context.
 
+Common world/UI pipelines and the initial FSR3 resources are prepared before
+the level loading page closes, without advancing gameplay. Uncommon draw states
+and later camera/output changes can still require first-use work.
+`CONFIG/vulkan-pipelines.bin` in the user-data directory caches world, UI and
+FSR3 pipelines across launches. It is optional, capped at64MiB, checked against
+the driver/device/UUID and a payload checksum, and replaced atomically only when
+its contents change. Deleting it causes a cold start; it is not a game asset.
+
 ## Renderer contract
 
 - Native projected triangles/points/lines preserve legacy texture, chroma/alpha,

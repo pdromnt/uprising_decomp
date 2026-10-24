@@ -32,7 +32,7 @@ int vulkan_spatial_open(VulkanSpatial *s,VulkanDevice *v,uint32_t width,uint32_t
     VK(v->CreateShaderModule(v->device,&module,NULL,&shader));
     pipeline.layout=s->layout;pipeline.stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipeline.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pipeline.stage.module=shader;pipeline.stage.pName="main";
-    VK(v->CreateComputePipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,&s->pipeline));
+    VK(v->CreateComputePipelines(v->device,v->pipeline_cache,1,&pipeline,NULL,&s->pipeline));
     v->DestroyShaderModule(v->device,shader,NULL);return 1;
 fail:if(shader)v->DestroyShaderModule(v->device,shader,NULL);vulkan_spatial_close(s);return 0;
 }

@@ -14,6 +14,7 @@
 FSR_INSTANCE_FUNCTIONS(DECLARE)
 static PFN_vkCreateBuffer vkCreateBuffer;
 static PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
+static VkPipelineCache shared_pipeline_cache;
 static VkResult VKAPI_CALL create_pool(VkDevice device,const VkDescriptorPoolCreateInfo *info,const VkAllocationCallbacks *allocator,VkDescriptorPool *out){
     // One upscaler context, eleven supported passes, the SDK's four-frame/ten-
     // usage descriptor rings. Bound each type by the shader interface maxima.
@@ -27,7 +28,7 @@ static VkResult VKAPI_CALL create_pool(VkDevice device,const VkDescriptorPoolCre
 }
 static VkResult VKAPI_CALL create_pipelines(VkDevice device,VkPipelineCache cache,uint32_t count,const VkComputePipelineCreateInfo *info,const VkAllocationCallbacks *allocator,VkPipeline *out){
     auto function=reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddr(device,"vkCreateComputePipelines"));
-    VkResult result=function(device,cache,count,info,allocator,out);
+    VkResult result=function(device,shared_pipeline_cache?shared_pipeline_cache:cache,count,info,allocator,out);
     if(result!=VK_SUCCESS)fprintf(stderr,"FSR3 compute pipeline failed: %d\n",result);return result;
 }
 extern "C" PFN_vkVoidFunction VKAPI_CALL fsr3_backend_device_proc(VkDevice device,const char *name){
@@ -64,7 +65,8 @@ static VkResult VKAPI_CALL enabled_extensions(VkPhysicalDevice physical,const ch
 #include "fsr3_backend_native.inc"
 #undef ffxSetFrameGenerationConfigToSwapchainVK
 #undef vkEnumerateDeviceExtensionProperties
-extern "C" int fsr3_backend_load(VkInstance instance,VkDevice device,PFN_vkGetInstanceProcAddr instance_proc,PFN_vkGetDeviceProcAddr device_proc){
+extern "C" int fsr3_backend_load(VkInstance instance,VkDevice device,PFN_vkGetInstanceProcAddr instance_proc,PFN_vkGetDeviceProcAddr device_proc,VkPipelineCache cache){
+    shared_pipeline_cache=cache;
     vkGetDeviceProcAddr=device_proc;
 #define LOAD(name) name=reinterpret_cast<PFN_##name>(instance_proc(instance,#name));if(!name)return 0;
     FSR_INSTANCE_FUNCTIONS(LOAD)

@@ -58,6 +58,8 @@ typedef struct VulkanDraw {
  * only to captured world draws; previous positions remain unjittered. */
 int vulkan_draw_projection(VulkanDraw *,float near_z,float numerator,float jitter_x,float jitter_y);
 int vulkan_draw_open(VulkanDraw *,VulkanDevice *,uint32_t width,uint32_t height);
+/* Common native world/UI states, without drawing or changing simulation. */
+int vulkan_draw_warmup(VulkanDraw *,int world);
 /* Copy the current frame's hardware W-depth to a differently sized output.
  * Both owners must have completed drawing; color and auxiliary MRTs survive. */
 int vulkan_draw_copy_depth(VulkanDraw *output,const VulkanDraw *source);

@@ -15,6 +15,7 @@
  X(CreateDescriptorSetLayout) X(DestroyDescriptorSetLayout) X(CreateDescriptorPool) X(DestroyDescriptorPool) \
  X(AllocateDescriptorSets) X(FreeDescriptorSets) X(UpdateDescriptorSets) X(CreatePipelineLayout) X(DestroyPipelineLayout) \
  X(CreateShaderModule) X(DestroyShaderModule) X(CreateComputePipelines) X(DestroyPipeline) \
+ X(CreatePipelineCache) X(DestroyPipelineCache) X(GetPipelineCacheData) \
  X(CmdPipelineBarrier) X(CmdClearColorImage) X(CmdBindPipeline) X(CmdBindDescriptorSets) X(CmdDispatch) X(CmdCopyImageToBuffer) \
  X(CreateSwapchainKHR) X(DestroySwapchainKHR) X(GetSwapchainImagesKHR) X(AcquireNextImageKHR) X(QueuePresentKHR) \
  X(CreateSemaphore) X(DestroySemaphore) X(CreateSampler) X(DestroySampler) \
@@ -35,6 +36,8 @@ typedef struct VulkanDevice {
     PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug;VkDebugUtilsMessengerEXT debug;
     unsigned validation_errors;
     int fsr3_storage_supported;
+    VkPipelineCache pipeline_cache;
+    char cache_path[4128];size_t cache_bytes;uint64_t cache_hash;
     int defer_submissions;unsigned pending_count;VkCommandBuffer pending[64];
 #define DECLARE(name) PFN_vk##name name;
     VK_DEVICE_FUNCTIONS(DECLARE)
@@ -49,6 +52,9 @@ extern "C" {
 int vulkan_device_open(VulkanDevice *,SDL_Window *,int validation);
 int vulkan_runtime_prepare(void); /* Before creating an SDL Vulkan window. */
 void vulkan_device_close(VulkanDevice *);
+/* Optional, bounded user-data cache. Missing/corrupt/incompatible files are cold starts. */
+void vulkan_device_cache_open(VulkanDevice *,const char *path);
+void vulkan_device_cache_save(VulkanDevice *);
 int vulkan_buffer_create(VulkanDevice *,VulkanBuffer *,VkDeviceSize,VkBufferUsageFlags);
 void vulkan_buffer_destroy(VulkanDevice *,VulkanBuffer *);
 int vulkan_buffer_write(VulkanDevice *,VulkanBuffer *,const void *,size_t);

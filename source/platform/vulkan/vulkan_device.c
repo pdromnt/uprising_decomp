@@ -8,6 +8,61 @@ static int result(VkResult r,const char *operation){
     fprintf(stderr,"Vulkan %s failed: VkResult=%d\n",operation,(int)r);return 0;
 }
 #define CHECK(call) do {if(!result((call),#call))goto fail;} while(0)
+enum {CACHE_LIMIT=64*1024*1024};
+static uint64_t cache_hash(const unsigned char *data,size_t bytes){
+    uint64_t hash=UINT64_C(14695981039346656037);
+    for(size_t i=0;i<bytes;i++){hash^=data[i];hash*=UINT64_C(1099511628211);}return hash;
+}
+void vulkan_device_cache_open(VulkanDevice *v,const char *path){
+    VkPipelineCacheCreateInfo info={VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    unsigned char *data=NULL;FILE *file=NULL;long bytes=0;uint32_t driver=0,length=0;uint64_t hash=0;VkPipelineCacheHeaderVersionOne header;
+    if(!v || !v->device || v->pipeline_cache)return;
+    if(path && strlen(path)<sizeof(v->cache_path)){
+        SDL_strlcpy(v->cache_path,path,sizeof(v->cache_path));file=fopen(path,"rb");
+    }
+    v->cache_bytes=0;v->cache_hash=0;
+    /* Driver version, byte length and checksum precede Vulkan's device header.
+     * Read scalars through memcpy: cache bytes have no alignment guarantees. */
+    if(file){
+        if(!fseek(file,0,SEEK_END))bytes=ftell(file);
+        if(bytes>=(long)(16+sizeof(header)) && bytes<=CACHE_LIMIT && !fseek(file,0,SEEK_SET)){
+            data=malloc((size_t)bytes);
+            if(data && fread(data,1,(size_t)bytes,file)==(size_t)bytes){
+                memcpy(&driver,data,4);memcpy(&length,data+4,4);memcpy(&hash,data+8,8);memcpy(&header,data+16,sizeof(header));
+                if(driver==v->properties.driverVersion && length==(size_t)bytes-16 && hash==cache_hash(data+16,length) && header.headerSize>=sizeof(header) &&
+                   header.headerSize<=length && header.headerVersion==VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+                   header.vendorID==v->properties.vendorID && header.deviceID==v->properties.deviceID &&
+                   !memcmp(header.pipelineCacheUUID,v->properties.pipelineCacheUUID,VK_UUID_SIZE)){
+                    info.initialDataSize=length;info.pInitialData=data+16;
+                    v->cache_bytes=length;v->cache_hash=hash;
+                }
+            }
+        }fclose(file);
+    }
+    if(v->CreatePipelineCache(v->device,&info,NULL,&v->pipeline_cache)!=VK_SUCCESS){
+        info.initialDataSize=0;info.pInitialData=NULL;v->cache_bytes=0;
+        (void)v->CreatePipelineCache(v->device,&info,NULL,&v->pipeline_cache);
+    }
+    free(data);
+}
+void vulkan_device_cache_save(VulkanDevice *v){
+    size_t bytes=0;unsigned char *data;FILE *file;char temporary[4160];int ok;uint64_t hash;uint32_t length;
+    if(!v || !v->pipeline_cache || !*v->cache_path ||
+       v->GetPipelineCacheData(v->device,v->pipeline_cache,&bytes,NULL)!=VK_SUCCESS || !bytes || bytes>CACHE_LIMIT-16)return;
+    data=malloc(bytes);if(!data)return;
+    if(v->GetPipelineCacheData(v->device,v->pipeline_cache,&bytes,data)!=VK_SUCCESS){free(data);return;}
+    hash=cache_hash(data,bytes);
+    if(bytes==v->cache_bytes && hash==v->cache_hash){free(data);return;}
+    SDL_snprintf(temporary,sizeof(temporary),"%s.tmp",v->cache_path);file=fopen(temporary,"wb");
+    if(!file){free(data);return;}
+    length=(uint32_t)bytes;
+    ok=fwrite(&v->properties.driverVersion,1,4,file)==4 && fwrite(&length,1,4,file)==4 &&
+       fwrite(&hash,1,8,file)==8 && fwrite(data,1,bytes,file)==bytes;
+    if(fclose(file))ok=0;
+    if(ok && SDL_RenamePath(temporary,v->cache_path)){v->cache_bytes=bytes;v->cache_hash=hash;}
+    else (void)SDL_RemovePath(temporary);
+    free(data);
+}
 int vulkan_runtime_prepare(void){
 #ifdef __APPLE__
     const char *base=SDL_GetBasePath(),*contents=base?strstr(base,".app/Contents/"):NULL;char loader[4096],driver[4096];
@@ -147,6 +202,8 @@ fail:vulkan_device_close(v);return 0;
 void vulkan_device_close(VulkanDevice *v){
     vulkan_queue_drain(v);
     if(v->device && v->DeviceWaitIdle)v->DeviceWaitIdle(v->device);
+    vulkan_device_cache_save(v);
+    if(v->pipeline_cache)v->DestroyPipelineCache(v->device,v->pipeline_cache,NULL);
     if(v->commands && v->DestroyCommandPool)v->DestroyCommandPool(v->device,v->commands,NULL);
     if(v->device && v->DestroyDevice)v->DestroyDevice(v->device,NULL);
     if(v->surface)SDL_Vulkan_DestroySurface(v->instance,v->surface,NULL);

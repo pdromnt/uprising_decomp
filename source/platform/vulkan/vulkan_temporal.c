@@ -42,7 +42,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     CHECK(v->CreateShaderModule(v->device,&module,NULL,&shader));
     pipeline.layout=t->layout;pipeline.stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipeline.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pipeline.stage.module=shader;pipeline.stage.pName="main";
-    CHECK(v->CreateComputePipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,&t->pipeline));
+    CHECK(v->CreateComputePipelines(v->device,v->pipeline_cache,1,&pipeline,NULL,&t->pipeline));
     v->DestroyShaderModule(v->device,shader,NULL);shader=VK_NULL_HANDLE;
     for(i=0;i<4;i++){
         bindings[i].binding=i;bindings[i].descriptorCount=1;bindings[i].stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
@@ -57,7 +57,7 @@ int vulkan_temporal_open(VulkanTemporal *t,VulkanDevice *v,uint32_t width,uint32
     module.codeSize=sizeof(temporal_compose_spv);module.pCode=temporal_compose_spv;
     CHECK(v->CreateShaderModule(v->device,&module,NULL,&shader));
     pipeline.layout=t->composition_layout;pipeline.stage.module=shader;
-    CHECK(v->CreateComputePipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,&t->composition_pipeline));
+    CHECK(v->CreateComputePipelines(v->device,v->pipeline_cache,1,&pipeline,NULL,&t->composition_pipeline));
     v->DestroyShaderModule(v->device,shader,NULL);return 1;
 fail:if(shader)v->DestroyShaderModule(v->device,shader,NULL);vulkan_temporal_close(t);return 0;
 }

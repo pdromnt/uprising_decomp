@@ -4,7 +4,7 @@
 typedef struct VulkanMenu VulkanMenu;
 struct VulkanDevice;
 struct VulkanDraw;
-VulkanMenu *vulkan_menu_open(SDL_Window *window,int validation);
+VulkanMenu *vulkan_menu_open(SDL_Window *window,int validation,const char *cache_path);
 void vulkan_menu_close(VulkanMenu *);
 int vulkan_menu_present(VulkanMenu *,const SDL_Surface *rgba);
 int vulkan_menu_clear(VulkanMenu *);

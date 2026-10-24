@@ -9,7 +9,7 @@
 #include <cfloat>
 #include <cstring>
 static_assert(sizeof(void*)==8 && sizeof(VkImage)==8,"SDK external image handles require 64-bit pointers");
-extern "C" int fsr3_backend_load(VkInstance,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr);
+extern "C" int fsr3_backend_load(VkInstance,VkDevice,PFN_vkGetInstanceProcAddr,PFN_vkGetDeviceProcAddr,VkPipelineCache);
 extern "C" PFN_vkVoidFunction VKAPI_CALL fsr3_backend_device_proc(VkDevice,const char *);
 struct Fsr3Upscaler {
     VulkanDevice *device;alignas(32) FfxFsr3UpscalerContext context{};void *scratch=nullptr;bool created=false,initialized=false;
@@ -47,7 +47,7 @@ extern "C" Fsr3Upscaler *fsr3_upscaler_open(VulkanDevice *v,uint32_t width,uint3
     Fsr3Upscaler *s=new(std::nothrow) Fsr3Upscaler;if(!s)return nullptr;s->device=v;
     s->width=width;s->height=height;s->output_width=output_width;s->output_height=output_height;
     FfxFsr3UpscalerContextDescription desc{};VkDeviceContext device{v->device,v->physical,fsr3_backend_device_proc};
-    if(!fsr3_backend_load(v->instance,v->device,v->get_instance,v->get_device))goto fail;
+    if(!fsr3_backend_load(v->instance,v->device,v->get_instance,v->get_device,v->pipeline_cache))goto fail;
     desc.maxRenderSize={width,height};desc.maxUpscaleSize={output_width,output_height};
     desc.flags=FFX_FSR3UPSCALER_ENABLE_DEPTH_INVERTED|FFX_FSR3UPSCALER_ENABLE_DEPTH_INFINITE|FFX_FSR3UPSCALER_ENABLE_AUTO_EXPOSURE;
     desc.backendInterface.scratchBufferSize=ffxGetScratchMemorySizeVK(v->physical,1);

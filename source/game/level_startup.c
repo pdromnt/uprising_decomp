@@ -138,7 +138,7 @@ static int load(GameApplication *a) {
        !game_level_deployment_actions_begin(a) || !game_level_radar_tables_begin(a))goto fail;
     stage="scene audio";if(!game_level_scene_audio_initialize(a))goto fail;
     game_initializer_004d7660(&a->memory);
-    stage="progress cleanup";if(!game_level_progress_end(a))goto fail;
+    /* The loading owner now survives renderer/FSR preparation in level_run. */
     if(!get(a,0x59d828)) {
         int32_t track=(int32_t)portable_crt_rand_step(&a->memory)%3+2;
         (void)game_menu_music_start(a,(uint32_t)track);

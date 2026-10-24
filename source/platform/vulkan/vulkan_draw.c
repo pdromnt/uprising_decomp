@@ -139,7 +139,7 @@ static int draw_pipeline(VulkanDraw *d,uint32_t flags){
     z.depthTestEnable=(flags&VULKAN_DRAW_DEPTH_TEST)!=0;z.depthWriteEnable=(flags&VULKAN_DRAW_DEPTH_WRITE)!=0;
     z.depthCompareOp=(VkCompareOp)((flags>>3)&7);blend[0].blendEnable=(flags&VULKAN_DRAW_BLEND)!=0;
     blend[3]=blend[0];if(!(flags&CAPTURE_SCENE))blend[3].colorWriteMask=0;
-    VK(v->CreateGraphicsPipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,d->pipelines+flags));return 1;
+    VK(v->CreateGraphicsPipelines(v->device,v->pipeline_cache,1,&pipeline,NULL,d->pipelines+flags));return 1;
 fail:return 0;
 }
 int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t height){
@@ -265,10 +265,28 @@ static int depth_copy_pipeline(VulkanDraw *d){
     pipeline.stageCount=2;pipeline.pStages=stages;pipeline.pVertexInputState=&input;pipeline.pInputAssemblyState=&assembly;
     pipeline.pViewportState=&viewport;pipeline.pRasterizationState=&raster;pipeline.pMultisampleState=&samples;
     pipeline.pDepthStencilState=&depth;pipeline.pColorBlendState=&blending;pipeline.layout=d->layout;pipeline.renderPass=d->pass;
-    VK(v->CreateGraphicsPipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,&d->depth_copy_pipeline));
+    VK(v->CreateGraphicsPipelines(v->device,v->pipeline_cache,1,&pipeline,NULL,&d->depth_copy_pipeline));
     allocate.descriptorPool=d->descriptors;allocate.descriptorSetCount=1;allocate.pSetLayouts=&d->texture_layout;
     VK(v->AllocateDescriptorSets(v->device,&allocate,&d->depth_copy_set));return 1;
 fail:return 0;
+}
+int vulkan_draw_warmup(VulkanDraw *d,int world){
+    static const uint32_t compares[]={1,3,7};
+    if(!d || !d->device)return 0;
+    for(unsigned i=0;i<3;i++)for(uint32_t state=0;state<8;state++){
+        uint32_t flags=(compares[i]<<3)|state;
+        if(!draw_pipeline(d,flags))return 0;
+        if(world){
+            uint32_t captured=flags|CAPTURE_SCENE|((state&3)==3?CAPTURE_RECIPROCAL_DEPTH:CAPTURE_REACTIVE);
+            if(!draw_pipeline(d,captured))return 0;
+        }
+    }
+    if(!draw_pipeline(d,0) || !draw_pipeline(d,VULKAN_DRAW_BLEND))return 0;
+    if(world){
+        if(!draw_pipeline(d,CAPTURE_SCENE|CAPTURE_RECIPROCAL_DEPTH) ||
+           !draw_pipeline(d,CAPTURE_SCENE|CAPTURE_RECIPROCAL_DEPTH|VULKAN_DRAW_BLEND))return 0;
+    }else if(!depth_copy_pipeline(d))return 0;
+    return 1;
 }
 int vulkan_draw_copy_depth(VulkanDraw *d,const VulkanDraw *source){
     VulkanDevice *v=d->device;VkCommandBuffer command;

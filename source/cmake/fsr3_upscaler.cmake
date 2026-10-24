@@ -22,6 +22,21 @@ foreach(entry IN LISTS SPIRV_REFLECT_SOURCES)
     endif()
 endforeach()
 set(fsr3_sdk "${fsr3_source}/sdk")
+# Keep the pinned SDK intact. The derived accumulation header changes only
+# trusted near-stationary weighting; all rejection/rectification stays upstream.
+set(accumulate_header "${fsr3_sdk}/include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_accumulate.h")
+file(READ "${accumulate_header}" accumulate)
+set(accumulate_anchor "    data.fHistoryWeight = fBaseAccumulation;")
+string(FIND "${accumulate}" "${accumulate_anchor}" accumulate_offset)
+if(accumulate_offset LESS 0)
+    message(FATAL_ERROR "Pinned SDK accumulation hook changed")
+endif()
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_stability.inc" stability)
+string(REPLACE "${accumulate_anchor}" "${stability}\n${accumulate_anchor}" accumulate "${accumulate}")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3-stable/fsr3upscaler")
+set(stable_header "${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3-stable/fsr3upscaler/ffx_fsr3upscaler_accumulate.h")
+file(CONFIGURE OUTPUT "${stable_header}" CONTENT "${accumulate}" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${accumulate_header}" "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/fsr3_stability.inc")
 # Replace only the SDK's discrete-only memory selector in a derived build file.
 # Original downloaded bytes and their checksum remain untouched.
 file(READ "${fsr3_sdk}/src/backends/vk/ffx_vk.cpp" backend)
@@ -60,10 +75,10 @@ foreach(pass IN LISTS fsr3_passes)
             -DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1 -DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=1
             -DFFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT=0 -DFFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS=0
             -DFFX_FSR3UPSCALER_OPTION_REPROJECT_USE_LANCZOS_TYPE=0 "-DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=${sharpen}"
-            "-I${fsr3_sdk}/include/FidelityFX/gpu" "${shader}" -o "${binary}"
+            "-I${CMAKE_CURRENT_BINARY_DIR}/generated/fsr3-stable" "-I${fsr3_sdk}/include/FidelityFX/gpu" "${shader}" -o "${binary}"
         COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=fsr3_${pass}_spv"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        DEPENDS ${fsr3_dependencies} cmake/embed_spirv.cmake VERBATIM)
+        DEPENDS ${fsr3_dependencies} "${stable_header}" cmake/embed_spirv.cmake VERBATIM)
     list(APPEND fsr3_headers "${header}")
 endforeach()
 add_library(uprising_fsr3 STATIC platform/vulkan/fsr3_backend.cpp platform/vulkan/fsr3_upscaler.cpp

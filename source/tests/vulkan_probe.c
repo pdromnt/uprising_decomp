@@ -728,7 +728,7 @@ static int upscale_motion_pass(VulkanDevice *v){
        !vulkan_temporal_open(&temporal,v,64,64) || !vulkan_draw_begin(&result,black) ||
        !vulkan_draw_finish(&result,NULL,0))goto done;
     upscaler=fsr3_upscaler_open(v,64,64,128,128);if(!upscaler)goto done;
-    for(frame=0;frame<10;frame++){
+    for(frame=0;frame<12;frame++){
         VkCommandBuffer command;const VulkanImage *output;float jitter[2];
         float left=frame<4?8:frame==4?24:40;int cut=frame==9;
         /* Deterministic subpixel raster movement; vectors themselves are unjittered. */
@@ -777,7 +777,7 @@ static int upscale_motion_pass(VulkanDevice *v){
         }
         previous_left=left;
     }
-    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked vacated_coverage=checked coverage_expiry=checked separate_composition=checked reset=checked\n");ok=1;
+    printf("FSR3_MOVING_PASS frames=12 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked vacated_coverage=checked coverage_expiry=checked separate_composition=checked reset=checked shading_change_without_reset=checked\n");ok=1;
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
 }
@@ -785,20 +785,26 @@ done:
  * patch tests cannot detect an exposed jitter sequence or a bypassed resolve. */
 static int upscale_stability_pass(VulkanDevice *v){
     VulkanDraw draw={0},result={0};VulkanTemporal temporal={0};Fsr3Upscaler *upscaler=NULL;
-    const float black[4]={0,0,0,1};uint8_t raw[64*64*4],resolved[128*128*4];int ok=0;
+    const float black[4]={0,0,0,1};uint8_t raw[64*64*4],resolved[128*128*4],minimum[128*128],maximum[128*128];int ok=0;
     if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_temporal_open(&temporal,v,64,64))goto done;
-    for(unsigned variant=0;variant<4;variant++){
-        unsigned scale=variant%2+1;
+    for(unsigned variant=0;variant<6;variant++){
+        float scale=1.0f+(variant%3)*.5f;
         float low[2]={1000,1000},high[2]={-1000,-1000};unsigned size=64*scale;
         if(!vulkan_draw_open(&result,v,size,size))goto done;
         upscaler=fsr3_upscaler_open(v,64,64,size,size);if(!upscaler)goto done;
-        for(unsigned frame=0;frame<48;frame++){
+        memset(minimum,255,sizeof(minimum));memset(maximum,0,sizeof(maximum));
+        for(unsigned frame=0;frame<72;frame++){
             VkCommandBuffer command;const VulkanImage *output;
-            float jitter[2]={(frame&1)?.375f:-.375f,(frame&2)?.25f:-.25f};
+            float jitter[2]={0,0};unsigned phase=frame%fsr3_upscaler_jitter_phases(64,size)+1;
+            for(unsigned axis=0;axis<2;axis++){
+                unsigned base=axis?3:2,index=phase;float weight=1;
+                while(index){weight/=base;jitter[axis]+=(index%base)*weight;index/=base;}
+                jitter[axis]-=.5f;
+            }
             if(!vulkan_draw_projection(&draw,10,1,jitter[0],jitter[1]) || !vulkan_draw_begin(&draw,black))goto done;
             draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
             if(!moving_quad(&draw,0,0,64,64,.8f,0,0,0,.001f,0))goto done;
-            if(variant>=2){
+            if(variant>=3){
                 draw.capture_depth=0;draw.capture_background=draw.capture_scene=1;
                 draw.material.background_valid=1;
                 draw.material.background_motion[0]=draw.material.background_motion[1]=0;
@@ -824,8 +830,12 @@ static int upscale_stability_pass(VulkanDevice *v){
             if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
                !vulkan_draw_begin(&result,black) || !vulkan_draw_finish(&result,NULL,0) ||
                !vulkan_draw_blit_color(&result,output,size,size) || !vulkan_draw_readback(&result,resolved,sizeof(resolved)))goto done;
+            if(frame>=24)for(unsigned i=0;i<size*size;i++){
+                if(resolved[i*4]<minimum[i])minimum[i]=resolved[i*4];
+                if(resolved[i*4]>maximum[i])maximum[i]=resolved[i*4];
+            }
             if(frame>=24)for(unsigned target=0;target<2;target++){
-                unsigned factor=target?scale:1,side=64*factor;float ink=0;
+                float factor=target?scale:1;unsigned side=target?size:64;float ink=0;
                 const uint8_t *pixels=target?resolved:raw;
                 for(unsigned y=16*factor;y<48*factor;y++)for(unsigned x=8*factor;x<56*factor;x++)ink+=pixels[(x+y*side)*4]/255.0f;
                 ink/=32*factor*factor; /* Edge displacement in source pixels. */
@@ -833,11 +843,19 @@ static int upscale_stability_pass(VulkanDevice *v){
                 if(ink>high[target])high[target]=ink;
             }
         }
-        printf("FSR3_STABILITY_SAMPLE scale=%u background=%u raster_range=%.4f resolved_range=%.4f source_pixels\n",scale,variant/2,high[0]-low[0],high[1]-low[1]);
+        printf("FSR3_STABILITY_SAMPLE scale=%.1f background=%u raster_range=%.4f resolved_range=%.4f source_pixels\n",scale,variant/3,high[0]-low[0],high[1]-low[1]);
+        float pulse=0;unsigned count=0,peak=0;
+        for(unsigned y=(unsigned)(16*scale);y<(unsigned)(48*scale);y++)for(unsigned x=0;x<size;x++){
+            if(fabsf((x+.5f)/scale-(20+(y+.5f)/scale*.375f))<2){
+                unsigned delta=maximum[x+y*size]-minimum[x+y*size];pulse+=delta;count++;if(delta>peak)peak=delta;
+            }
+        }
+        printf("FSR3_EDGE_PULSE scale=%.1f mean=%.3f peak=%u levels\n",scale,pulse/count,peak);
+        if(pulse/count>3.0f || peak>20){fprintf(stderr,"FSR3 stationary edge pixels expose the jitter sequence\n");goto done;}
         if(high[0]-low[0]<.4f || high[1]-low[1]>.05f){fprintf(stderr,"FSR3 exposed stationary-edge jitter\n");goto done;}
         fsr3_upscaler_close(upscaler);upscaler=NULL;vulkan_draw_close(&result);
     }
-    printf("FSR3_STABILITY_PASS native=checked upscale=checked stationary_edge=stable\n");ok=1;
+    printf("FSR3_STABILITY_PASS native=checked fractional=1.5 integer=2 halton=checked edge_position=stable pixel_pulsing=bounded\n");ok=1;
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
 }

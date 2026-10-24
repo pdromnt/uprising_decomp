@@ -49,6 +49,11 @@ cover all options. Changing SDK input/output dimensions recreates its context.
   so recently cleared sharp edges can resume accumulation. No extra allocation
   or full-image blur is introduced. Effect removal and separate-mask GPU checks
   pass; remaining subtle sharp-edge shimmer still needs manual confirmation.
+- Trusted samples moving less than1/32source pixel retain8x the SDK's base
+  accumulation weight. Disocclusion, reactive coverage, changing shading and new
+  samples bypass this tuning; upstream rejection/rectification remain intact.
+  A derived accumulation header preserves the checksum-pinned SDK downloads.
+  This uses the existing history, without another image or spatial blur pass.
 - O-view crops actual color/depth/motion and uses its own FOV. MRT coverage and
   retained artwork contribution preserve irregular monitor frames and holes.
   Screenshots and legacy pixel consumers retain their original dimensions.
@@ -122,7 +127,8 @@ export VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/libkosmickrisp_icd.json"
 Local Windows x86/x64 application builds and GPU probes pass. Numeric fixtures
 check depth/motion/jitter, transparency masks, sky inputs, fractional HUD atlas
 sampling, irregular monitor composition and world-only spatial AA. The64-bit
-SDK moving fixture checks disocclusion/effect removal over10frames. Gameplay movement/fire/save/reload/shutdown passes1740frames on both x86 Vulkan
+SDK moving fixture checks disocclusion/effect removal and an unreset colour change
+over12frames. Gameplay movement/fire/save/reload/shutdown passes1740frames on both x86 Vulkan
 and x64 FSR with deferred submission; restored position/ammo match exactly.
 Priva's actual particle-mask, claim/O-return/citadel-camera route passes1479frames.
 The current120-frame Erudara route checks resize, camera resets, native AA,
@@ -169,14 +175,18 @@ excluding the first5seconds. This is not crowded-battle performance evidence.
 
 The reported horizon/silhouette jitter exposed blanket history rejection on
 untracked sky layers. Those layers now have separate motion; opaque horizon
-texels replace underlying cloud rejection. GPU fixtures check cloud opacity/flow,
-infinite depth and native/2x edge stability (under0.005source pixels of resolved
-variation). Steady Priva960x720/FSR captures reduced mean frame-to-frame RGB change
-in a horizon region from4.21 to1.39 over15pairs. This is a flicker diagnostic,
-not an FPS or full image-quality result; clouds still animate. The120-frame
-camera/options transition check passes. Manual horizon/geometry confirmation
-remains pending. Transition tests deliberately toggle modes/reset history and
-must not be treated as steady visual comparisons.
+texels replace underlying cloud rejection. User testing confirms broad jitter is
+much improved, with residual shimmer on sharp edges. Zero sharpening and Native
+AA did not remove it. The strengthened GPU fixture uses the real Halton sequence
+at native/1.5x/2x sizes and measures individual pixel pulses, not only edge position.
+At1.5x the static opaque edge's mean pulse drops4.82->1.19/255 and its worst pixel
+drops38->11/255 with the local accumulation tuning. Existing effect removal,
+disocclusion and an abrupt unreset colour change pass. Steady Priva960x720 dispatch
+and shutdown pass; manual acceptance of the residual-shimmer change is pending.
+The120-frame camera/options transition check passes for the preceding candidate.
+Transition tests deliberately toggle modes/reset history and must not be treated
+as steady visual comparisons. User reports macOS and Linux working; CM4 performance
+is poor and deferred. The latest shader tuning still needs physical-device rechecks.
 
 Remaining: real crowded-target performance, broad moving-edge/particle/layered-sky
 quality (including the reported terrain/sky jitter), scripted-camera/alternate-monitor

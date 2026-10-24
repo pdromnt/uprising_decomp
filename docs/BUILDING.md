@@ -67,6 +67,8 @@ CMake fetches checksum-pinned SDL, FreeType, ENet, Vulkan headers, AMD SDK and
 SPIRV-Reflect. SDL/FreeType/ENet link statically; libsmacker and stb_vorbis are
 bundled source. No original executable, legacy support DLL or OpenGL runtime is
 required. See [Graphics](FSR3.md) for GPU requirements and shader tuning.
+FreeType downloads have alternate mirrors with the same pinned archive checksum;
+this library rasterizes the supplied TTF fonts, rather than replacing them.
 
 Normal launches are quiet about diagnostics. The Windows manual debugger launcher
 is `source/scripts/debug-game.bat`; it uses normal menus, windowed controls and

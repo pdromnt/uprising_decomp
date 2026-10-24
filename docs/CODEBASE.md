@@ -53,16 +53,18 @@ case-sensitive filesystems without copying or renaming the assets.
 | `portable_music.c` / `portable_movie.c` | Streamed OGG playlist / libsmacker video and owned PCM playback |
 | `portable_network.c` | ENet sessions, worker/queues, discovery and host routing/migration |
 
-Gameplay borrows the window's GL context; teardown restores menu state. The
-640x480 render/readback buffers remain independent of output resolution. FSR
-scales every screen; its optional shaders require GL 4.3 compatibility. The
-non-FSR pixel-art shader uses GLSL 1.20. Desktop fullscreen preserves the display
-mode and fits the same 4:3 viewport used for pointer mapping.
+Gameplay borrows the menu window's Vulkan device and owns its level targets.
+The640x480 scene/readback buffers remain independent of output resolution.
+FSR3 reconstructs world color using depth, motion and rejection masks; HUD and
+menus use separate spatial filtering. Edge AA applies only to the world with
+FSR off. Desktop fullscreen preserves the display mode and uses the same fitted
+4:3 viewport for presentation and pointer mapping.
 
-MSAA targets belong to the level GL owner. Only world geometry enables sample
-coverage; the final overlay queue and UI/glyph writes retain center-sample
-coverage. Resolve multisample color before presentation or **any** CPU read,
-including sky/fog and monitor-mask sampling. AA changes apply on level opening.
+`level_run.c` retains the loading page through renderer preparation, without
+advancing simulation. `vulkan_draw.c` prepares common pipeline states; the
+platform prepares initial FSR3 resources. `vulkan_device.c` owns the shared,
+bounded pipeline cache and validates persisted data before driver use. Shader
+pipelines for world, UI and FSR3 share that cache; no OpenGL fallback remains.
 
 SDL owns startup/path/dialog services. Small host adapters cover cwd, durable
 FILE flushing and Windows hidden/system attributes; the HWND accessor serves

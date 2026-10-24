@@ -43,6 +43,11 @@ Legacy `FONTS/settings.cfg` and `FONTS/keymap.cfg` are imported on first use whe
 present. Saves and screenshots are separate user data. Screenshots are saved as
 PNG files in `scrshts/` under the user-data directory.
 
+Renderer preparation happens behind the level loading screen. A disposable
+`CONFIG/vulkan-pipelines.bin` cache speeds up later loads/launches. The first
+load, or a driver update, may take longer while shaders compile. No separate
+font library installation is required; the executable renders the supplied TTFs.
+
 Options → Graphics → **ADVANCED** provides:
 
 - **Display mode:** windowed or desktop fullscreen. The game stays 4:3 with black
@@ -54,8 +59,6 @@ Options → Graphics → **ADVANCED** provides:
   integer scaling keeps the original pixel edges crisp.
 - **3D anti-aliasing:** Edge AA when FSR is off; temporal AA when FSR is enabled.
   HUD, text, menus and 2D artwork remain outside the AA pass.
-
-OpenGL comparator builds retain FSR1 and supported MSAA 2×/4×/8× controls.
 
 **Apply → KEEP** saves the choice. Unconfirmed changes revert after 20 seconds.
 Music and effects volume affect the game only. Movies continue while unfocused.

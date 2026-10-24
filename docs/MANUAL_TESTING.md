@@ -7,8 +7,12 @@ matching mission, camera and activity.
 
 - Display changes: 4:3 borders, pointer alignment, Apply/Keep/Cancel, timeout,
   focus/minimize/restore and preference persistence after restart.
-- Rendering changes: compare FSR on/off at the same output size. Change MSAA and
-  load a mission; inspect 3D edges, HUD/text, sky/fog and citadel monitor masks.
+- Rendering changes: compare FSR Off/Upscale/Native AA and Edge AA at the same
+  output size; inspect 3D edges, HUD/text, sky/fog and citadel monitor masks.
+- Loading/cache changes: compare first and repeated process launches, loading
+  page to first complete world frame, reload and mission switching. For a cold
+  check, move `CONFIG/vulkan-pipelines.bin` aside with the game closed. Check
+  macOS on hardware; a successful build does not establish startup timing.
 - Gameplay/ownership changes: movement, firing, busy combat, citadel/factory
   activity, save/reload, mission exit and repeated mission transitions.
 - Menu/input/audio changes: click/drag/release, focus loss, bindings, movie timing,

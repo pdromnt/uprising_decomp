@@ -126,37 +126,20 @@ export VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/libkosmickrisp_icd.json"
 ./uprising_vulkan_probe
 ```
 
-## Current evidence and remaining work
+## Validation limits
 
-Local Windows x64 core/config/audio and Vulkan GPU checks pass. The native
-Training1 movement/fire/save/reload/shutdown route passes1740frames with exact
-restored position/ammo. Erudara's120-frame route checks camera cuts, output resize,
-monitor crops, native AA, sharpening and context recreation. Advanced-modal
-clicks/Apply/Keep/Revert/persistence pass and its filtered capture was inspected.
-The binary imports neither OpenGL nor a CPU/x87 execution runtime.
+Existing GPU checks cover depth/motion, sprite/effect rejection, stationary
+Halton jitter, spatial UI filtering, output/camera changes and cache reuse,
+corruption and driver mismatch. Local Windows gameplay checks cover movement,
+firing, exact save/reload and shutdown. These checks do not prove full campaign
+acceptance or crowded-battle performance.
 
-Matched quiet Training1/FSR960x720 samples, excluding the first5seconds, measured
-133.81FPS before renderer cleanup and135.73FPS after. This is not crowded-battle
-performance evidence. Timing samples are guard-terminated; clean shutdown is
-checked separately. CI builds five64-bit targets in one cache per job, executes
-Linux Vulkan validation and packages the macOS loader/ICD with its app.
-
-User testing confirms broad sky jitter and soldier occlusion are improved/fixed,
-with residual shimmer on sharp edges. Zero sharpening and Native AA did not
-remove that shimmer. The stronger GPU fixture uses the actual Halton sequence
-at native/1.5x/2x sizes and checks individual pixel pulses as well as edge position.
-At1.5x, trusted stationary accumulation reduces the fixture's mean pulse from
-4.82 to1.19/255 and its worst pixel from38 to11/255. Movement, effect removal,
-disocclusion and an abrupt unreset colour change pass. Manual testing reports
-improvement and no instability in the preceding candidate. The latest cleanup
-and pixel-centre reprojection correction still need ordinary play confirmation.
-
-macOS and Linux are user-confirmed working; CM4 performance is poor and deferred.
-Remaining coverage includes Windows ARM64, additional GPUs/controllers, crowded
-views, moving edges/animated textures and longer campaign/multiplayer sessions.
-The unexpected Novus combat exit remains unreproduced; the manual debugger
-launcher retains failure stacks. Transition fixtures deliberately reset history
-and switch modes; do not use them as steady visual-quality comparisons.
+macOS and Linux have user-confirmed gameplay on preceding builds. macOS loading
+preparation and cache timing still need hardware confirmation. Additional GPU,
+Windows ARM64, long-session and multiplayer coverage remains open; CM4 performance
+is deferred. Track actionable reports in [Remaining work](BACKLOG.md).
+Transition fixtures deliberately reset history and switch modes; they are not
+steady visual-quality comparisons. Historical measurements belong in Git.
 
 References: [AMD integration](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-interpolation/),
 [pinned SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/c6efa6bf7f2027b3ec94f28578bb5965eabb9e55),

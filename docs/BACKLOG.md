@@ -1,8 +1,9 @@
 # Remaining work
 
 - Finish visual acceptance of the Vulkan/FSR3 branch, especially subtle edge
-  shimmer and stationary texture animation. x86, OpenGL and standalone FSR1 have
-  been retired. Current renderer contract and evidence: [Graphics](FSR3.md).
+  shimmer and stationary texture animation. Current contract: [Graphics](FSR3.md).
+- Confirm macOS's blank-world startup pause is resolved with loading-screen
+  preparation; compare cold and cached launches on the actual device.
 - Capture the unexpected Novus combat exit through the manual debugger launcher.
 
 - Collect manual gameplay results on Windows ARM64 and Linux x64; extend the

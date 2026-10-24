@@ -121,6 +121,7 @@ static int vk1_scene_complete(void){
     }
     if(!vulkan_temporal_record(&n->temporal,command,motion))goto command_fail;
     image=fsr3_upscaler_dispatch(n->upscaler,command,color,depth,motion,&n->temporal.rejection,
+        &n->temporal.coverage_history[n->temporal.coverage_index],
         scene->scene_jitter[0],scene->scene_jitter[1],elapsed,10,fov,n->fsr_reset,game_display_sharpness(g->application));
     if(!image || !vulkan_temporal_compose(&n->temporal,command,image,&scene->scene,&scene->color,&target->color,
         n->fsr_crop[0],n->fsr_crop[1],target->width,target->height))goto command_fail;

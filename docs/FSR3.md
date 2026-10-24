@@ -44,6 +44,11 @@ cover all options. Changing SDK input/output dimensions recreates its context.
   no-write effects preserve underlying history.
   Reprojected raw rejection coverage protects vacated sprite/effect pixels for
   one following frame; it expires rather than feeding the combined mask back.
+  Only the reactive input includes that expanded previous coverage. The
+  transparency/composition input borrows the existing raw current-coverage image,
+  so recently cleared sharp edges can resume accumulation. No extra allocation
+  or full-image blur is introduced. Effect removal and separate-mask GPU checks
+  pass; remaining subtle sharp-edge shimmer still needs manual confirmation.
 - O-view crops actual color/depth/motion and uses its own FOV. MRT coverage and
   retained artwork contribution preserve irregular monitor frames and holes.
   Screenshots and legacy pixel consumers retain their original dimensions.

@@ -748,7 +748,7 @@ static int upscale_motion_pass(VulkanDevice *v){
         if((frame==2 || frame==3) && motion[(54+14*64)*4+3]!=1)goto done;
         if(!vulkan_command_begin(v,&command))goto done;
         if(!vulkan_temporal_record(&temporal,command,&draw.motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);goto done;}
-        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,
+        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,&temporal.coverage_history[temporal.coverage_index],
             jitter[0],jitter[1],16.667f,10,1,frame==0 || cut,0);
         if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
            !vulkan_draw_blit_color(&result,output,128,128) || !vulkan_draw_readback(&result,rgba,sizeof(rgba)))goto done;
@@ -757,6 +757,11 @@ static int upscale_motion_pass(VulkanDevice *v){
         if(!read_image(v,&temporal.rejection,64,64,mask,sizeof(mask)) ||
            mask[54+14*64]!=(frame>=2 && frame<=4?255:0)){
             fprintf(stderr,"FSR3 vacated effect rejection failed frame=%u\n",frame);goto done;
+        }
+        if(frame==3 && mask[47+14*64]!=255){fprintf(stderr,"FSR3 effect edge lost reactive protection\n");goto done;}
+        if(!read_image(v,&temporal.coverage_history[temporal.coverage_index],64,64,mask,sizeof(mask)) ||
+           mask[54+14*64]!=((frame==2 || frame==3)?255:0) || mask[47+14*64]!=0){
+            fprintf(stderr,"FSR3 composition mask retained stale/expanded effect coverage frame=%u\n",frame);goto done;
         }
         for(i=0;i<3;i++){
             /* Foreground's vacated footprint, active foreground and an effect
@@ -772,7 +777,7 @@ static int upscale_motion_pass(VulkanDevice *v){
         }
         previous_left=left;
     }
-    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked vacated_coverage=checked coverage_expiry=checked reset=checked\n");ok=1;
+    printf("FSR3_MOVING_PASS frames=10 depth=checked unjittered_motion=checked disocclusion=checked effect_appearance=checked effect_removal=checked vacated_coverage=checked coverage_expiry=checked separate_composition=checked reset=checked\n");ok=1;
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
 }
@@ -814,7 +819,7 @@ static int upscale_stability_pass(VulkanDevice *v){
             }
             if(!vulkan_draw_finish(&draw,raw,sizeof(raw)) || !vulkan_command_begin(v,&command) ||
                !vulkan_temporal_record(&temporal,command,&draw.motion))goto done;
-            output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,
+            output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,&temporal.coverage_history[temporal.coverage_index],
                 jitter[0],jitter[1],16.667f,10,1,frame==0,0);
             if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
                !vulkan_draw_begin(&result,black) || !vulkan_draw_finish(&result,NULL,0) ||
@@ -859,7 +864,7 @@ static int upscale_pass(VulkanDevice *v){
         if(frame==2 && !draw_quad(&draw,0,0,32,32,0.1f,0.25f,0.5f,0.75f,.5f,NULL,VULKAN_DRAW_DEPTH_TEST|VULKAN_DRAW_BLEND))goto done;
         if(!vulkan_draw_finish(&draw,NULL,0) || !vulkan_command_begin(v,&command))goto done;
         if(!vulkan_temporal_record(&temporal,command,&draw.motion)){v->FreeCommandBuffers(v->device,v->commands,1,&command);goto done;}
-        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,jitter,-jitter,16.667f,10,1,frame==2,frame==1);
+        output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,&temporal.coverage_history[temporal.coverage_index],jitter,-jitter,16.667f,10,1,frame==2,frame==1);
         if(!output)goto done;
         copy.imageSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent=(VkExtent3D){128,128,1};
         v->CmdCopyImageToBuffer(command,output->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&copy);

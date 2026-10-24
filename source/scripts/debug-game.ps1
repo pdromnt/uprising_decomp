@@ -13,7 +13,7 @@ if(!$Executable){
 }
 $Executable=(Resolve-Path -LiteralPath $Executable).Path
 $identity=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($Executable))
-if(!$identity.Contains('NATIVE_OPENGL1_CPU_FREE:')){throw 'Executable is not the native reconstruction; retail will not be launched.'}
+if(!$identity.Contains('NATIVE_VULKAN_CPU_FREE:')){throw 'Executable is not the native reconstruction; retail will not be launched.'}
 if(!$Debugger){
     $command=Get-Command gdb.exe -ErrorAction SilentlyContinue
     if($command){$Debugger=$command.Source}
@@ -83,7 +83,7 @@ public sealed class UprisingDebugCapture : IDisposable {
 '@
 }
 if($Check){
-    & $Debugger -q -batch -ex 'python print("GDB_PYTHON_READY")' -ex 'break gl1_fail' -ex 'break application_failure' -ex 'break game_memory_fail' $Executable
+    & $Debugger -q -batch -ex 'python print("GDB_PYTHON_READY")' -ex 'break render_fail' -ex 'break application_failure' -ex 'break game_memory_fail' $Executable
     if($LASTEXITCODE){throw 'Debugger preflight failed.'}
     Write-Host "Ready: $Executable"
     Write-Host "Logs:  $log (overwritten each run, maximum 8 MiB)"

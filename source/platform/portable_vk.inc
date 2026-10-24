@@ -1,6 +1,4 @@
-/* Experimental native device consuming the established projected vertices and
- * owned texture bytes. The GL comparator shares those material semantics;
- * this path submits Vulkan buffers/shaders and never creates a GL context. */
+/* Native Vulkan device consuming projected vertices and owned texture bytes. */
 typedef struct VulkanGlyphAtlas {
     VulkanDrawTexture texture;uint8_t *pixels;
     unsigned x,y,row_height,height;int dirty;
@@ -34,56 +32,51 @@ typedef struct Vk1Device {
     /* Renderer-thread scratch, reused per polygon. Large local arrays caused
      * a stack-growth probe on every polygon, including the GL comparator. */
     VulkanDrawVertex polygon_source[32],polygon_output[90];
-#ifdef UPRISING_FSR3_UPSCALER
     Fsr3Upscaler *upscaler;
-#endif
 } Vk1Device;
 static void vk1_history_reset(Vk1Device *n){
     render_motion_reset(&n->history);memset(n->sky_history,0,sizeof(n->sky_history));
 }
 static VulkanDraw *vk1_target(unsigned index){
-    Vk1Device *n=gl1_current->vulkan;return n->composed[index]?n->output+index:n->frame+index;
+    Vk1Device *n=render_current->vulkan;return n->composed[index]?n->output+index:n->frame+index;
 }
-static VulkanDraw *vk1_back(void){return vk1_target(gl1_current->back);}
+static VulkanDraw *vk1_back(void){return vk1_target(render_current->back);}
 static int vk1_flush(VulkanDraw *d,int resume){
-    Vk1Device *n=gl1_current->vulkan;Uint64 started=d->recording && n->observe?SDL_GetTicksNS():0;
+    Vk1Device *n=render_current->vulkan;Uint64 started=d->recording && n->observe?SDL_GetTicksNS():0;
     for(unsigned i=0;i<2;i++)if(d->recording && (d==n->frame+i || d==n->output+i) && n->glyphs[i].dirty){
         VulkanGlyphAtlas *atlas=n->glyphs+i;
         d->pending_upload=(VulkanDrawUpload){&atlas->texture,atlas->pixels,1024,atlas->height};
         atlas->dirty=0;
     }
     if(d->recording){n->submissions++;n->vertices+=d->vertex_count;n->batches+=d->batch_count;}
-    if(d->recording && !vulkan_draw_finish(d,NULL,0)){gl1_fail("Vulkan submission");return 0;}
+    if(d->recording && !vulkan_draw_finish(d,NULL,0)){render_fail("Vulkan submission");return 0;}
     if(started)n->flush_cost_ns+=SDL_GetTicksNS()-started;
-    if(resume && !d->recording && !vulkan_draw_resume(d)){gl1_fail("Vulkan render target continuation");return 0;}
+    if(resume && !d->recording && !vulkan_draw_resume(d)){render_fail("Vulkan render target continuation");return 0;}
     return 1;
 }
 static int vk1_ready_draw(void){
-    VulkanDraw *d=vk1_back();return gl1_ready() && (d->recording || vulkan_draw_resume(d));
+    VulkanDraw *d=vk1_back();return render_ready() && (d->recording || vulkan_draw_resume(d));
 }
 static int vk1_flush_all(void){
-    Vk1Device *n=gl1_current->vulkan;unsigned i;
+    Vk1Device *n=render_current->vulkan;unsigned i;
     for(i=0;i<2;i++)if(!vk1_flush(n->frame+i,0) || !vk1_flush(n->output+i,0))return 0;
     return 1;
 }
 static int vk1_scene_complete(void){
-    Gl1Device *g=gl1_current;Vk1Device *n=g->vulkan;VulkanDraw *scene=n->frame+g->back,*target=n->output+g->back;
+    RenderDevice *g=render_current;Vk1Device *n=g->vulkan;VulkanDraw *scene=n->frame+g->back,*target=n->output+g->back;
     VulkanDevice *v=vulkan_menu_device(n->menu);VkCommandBuffer command;const VulkanImage *image;
     const float clear[4]={0,0,0,1};float focal,fov,elapsed;Uint64 now;
     uint32_t width=n->fsr_crop[2],height=n->fsr_crop[3];const VulkanImage *color,*depth,*motion;
     uint32_t output_width=(uint32_t)(((uint64_t)width*n->fsr_output[0]+g->width-1)/g->width);
     uint32_t output_height=(uint32_t)(((uint64_t)height*n->fsr_output[1]+g->height-1)/g->height);
-#ifdef UPRISING_FSR3_UPSCALER
     if(!n->fsr_view){
         if(!n->fsr_requested && n->upscaler){fsr3_upscaler_close(n->upscaler);n->upscaler=NULL;vulkan_temporal_close(&n->temporal);}
     }
-#endif
     if(!n->fsr_view && !n->spatial_view){if(!n->fsr_requested)vulkan_temporal_close(&n->temporal);return 1;}
     focal=n->history_projection[2]*n->history_projection[3]*n->history_projection[4];
     if(!isfinite(focal) || focal<=0)return 0;
     fov=2*atanf((float)height/(2*focal));
     if(!isfinite(fov) || fov<=0 || fov>=3.14159265f)return 0;
-#ifdef UPRISING_FSR3_UPSCALER
     if(game_display_temporal_native(g->application)){output_width=width;output_height=height;}
     if(n->upscaler && (n->temporal.width!=width || n->temporal.height!=height || n->fsr_context_output[0]!=output_width || n->fsr_context_output[1]!=output_height)){
         fsr3_upscaler_close(n->upscaler);n->upscaler=NULL;vulkan_temporal_close(&n->temporal);n->fsr_reset=1;
@@ -92,7 +85,6 @@ static int vk1_scene_complete(void){
         n->upscaler=fsr3_upscaler_open(v,width,height,output_width,output_height);if(!n->upscaler)return 0;n->fsr_reset=1;
         n->fsr_context_output[0]=output_width;n->fsr_context_output[1]=output_height;
     }
-#endif
     if(n->temporal.device && (n->temporal.width!=width || n->temporal.height!=height))vulkan_temporal_close(&n->temporal);
     if(target->device && (target->width!=n->fsr_output[0] || target->height!=n->fsr_output[1])){
         if(!vk1_flush(target,0))return 0;vulkan_draw_close(target);
@@ -114,7 +106,6 @@ static int vk1_scene_complete(void){
         if(!vulkan_temporal_antialias(&n->temporal,command,color,&scene->color,&target->color,
             n->fsr_crop[0],n->fsr_crop[1],target->width,target->height))goto command_fail;
     }else{
-#ifdef UPRISING_FSR3_UPSCALER
     if(n->fsr_monitor){
         if(!vulkan_temporal_crop(&n->temporal,command,color,depth,motion,n->fsr_crop[0],n->fsr_crop[1],g->width,g->height))goto command_fail;
         color=n->temporal.cropped;depth=n->temporal.cropped+1;motion=n->temporal.cropped+2;
@@ -125,9 +116,6 @@ static int vk1_scene_complete(void){
         scene->scene_jitter[0],scene->scene_jitter[1],elapsed,10,fov,n->fsr_reset,game_display_sharpness(g->application));
     if(!image || !vulkan_temporal_compose(&n->temporal,command,image,&scene->scene,&scene->color,&target->color,
         n->fsr_crop[0],n->fsr_crop[1],target->width,target->height))goto command_fail;
-#else
-    goto command_fail;
-#endif
     }
     if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
     if(n->observe)n->fsr_cost_ns+=SDL_GetTicksNS()-now;
@@ -139,17 +127,16 @@ static int vk1_scene_complete(void){
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
     n->fsr_reset=0;
     if(n->fsr_monitor)n->fsr_monitor_frames++;
-#ifdef UPRISING_FSR3_UPSCALER
     if(n->fsr_frames==1){char message[224];snprintf(message,sizeof(message),
         "FSR3_GAME_DISPATCH: %ux%u -> %ux%u fov=%g near=10 phases=%u masks=conservative-R8; HUD follows dispatch\n",
         width,height,output_width,output_height,fov,fsr3_upscaler_jitter_phases(width,output_width));
         game_application_log(g->application,"%s",message);}
-#endif
     return 1;
 command_fail:v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;
 }
 static int vk1_open(SDL_Window *window,VulkanMenu *menu){
-    Gl1Device *g=gl1_current;unsigned i;const float clear[4]={0,0,0,0};
+    RenderDevice *g=render_current;unsigned i;const float clear[4]={0,0,0,0};
+    if(!g || g->vulkan || !window || !menu)return 0;
     g->vulkan=calloc(1,sizeof(*g->vulkan));if(!g->vulkan)return 0;
     g->vulkan->menu=menu;g->failed=0;g->thread=SDL_GetCurrentThreadID();g->window=window;
     vulkan_menu_device(menu)->defer_submissions=1;
@@ -160,34 +147,32 @@ static int vk1_open(SDL_Window *window,VulkanMenu *menu){
     if(!g->lfb || !g->rgba)goto fail;
     for(i=0;i<2;i++)if(!vulkan_draw_open(g->vulkan->frame+i,vulkan_menu_device(menu),g->width,g->height) ||
        !vulkan_draw_begin(g->vulkan->frame+i,clear) || !vulkan_draw_finish(g->vulkan->frame+i,NULL,0))goto fail;
-    g->palette_generation=1;g->min_filter=g->mag_filter=GL_LINEAR;g->wrap_s=g->wrap_t=GL_REPEAT;
+    g->palette_generation=1;g->min_filter=g->mag_filter=RENDER_SAMPLE_LINEAR;g->wrap_s=g->wrap_t=RENDER_WRAP_REPEAT;
     g->constant[0]=g->constant[1]=g->constant[2]=g->constant[3]=1;g->alpha_function=7;
     g->native_depth_write=1;g->native_depth_func=1;g->native_blend=g->native_fog=0;
     g->projection_center=320;g->projection_scale=381.3607f;
     game_application_log(g->application,"%s\n","VULKAN_LEVEL_DEVICE_READY: native projected geometry and owned targets");return 1;
-fail:gl1_fail("Vulkan level device allocation");gl1_close();return 0;
+fail:render_fail("Vulkan level device allocation");render_close();return 0;
 }
-static void vk1_texture_release(Gl1Texture *texture){
+static void vk1_texture_release(RenderTexture *texture){
     if(!texture->vulkan_texture)return;
     if(!vk1_flush_all())vk1_back()->recording=0;
-    vulkan_draw_texture_destroy(&gl1_current->vulkan->frame[0],texture->vulkan_texture);
+    vulkan_draw_texture_destroy(&render_current->vulkan->frame[0],texture->vulkan_texture);
     free(texture->vulkan_texture);texture->vulkan_texture=NULL;
     free(texture->vulkan_pixels);texture->vulkan_pixels=NULL;
 }
 static void vk1_sky_release(void){
-    Gl1Device *g=gl1_current;unsigned i;if(!vk1_flush(vk1_back(),0))return;
+    RenderDevice *g=render_current;unsigned i;if(!vk1_flush(vk1_back(),0))return;
     memset(g->vulkan->sky_history,0,sizeof(g->vulkan->sky_history));
     for(i=0;i<3;i++)vulkan_draw_texture_destroy(g->vulkan->frame,g->vulkan->sky+i);
 }
 static void vk1_close(void){
-    Gl1Device *g=gl1_current;unsigned i;
+    RenderDevice *g=render_current;unsigned i;
     vk1_flush_all();
     vulkan_menu_device(g->vulkan->menu)->DeviceWaitIdle(vulkan_menu_device(g->vulkan->menu)->device);
     for(i=0;i<4096;i++)vk1_texture_release(g->textures+i);
     vk1_sky_release();vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->remote_mask);vulkan_draw_texture_destroy(g->vulkan->frame,&g->vulkan->tiles);
-#ifdef UPRISING_FSR3_UPSCALER
     fsr3_upscaler_close(g->vulkan->upscaler);
-#endif
     vulkan_temporal_close(&g->vulkan->temporal);
     for(i=0;i<2;i++){
         vulkan_draw_texture_destroy(g->vulkan->frame+i,&g->vulkan->glyphs[i].texture);free(g->vulkan->glyphs[i].pixels);
@@ -197,18 +182,18 @@ static void vk1_close(void){
     vulkan_menu_device(g->vulkan->menu)->defer_submissions=0;
     free(g->vulkan);g->vulkan=NULL;
 }
-static void vk1_refresh(Gl1Texture *texture){
-    Gl1Device *g=gl1_current;VulkanDrawTexture *t=texture->vulkan_texture;VulkanDraw *owner=g->vulkan->frame;int chroma=g->chroma_enabled;
+static void vk1_refresh(RenderTexture *texture){
+    RenderDevice *g=render_current;VulkanDrawTexture *t=texture->vulkan_texture;VulkanDraw *owner=g->vulkan->frame;int chroma=g->chroma_enabled;
     if(texture->ui_tile){
         Vk1Device *n=g->vulkan;uint64_t hash=UINT64_C(14695981039346656037);unsigned i,slot,bucket;
-        g->chroma_enabled=0;gl1_convert(texture,texture->pixels,1024,g->rgba);g->chroma_enabled=chroma;
+        g->chroma_enabled=0;render_convert(texture,texture->pixels,1024,g->rgba);g->chroma_enabled=chroma;
         for(i=0;i<4096;i++){hash^=g->rgba[i];hash*=UINT64_C(1099511628211);}bucket=(unsigned)(hash&1023u);
         for(slot=n->tile_buckets[bucket];slot;slot=n->tile[slot-1].next)
             if(n->tile[slot-1].hash==hash && !memcmp(n->tile[slot-1].pixels,g->rgba,4096))break;
         if(!slot){
             if(!n->tiles.image.image){
                 uint8_t *empty=calloc(1024u*1024u,4);int ok=empty && vulkan_draw_texture_create(owner,&n->tiles,empty,1024,1024,0,0);free(empty);
-                if(!ok){gl1_fail("Vulkan tile atlas");return;}
+                if(!ok){render_fail("Vulkan tile atlas");return;}
                 n->tiles.atlas=1;
             }
             if(n->tile_count==1024){
@@ -219,31 +204,31 @@ static void vk1_refresh(Gl1Texture *texture){
             }
             i=n->tile_count++;slot=i+1;n->tile[i].hash=hash;
             memcpy(n->tile[i].pixels,g->rgba,4096);n->tile[i].next=n->tile_buckets[bucket];n->tile_buckets[bucket]=slot;
-            if(!vulkan_draw_texture_region(owner,&n->tiles,g->rgba,(i%32)*32,(i/32)*32,32,32)){gl1_fail("Vulkan tile atlas update");return;}
+            if(!vulkan_draw_texture_region(owner,&n->tiles,g->rgba,(i%32)*32,(i/32)*32,32,32)){render_fail("Vulkan tile atlas update");return;}
             n->atlas_uploads++;
         }
         texture->native_tile=slot;texture->palette_generation=g->palette_generation;texture->dirty=0;
         texture->gpu_width=texture->width;texture->gpu_height=texture->height;return;
     }
-    /* Like the comparator's GL_LINEAR minification, the current native sampler
+    /* Like the comparator's RENDER_SAMPLE_LINEAR minification, the current native sampler
      * consumes the selected base LOD. Retain all original mip bytes in staging. */
-    g->chroma_enabled=0;gl1_convert(texture,texture->pixels,texture->width*texture->height,g->rgba);g->chroma_enabled=chroma;
+    g->chroma_enabled=0;render_convert(texture,texture->pixels,texture->width*texture->height,g->rgba);g->chroma_enabled=chroma;
     if(t && t->image.image && t->width==texture->width && t->height==texture->height &&
        texture->vulkan_pixels && !memcmp(texture->vulkan_pixels,g->rgba,(size_t)texture->width*texture->height*4))goto current;
     if(!vk1_flush_all())return;
     g->vulkan->uploads++;
-    if(!t){t=calloc(1,sizeof(*t));if(!t){gl1_fail("Vulkan texture owner");return;}texture->vulkan_texture=t;}
+    if(!t){t=calloc(1,sizeof(*t));if(!t){render_fail("Vulkan texture owner");return;}texture->vulkan_texture=t;}
     if(t->image.image && (t->width!=texture->width || t->height!=texture->height))vulkan_draw_texture_destroy(owner,t);
     if(!t->image.image){
-        if(!vulkan_draw_texture_create(owner,t,g->rgba,texture->width,texture->height,1,1)){gl1_fail("Vulkan texture creation");return;}
-    }else if(!vulkan_draw_texture_update(owner,t,g->rgba,(size_t)texture->width*texture->height*4)){gl1_fail("Vulkan texture update");return;}
+        if(!vulkan_draw_texture_create(owner,t,g->rgba,texture->width,texture->height,1,1)){render_fail("Vulkan texture creation");return;}
+    }else if(!vulkan_draw_texture_update(owner,t,g->rgba,(size_t)texture->width*texture->height*4)){render_fail("Vulkan texture update");return;}
     {
         /* Upload heaps may be write-combined: reading them for every palette
          * comparison is prohibitively slow on discrete GPUs. Keep this cache
          * in ordinary CPU memory and retire it with the texture owner. */
         size_t bytes=(size_t)texture->width*texture->height*4;
         uint8_t *pixels=realloc(texture->vulkan_pixels,bytes);
-        if(!pixels){gl1_fail("Vulkan texture comparison cache");return;}
+        if(!pixels){render_fail("Vulkan texture comparison cache");return;}
         texture->vulkan_pixels=pixels;memcpy(pixels,g->rgba,bytes);
     }
 current:
@@ -265,9 +250,9 @@ static int vk1_motion_source(void *context,uint32_t reference,RenderMotionSource
     memcpy(source->current,v->position,sizeof(source->current));return 1;
 }
 static VulkanDrawVertex vk1_vertex(const GameRenderVertex *v){
-    Gl1Device *g=gl1_current;VulkanDrawVertex out={0};float depth,q=v->oow,divisor=g->color_mode==RENDER_COLOR_INVERSE_TEXTURE?256.0f:255.0f;
+    RenderDevice *g=render_current;VulkanDrawVertex out={0};float depth,q=v->oow,divisor=g->color_mode==RENDER_COLOR_INVERSE_TEXTURE?256.0f:255.0f;
     if(g->depth_mode==2 || g->depth_mode==4){
-        int value=gl1_w_depth(q)+(g->depth_mode==2?(int16_t)g->depth_bias:0);depth=(value<0?0:value>65535?65535:value)/65535.0f;
+        int value=render_w_depth(q)+(g->depth_mode==2?(int16_t)g->depth_bias:0);depth=(value<0?0:value>65535?65535:value)/65535.0f;
     }else depth=(v->ooz+(g->depth_mode==1?g->depth_bias:0))/65535.0f;
     out.position[0]=v->x;out.position[1]=v->y;out.position[2]=fminf(1,fmaxf(0,depth));
     out.color[0]=v->r/divisor;out.color[1]=v->g/divisor;out.color[2]=v->b/divisor;out.color[3]=v->a/255.0f;
@@ -299,7 +284,7 @@ static void vk1_motion_triangle(VulkanDrawVertex v[3]){
         memset(v[0].previous,0,sizeof(v[0].previous)),memset(v[1].previous,0,sizeof(v[1].previous)),memset(v[2].previous,0,sizeof(v[2].previous));
 }
 static uint32_t vk1_material(VulkanDraw *d){
-    Gl1Device *g=gl1_current;VulkanDrawMaterial *m=&d->material;
+    RenderDevice *g=render_current;VulkanDrawMaterial *m=&d->material;
     d->capture_depth=g->world_depth_capture;
     m->color_mode=g->textured?(uint32_t)g->color_mode:g->constant_enabled?1:0;
     m->mask_enabled=0;d->mask_texture=NULL;
@@ -309,7 +294,7 @@ static uint32_t vk1_material(VulkanDraw *d){
     m->alpha_reference=m->chroma?0:g->alpha_reference;m->fog_mode=g->native_fog;
     m->fog_range[0]=g->native_fog_start;m->fog_range[1]=g->native_fog_end;
     if(m->fog_mode==2)m->fog_range[0]=g->density;
-    d->texture_sampler=(g->min_filter==GL_LINEAR?1:0)|(g->wrap_s==GL_REPEAT?2:0)|(g->wrap_t==GL_REPEAT?4:0);
+    d->texture_sampler=(g->min_filter==RENDER_SAMPLE_LINEAR?1:0)|(g->wrap_s==RENDER_WRAP_REPEAT?2:0)|(g->wrap_t==RENDER_WRAP_REPEAT?4:0);
     m->texture_sampling=(uint32_t)d->texture_sampler;
     if(g->textured && g->bound && g->bound->ui_tile && !g->world_depth_capture)m->texture_sampling|=8u;
     m->padding[1]=g->textured && g->bound && g->bound->ui_tile?g->bound->native_tile:0;
@@ -317,17 +302,17 @@ static uint32_t vk1_material(VulkanDraw *d){
         (g->native_blend?VULKAN_DRAW_BLEND:0)|(g->native_depth_func<<3);
 }
 static void vk1_triangle(const GameRenderVertex *a,const GameRenderVertex *b,const GameRenderVertex *c){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex[3];float area;
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex[3];float area;
     if(!vk1_ready_draw())return;
     area=(b->x-a->x)*(c->y-a->y)-(b->y-a->y)*(c->x-a->x);
     if((g->native_cull==1 && area>=0) || (g->native_cull==2 && area<=0))return;
     vertex[0]=vk1_vertex(a);vertex[1]=vk1_vertex(b);vertex[2]=vk1_vertex(c);
     vk1_motion_triangle(vertex);
-    if(!vulkan_draw_triangles(d,vertex,3,g->textured && g->bound?(g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan triangle batch");
+    if(!vulkan_draw_triangles(d,vertex,3,g->textured && g->bound?(g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))render_fail("Vulkan triangle batch");
     ++g->triangles;
 }
 static int vk1_polygon(const GameRenderVertex *vertices,unsigned count,const uint8_t triangles[30][3],unsigned n){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();
     VulkanDrawVertex *converted=g->vulkan->polygon_source,*output=g->vulkan->polygon_output;
     uint32_t known=0;unsigned i,j,used=0;
     if(count>32 || n>30 || !vk1_ready_draw())return 0;
@@ -348,32 +333,32 @@ static int vk1_polygon(const GameRenderVertex *vertices,unsigned count,const uin
     g->triangles+=used/3;return 1;
 }
 static void vk1_point(const GameRenderVertex *v){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex;
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex;
     if(!vk1_ready_draw())return;
     vertex=vk1_vertex(v);
     if(!vulkan_draw_points(d,&vertex,1,g->textured && g->bound?
-        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan point batch");
+        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))render_fail("Vulkan point batch");
 }
 static void vk1_line(const GameRenderVertex *a,const GameRenderVertex *b){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex[2];
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();VulkanDrawVertex vertex[2];
     if(!vk1_ready_draw())return;
     vertex[0]=vk1_vertex(a);vertex[1]=vk1_vertex(b);
     if(!vulkan_draw_lines(d,vertex,2,g->textured && g->bound?
-        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))gl1_fail("Vulkan line batch");
+        (g->bound->ui_tile?&g->vulkan->tiles:g->bound->vulkan_texture):NULL,vk1_material(d)))render_fail("Vulkan line batch");
 }
 static void vk1_clear(uint32_t color,uint32_t alpha,uint32_t depth){
-    Gl1Device *g=gl1_current;VulkanDraw *d;float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
+    RenderDevice *g=render_current;VulkanDraw *d;float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
     if(g->vulkan->composed[g->back] && !vk1_flush(vk1_back(),0))return;
     g->vulkan->composed[g->back]=0;d=vk1_back();
     g->vulkan->glyphs[g->back].x=g->vulkan->glyphs[g->back].y=g->vulkan->glyphs[g->back].row_height=g->vulkan->glyphs[g->back].height=0;
     g->vulkan->glyphs[g->back].dirty=0;
-    d->recording=0;d->clear_depth=(depth&65535)/65535.0f;if(!vulkan_draw_begin(d,clear))gl1_fail("Vulkan clear");
-    gl1_current->vulkan->frame_start=SDL_GetTicksNS();
+    d->recording=0;d->clear_depth=(depth&65535)/65535.0f;if(!vulkan_draw_begin(d,clear))render_fail("Vulkan clear");
+    render_current->vulkan->frame_start=SDL_GetTicksNS();
 }
 static void vk1_swap(void){
-    Gl1Device *g=gl1_current;unsigned old;Uint64 before=SDL_GetTicksNS(),submitted;
+    RenderDevice *g=render_current;unsigned old;Uint64 before=SDL_GetTicksNS(),submitted;
     if(!vk1_flush(vk1_back(),0))return;submitted=SDL_GetTicksNS();
-    if(!vulkan_menu_present_image(g->vulkan->menu,vk1_back())){gl1_fail("Vulkan level presentation");return;}
+    if(!vulkan_menu_present_image(g->vulkan->menu,vk1_back())){render_fail("Vulkan level presentation");return;}
     old=g->front;g->front=g->back;g->back=old;
     /* The next frame prepares its legacy depth/viewport mask before the scene
      * scope opens. Route that work back to the low-resolution owner now;
@@ -399,8 +384,8 @@ static void vk1_swap(void){
     g->vulkan->frame_start=SDL_GetTicksNS();
 }
 static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
-    Gl1Device *g=gl1_current;unsigned i;VulkanDraw *d;
-    if(!gl1_ready() || !info || g->locked || buffer>1)return 0;
+    RenderDevice *g=render_current;unsigned i;VulkanDraw *d;
+    if(!render_ready() || !info || g->locked || buffer>1)return 0;
     d=g->vulkan->frame+(buffer?g->back:g->front);
     g->vulkan->track_text=0;
     if(write){if(!g->vulkan->scratch_clean)for(i=0;i<g->width*g->height;i++)g->lfb[i]=0xf81f;}
@@ -415,7 +400,7 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
 }
 static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,float r,float b,float z,float u0,float v0,float u1,float v1,float alpha,uint32_t flags){
     VulkanDrawVertex v[6]={0};float previous[4][4]={{0}};unsigned i;int ok;const unsigned corner[6]={0,1,2,0,2,3};
-    Gl1Device *g=gl1_current;Vk1Device *n=g->vulkan;
+    RenderDevice *g=render_current;Vk1Device *n=g->vulkan;
     unsigned camera=d->material.mask_enabled!=0;
     if(!d->recording && !vulkan_draw_resume(d))return 0;
     d->capture_depth=0; /* Sky contributes color, never solid world depth. */
@@ -457,7 +442,7 @@ static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,flo
     d->capture_scene=d->capture_background=0;return ok;
 }
 static int vk1_glyphs(VulkanDraw *d,unsigned buffer,unsigned left,unsigned top,unsigned right,unsigned bottom){
-    Gl1Device *g=gl1_current;VulkanGlyphAtlas *atlas=g->vulkan->glyphs+buffer;
+    RenderDevice *g=render_current;VulkanGlyphAtlas *atlas=g->vulkan->glyphs+buffer;
     unsigned width=right-left+2,height=bottom-top+2,x,y;
     const unsigned corner[6]={0,1,2,0,2,3};VulkanDrawVertex vertex[6]={0};
     if(!atlas->pixels){
@@ -494,7 +479,7 @@ static int vk1_glyphs(VulkanDraw *d,unsigned buffer,unsigned left,unsigned top,u
     return vulkan_draw_triangles(d,vertex,6,&atlas->texture,VULKAN_DRAW_BLEND);
 }
 static int vk1_unmap(void){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_target(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_target(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;
     if(!g->locked)return 0;
     if(g->write_lock){
         unsigned first=0,end=g->width*g->height;
@@ -517,12 +502,12 @@ static int vk1_unmap(void){
     g->locked=0;return 1;
 }
 static int vk1_sky_upload(unsigned layer,unsigned width,unsigned height){
-    Gl1Device *g=gl1_current;
+    RenderDevice *g=render_current;
     if(!vk1_flush(vk1_back(),0) || !vulkan_draw_texture_create(g->vulkan->frame,g->vulkan->sky+layer,g->rgba,width,height,layer!=2,1))return 0;
     g->sky_layers[layer]=1;return 1;
 }
 static int vk1_sky_end(void){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();unsigned layer;float bottom,top,repeats,u;
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();unsigned layer;float bottom,top,repeats,u;
     d->material.mask_enabled=0;d->mask_texture=NULL;
     if(g->sky_triangles)for(layer=0;layer<2;layer++)if(g->sky_layers[layer]){
         float u0=-g->sky_yaw*g->sky_yaw_scale+(layer?g->sky_offset:0),v0=-g->sky_horizon/256+0.5f+(layer?g->sky_offset*0.6f:0);
@@ -547,25 +532,25 @@ static int vk1_sky_end(void){
     g->sky_active=0;return !g->failed;
 }
 static int vk1_remote_read(const int32_t bounds[4]){
-    Gl1Device *g=gl1_current;unsigned width=(unsigned)(bounds[2]-bounds[0]),height=(unsigned)(bounds[3]-bounds[1]),x,y;
+    RenderDevice *g=render_current;unsigned width=(unsigned)(bounds[2]-bounds[0]),height=(unsigned)(bounds[3]-bounds[1]),x,y;
     uint8_t *pixels=malloc((size_t)width*height*3);if(!pixels)return 0;
     if(!vk1_flush(vk1_back(),0) || !vulkan_draw_readback(vk1_back(),g->rgba,(size_t)g->width*g->height*4)){free(pixels);return 0;}
     for(y=0;y<height;y++)for(x=0;x<width;x++)memcpy(pixels+((size_t)y*width+x)*3,g->rgba+((size_t)(bounds[3]-1-(int)y)*g->width+bounds[0]+x)*4,3);
     memcpy(g->rgba,pixels,(size_t)width*height*3);free(pixels);return 1;
 }
 static int vk1_remote_upload(unsigned width,unsigned height){
-    Gl1Device *g=gl1_current;VulkanDrawTexture *t=&g->vulkan->remote_mask;
+    RenderDevice *g=render_current;VulkanDrawTexture *t=&g->vulkan->remote_mask;
     if(!vk1_flush(vk1_back(),0))return 0;
     vulkan_draw_texture_destroy(g->vulkan->frame,t);
     if(!vulkan_draw_texture_create(g->vulkan->frame,t,g->rgba,width,height,0,0))return 0;
     g->remote_mask=1;return 1;
 }
 static int vk1_remote_sky(const GameRemoteSkyFrame *frame){
-    Gl1Device *g=gl1_current;VulkanDraw *d=vk1_back();int32_t bounds[4];float width,height,scale,fov,u0,u1,offset=0,bottom;unsigned i;
+    RenderDevice *g=render_current;VulkanDraw *d=vk1_back();int32_t bounds[4];float width,height,scale,fov,u0,u1,offset=0,bottom;unsigned i;
     memcpy(bounds,frame->bounds,sizeof(bounds));if(bounds[0]<0)bounds[0]=0;if(bounds[1]<0)bounds[1]=0;
     if(bounds[2]>(int)g->width)bounds[2]=(int)g->width;if(bounds[3]>(int)g->height)bounds[3]=(int)g->height;
     if(bounds[2]<=bounds[0] || bounds[3]<=bounds[1])return 1;
-    gl1_sky_select(frame->name);if(!g->sky_loaded || !gl1_remote_mask(bounds))return !g->failed;
+    render_sky_select(frame->name);if(!g->sky_loaded || !render_remote_mask(bounds))return !g->failed;
     width=(float)(bounds[2]-bounds[0]);height=(float)(bounds[3]-bounds[1]);
     scale=isfinite(frame->scale) && frame->scale>1 && frame->scale<=100000?frame->scale:width*0.596f;
     fov=2*atanf(width*0.5f/scale);if(!(fov>0.01f))fov=6.28318530718f*0.22f;

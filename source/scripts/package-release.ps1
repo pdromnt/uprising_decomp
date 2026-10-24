@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$Version,
-    [Parameter(Mandatory=$true)][ValidateSet('windows-x86','windows-x64','windows-arm64','linux-x64','linux-arm64','macos-arm64')][string]$Platform,
+    [Parameter(Mandatory=$true)][ValidateSet('windows-x64','windows-arm64','linux-x64','linux-arm64','macos-arm64')][string]$Platform,
     [Parameter(Mandatory=$true)][string]$StageDirectory,
     [string]$OutputDirectory
 )
@@ -19,7 +19,7 @@ if($Platform -eq 'macos-arm64'){
     $assets=Join-Path $stage 'Uprising.app/Contents/Resources'
     $exe=Join-Path $stage 'Uprising.app/Contents/MacOS/Uprising'
 }
-foreach($name in @('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','README.md','THIRD_PARTY_NOTICES.md','libsmacker-COPYING.txt','SDL3-LICENSE.txt','FreeType-FTL.txt','stb-LICENSE.txt','enet-LICENSE.txt','FSR-LICENSE.txt')){
+foreach($name in @('FONTS','GRIDS','Music','VIDEO','uprising.cln','README.TXT','README.md','THIRD_PARTY_NOTICES.md','libsmacker-COPYING.txt','SDL3-LICENSE.txt','FreeType-FTL.txt','stb-LICENSE.txt','enet-LICENSE.txt','FSR3-LICENSE.txt')){
     if(!(Test-Path -LiteralPath (Join-Path $assets $name))){throw "Missing runtime content: $name"}
 }
 foreach($name in @('source','recomp-project','CONFIG','saves','scrshts')){
@@ -28,10 +28,10 @@ foreach($name in @('source','recomp-project','CONFIG','saves','scrshts')){
 if(Get-ChildItem -LiteralPath (Join-Path $assets 'FONTS') -Filter '*.cfg'){throw 'Legacy user configuration must not ship.'}
 $bytes=[IO.File]::ReadAllBytes($exe)
 $text=[Text.Encoding]::ASCII.GetString($bytes)
-if(!$text.Contains('NATIVE_OPENGL1_CPU_FREE:') -or $text.Contains('glide2x.dll')){throw 'Native renderer/execution identity gate failed.'}
+if(!$text.Contains('NATIVE_VULKAN_CPU_FREE:') -or $text.Contains('glide2x.dll')){throw 'Native renderer/execution identity gate failed.'}
 if($Platform.StartsWith('windows-')){
     $machine=[BitConverter]::ToUInt16($bytes,[BitConverter]::ToInt32($bytes,60)+4)
-    $expected=@{'windows-x86'=0x14c;'windows-x64'=0x8664;'windows-arm64'=0xaa64}[$Platform]
+    $expected=@{'windows-x64'=0x8664;'windows-arm64'=0xaa64}[$Platform]
     if($machine -ne $expected){throw 'PE architecture does not match the package.'}
 }else{
     $description=(& file -b $exe) -join ' '

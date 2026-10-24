@@ -3,7 +3,6 @@
 #include "portable_font.h"
 #include "portable_display.h"
 #include <SDL3/SDL_main.h>
-#include <SDL3/SDL_opengl.h>
 #include "../resources/icon_rgba.inc"
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +16,8 @@
 #include "ui_geometry.h"
 #include "gameplay_state.h"
 #include "level_world_surface.h"
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
 #include "vulkan_menu.h"
 #include "vulkan_device.h"
-#endif
 
 typedef struct MenuTextSurface {
     GameAddress identity;SDL_Surface *surface;void *locked_pixels;
@@ -31,15 +28,13 @@ typedef struct MenuTextSurface {
 typedef struct MenuWindow {
     GameApplication *application;
     GameAddress identity;
-    SDL_Window *window;SDL_GLContext context;int sdl_initialized;
+    SDL_Window *window;int sdl_initialized;
     SDL_Surface *front,*back,*upload;SDL_Palette *palette;SDL_Color colors[256];
-    GLuint menu_texture;unsigned width,height;int hidden,palette_valid;
+    unsigned width,height;int hidden,palette_valid;
     int pointer_capture_requested;int32_t isolated_pointer[2];
     GameMenuFonts *fonts;MenuTextSurface *text_surfaces;
     void *frame_pixels,*text_lock_pixels;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
     VulkanMenu *vulkan;
-#endif
 } MenuWindow;
 extern int game_music_update(GameApplication *);
 extern void game_application_splash_end(GameApplication *);
@@ -219,13 +214,8 @@ int game_level_display_end(GameApplication *a) {
     if(!game_level_world_surface_release(a))ok=0;
     return ok && !a->memory.fault;
 }
-SDL_GLContext game_menu_gl_context(GameApplication *a){return a->menu_window?a->menu_window->context:NULL;}
 struct VulkanMenu *game_menu_vulkan(GameApplication *a){
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
     return a->menu_window?a->menu_window->vulkan:NULL;
-#else
-    (void)a;return NULL;
-#endif
 }
 int game_level_display_restore_menu(GameApplication *a){
     MenuWindow *w=a->menu_window;if(!w || !game_level_display_end(a))return 0;
@@ -234,7 +224,7 @@ int game_level_display_restore_menu(GameApplication *a){
 }
 int game_level_display_begin(GameApplication *a){
     MenuWindow *w=a->menu_window;
-    if(!w || (!w->context && !game_menu_vulkan(a)) || w->front || w->back || w->text_surfaces){
+    if(!w || !game_menu_vulkan(a) || w->front || w->back || w->text_surfaces){
         game_application_log(a,"%s\n","SDL display initialization has live menu surfaces or no context");return 0;
     }
     game_memory_write_u32(&a->memory,0x627068,w->identity+0x124);
@@ -301,13 +291,7 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
     game_display_end(a);
     while(w->text_surfaces)game_menu_text_surface_release(a,w->text_surfaces->identity);
     window_surfaces_release(w);SDL_DestroySurface(w->upload);game_menu_window_resources_end(a);
-    if(w->context){
-        if(SDL_GL_MakeCurrent(w->window,w->context) && w->menu_texture)glDeleteTextures(1,&w->menu_texture);
-        SDL_GL_DestroyContext(w->context);
-    }
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
     vulkan_menu_close(w->vulkan);
-#endif
     if(w->window)SDL_DestroyWindow(w->window);
     if(w->sdl_initialized)SDL_QuitSubSystem(SDL_INIT_VIDEO);
     game_memory_write_u32(&a->memory,0x627068,0);game_memory_write_u32(&a->memory,0x626e78,0);
@@ -320,12 +304,7 @@ void game_menu_window_destroy(GameApplication *a,GameAddress identity){
 GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigned height) {
     MenuWindow *w;
     const char *stage="video initialization";
-    GameMemory *m=&a->memory;GameAddress p;int use_vulkan=0;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    /* Vulkan distributions must work from a normal desktop launch. Keep the
-     * OpenGL override for developer comparisons, not as a prerequisite for FSR. */
-    {const char *renderer=SDL_getenv("UPRISING_RENDERER");use_vulkan=!renderer || strcmp(renderer,"opengl")!=0;}
-#endif
+    GameMemory *m=&a->memory;GameAddress p;
     if(a->menu_window || !width || !height || width>16384u || height>16384u)return 0;
     w=calloc(1,sizeof(*w));if(!w)return 0;
     p=scene_projection_storage_allocate(0x140u,"portable menu window");
@@ -340,14 +319,9 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN,game_application_isolated_input(a)?"0":"1");
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO))goto fail;
     w->sdl_initialized=1;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(use_vulkan && !vulkan_runtime_prepare())goto fail;
-#endif
-    if(!use_vulkan && (!SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1) ||
-       !SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,24) || !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,8) ||
-       !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2) || !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1)))goto fail;
-    stage=use_vulkan?"Vulkan window creation":"OpenGL window creation";
-    w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,(use_vulkan?SDL_WINDOW_VULKAN:SDL_WINDOW_OPENGL)|SDL_WINDOW_HIDDEN);
+    if(!vulkan_runtime_prepare())goto fail;
+    stage="Vulkan window creation";
+    w->window=SDL_CreateWindow(UPRISING_WINDOW_TITLE,(int)width,(int)height,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!w->window)goto fail;
     {SDL_DisplayID primary=SDL_GetPrimaryDisplay();
      if(!primary || !SDL_SetWindowPosition(w->window,SDL_WINDOWPOS_CENTERED_DISPLAY(primary),
@@ -357,31 +331,10 @@ GameAddress game_menu_window_construct(GameApplication *a,unsigned width,unsigne
     {SDL_Surface *icon=SDL_CreateSurfaceFrom(32,32,SDL_PIXELFORMAT_RGBA32,uprising_icon_rgba,32*4);
      if(!icon)goto fail;
      int ok=SDL_SetWindowIcon(w->window,icon);SDL_DestroySurface(icon);if(!ok)goto fail;}
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(use_vulkan){
-        stage="Vulkan device creation";
-        w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL);
-        if(!w->vulkan)goto fail;
-        game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics and shared level device");
-    }else
-#endif
-    {
-    /* Optional FSR uses modern shaders in a compatibility context. The game
-     * retains its existing fixed-function path when that context is unavailable. */
-    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,4);
-    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,3);
-    (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
-    stage="OpenGL context creation";
-    w->context=SDL_GL_CreateContext(w->window);
-    if(!w->context){
-        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
-        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
-        (void)SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,0);
-        w->context=SDL_GL_CreateContext(w->window);
-    }
-    if(!w->context)goto fail;
-    SDL_GL_SetSwapInterval(0);
-    }
+    stage="Vulkan device creation";
+    w->vulkan=vulkan_menu_open(w->window,SDL_getenv("UPRISING_VULKAN_VALIDATION")!=NULL);
+    if(!w->vulkan)goto fail;
+    game_application_log(a,"%s\n","VULKAN_MENU_DEVICE_READY: native graphics and shared level device");
     stage="display settings";
     if(!game_display_begin(a,w->window,w->fonts))goto fail;
     /* Saved output dimensions are applied before the final startup placement. */
@@ -425,45 +378,11 @@ int game_menu_surface_prepare(GameApplication *a,int *restored){
     *restored=0;return 1;
 }
 static int present_windowed_front(MenuWindow *w){
-    int width,height;GLenum error;int drawn;
     if(!w || !w->front)return 0;
     if(SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED)return 1;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(w->vulkan){
-        if(!w->upload)w->upload=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);
-        if(!w->upload || !SDL_BlitSurface(w->front,NULL,w->upload,NULL) || !game_display_overlay(w->application,w->upload))return 0;
-        return vulkan_menu_present(w->vulkan,w->upload);
-    }
-#endif
-    if(w->hidden)return 1;
-    if(SDL_GL_GetCurrentContext()!=w->context && !SDL_GL_MakeCurrent(w->window,w->context))return 0;
-    if(!SDL_GetWindowSizeInPixels(w->window,&width,&height))return 0;
-    if(width<=0 || height<=0)return 1;
-    if(w->upload && (w->upload->w!=(int)w->width || w->upload->h!=(int)w->height)){
-        SDL_DestroySurface(w->upload);w->upload=NULL;
-        if(w->menu_texture)glDeleteTextures(1,&w->menu_texture);w->menu_texture=0;
-    }
     if(!w->upload)w->upload=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);
-    if(!w->upload || !SDL_BlitSurface(w->front,NULL,w->upload,NULL))return 0;
-    if(!game_display_overlay(w->application,w->upload))return 0;
-    glPushAttrib(GL_ALL_ATTRIB_BITS);glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
-    glDrawBuffer(GL_BACK);glViewport(0,0,width,height);
-    glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_STENCIL_TEST);glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_ALPHA_TEST);glDisable(GL_BLEND);glDisable(GL_FOG);glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);
-    glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_REPLACE);
-    glPixelStorei(GL_UNPACK_ALIGNMENT,1);glPixelStorei(GL_UNPACK_ROW_LENGTH,w->upload->pitch/4);
-    if(!w->menu_texture){
-        glGenTextures(1,&w->menu_texture);glBindTexture(GL_TEXTURE_2D,w->menu_texture);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,(int)w->width,(int)w->height,0,GL_RGBA,GL_UNSIGNED_BYTE,w->upload->pixels);
-    }else{
-        glBindTexture(GL_TEXTURE_2D,w->menu_texture);
-        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,(int)w->width,(int)w->height,GL_RGBA,GL_UNSIGNED_BYTE,w->upload->pixels);
-    }
-    drawn=game_display_present(w->application,w->menu_texture,w->width,w->height,1);
-    glPopClientAttrib();glPopAttrib();error=glGetError();
-    return drawn && error==GL_NO_ERROR && SDL_GL_SwapWindow(w->window);
+    if(!w->upload || !SDL_BlitSurface(w->front,NULL,w->upload,NULL) || !game_display_overlay(w->application,w->upload))return 0;
+    return vulkan_menu_present(w->vulkan,w->upload);
 }
 static int copy_surface(SDL_Surface *to,SDL_Surface *from,const GameUiRect *src,const GameUiRect *dst,int keyed,uint32_t key,int mirror){
     GameMenuPixelSpan a,b;int result;
@@ -591,25 +510,7 @@ int game_menu_window_clear(GameApplication *a){
     MenuWindow *w=a->menu_window;int ok=1;if(!w)return 0;
     if(w->front)ok=SDL_FillSurfaceRect(w->front,NULL,0) && ok;
     if(w->back)ok=SDL_FillSurfaceRect(w->back,NULL,0) && ok;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
-    if(w->vulkan)return vulkan_menu_clear(w->vulkan) && ok;
-#endif
-    if(!w->hidden && !(SDL_GetWindowFlags(w->window)&SDL_WINDOW_MINIMIZED)){
-        PFNGLBINDFRAMEBUFFERPROC bind;SDL_FunctionPointer entry;GLint previous;int swapped;
-        if(SDL_GL_GetCurrentContext()!=w->context && !SDL_GL_MakeCurrent(w->window,w->context))return 0;
-        entry=SDL_GL_GetProcAddress("glBindFramebuffer");
-        if(!entry)entry=SDL_GL_GetProcAddress("glBindFramebufferEXT");
-        if(!entry)return 0;memcpy(&bind,&entry,sizeof(bind));
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING,&previous);bind(GL_FRAMEBUFFER,0);
-        glPushAttrib(GL_COLOR_BUFFER_BIT|GL_SCISSOR_BIT|GL_ENABLE_BIT);
-        glDrawBuffer(GL_BACK);glDisable(GL_SCISSOR_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
-        /* Palette index0 may be white on debrief pages. Window clearing is
-         * physical black, independently of the retained indexed pixels. */
-        glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);glPopAttrib();
-        swapped=SDL_GL_SwapWindow(w->window);bind(GL_FRAMEBUFFER,(GLuint)previous);
-        ok=ok && swapped && glGetError()==GL_NO_ERROR;
-    }
-    return ok;
+    return vulkan_menu_clear(w->vulkan) && ok;
 }
 int game_menu_draw_bitmap_on_surface(GameApplication *a,GameAddress identity,const AssetBitmap *image,
         const GameUiRect *source,const GameUiRect *destination,int transparent,uint32_t key,int mirror){
@@ -659,10 +560,8 @@ int game_menu_capture_png(GameApplication *a,const char *path){
     MenuWindow *w=a->menu_window;SDL_Surface *image;int ok;
     if(!w || !w->front || !path)return 0;
     image=SDL_CreateSurface((int)w->width,(int)w->height,SDL_PIXELFORMAT_RGBA32);if(!image)return 0;
-#ifdef UPRISING_EXPERIMENTAL_VULKAN
     if(w->vulkan)ok=vulkan_menu_readback(w->vulkan,image->pixels,(size_t)image->pitch*image->h);
     else
-#endif
     ok=SDL_BlitSurface(w->front,NULL,image,NULL) && game_display_overlay(a,image);
     if(ok)ok=SDL_SavePNG(image,path);
     SDL_DestroySurface(image);return ok;

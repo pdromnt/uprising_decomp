@@ -26,7 +26,7 @@ class GameFailure(gdb.Breakpoint):
                 gdb.write('Raw stack unavailable: %s\n' % error)
         return True
 
-for function in ('game_memory_fail', 'gl1_fail', 'application_failure'):
+for function in ('game_memory_fail', 'render_fail', 'application_failure'):
     try:
         GameFailure(function)
     except gdb.error as error:

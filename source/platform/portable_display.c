@@ -2,16 +2,11 @@
 #include "application_config.h"
 #include "menu_widgets.h"
 #include "portable_input_devices.h"
-#include <SDL3/SDL_opengl.h>
-#include <SDL3/SDL_opengl_glext.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "portable_fsr.inc"
-#ifdef UPRISING_FSR3_UPSCALER
 #include "vulkan_menu.h"
 #include "vulkan_device.h"
-#endif
 
 typedef struct DisplayOptions {int width,height,fullscreen,fsr,aa,sharpness;} DisplayOptions;
 typedef struct DisplayMode {int width,height;} DisplayMode;
@@ -20,9 +15,9 @@ struct GameDisplay {
     DisplayOptions active,draft,previous;
     DisplayMode modes[96];int mode_count;
     int drawer_x,drawer_y,drawer_visible,drawer_enabled;
-    int open,focus,armed,mouse_x,mouse_y,countdown_pixels,aa_limit;Uint64 deadline;
+    int open,focus,armed,mouse_x,mouse_y,countdown_pixels;Uint64 deadline;
     char status[160];SDL_Surface *labels,*canvas;SDL_Palette *label_palette;
-    DisplayFsr fsr;int vulkan,fsr_available;
+    int fsr_available;
 };
 typedef struct GameDisplay GameDisplay;
 static void display_redraw(GameDisplay *d){game_memory_write_u32(&d->application->memory,0x58fd3cu,1);}
@@ -31,17 +26,13 @@ int game_display_temporal_native(GameApplication *a){return a->display && a->dis
 float game_display_sharpness(GameApplication *a){return a->display?a->display->active.sharpness/100.0f:.2f;}
 int game_display_temporal_output(GameApplication *a,uint32_t size[2]){
     GameDisplay *d=a->display;int width,height,viewport[4];size[0]=size[1]=0;
-    if(!d || !d->vulkan || ((!d->fsr_available || !d->active.fsr) && !d->active.aa))return 0;
+    if(!d || ((!d->fsr_available || !d->active.fsr) && !d->active.aa))return 0;
     if(!SDL_GetWindowSizeInPixels(d->window,&width,&height) || width<=0 || height<=0)return d->active.fsr!=0;
     game_display_viewport(width,height,640,480,viewport);
     size[0]=(uint32_t)(viewport[2]<640?640:viewport[2]);size[1]=(uint32_t)(viewport[3]<480?480:viewport[3]);
     return d->active.fsr!=0;
 }
-void game_display_antialias_unavailable(GameApplication *a){
-    GameDisplay *d=a->display;if(!d)return;
-    d->active.aa=d->draft.aa=d->aa_limit=0;
-    snprintf(d->status,sizeof(d->status),"MSAA unavailable; disabled for this session.");display_redraw(d);
-}
+
 
 void game_display_viewport(int width,int height,int sw,int sh,int r[4]){
     r[0]=r[1]=0;r[2]=width;r[3]=height;
@@ -110,9 +101,9 @@ static int display_configure(GameDisplay *d,DisplayOptions options){
     return c && game_config_set_number(c,"display","width",options.width) &&
         game_config_set_number(c,"display","height",options.height) &&
         game_config_set_number(c,"display","fullscreen",options.fullscreen) &&
-        game_config_set_number(c,"display",d->vulkan?"fsr3":"fsr1",options.fsr) &&
-        game_config_set_number(c,"display",d->vulkan?"vulkan_aa":"msaa_samples",options.aa) &&
-        (!d->vulkan || game_config_set_number(c,"display","fsr3_sharpness",options.sharpness));
+        game_config_set_number(c,"display","fsr3",options.fsr) &&
+        game_config_set_number(c,"display","vulkan_aa",options.aa) &&
+        game_config_set_number(c,"display","fsr3_sharpness",options.sharpness);
 }
 static int display_persist(GameDisplay *d){
     if(display_configure(d,d->active) && game_application_config_flush(d->application))return 1;
@@ -123,23 +114,11 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
     GameConfig *c=game_application_config(a);GameDisplay *d=calloc(1,sizeof(*d));
     SDL_Color colors[4]={{0,0,0,0},{148,255,72,255},{148,157,129,255},{68,103,60,255}};
     if(!d)return 0;
+    (void)game_config_remove(c,"display","fsr1");
+    (void)game_config_remove(c,"display","msaa_samples");
     a->display=d;d->application=a;d->window=window;d->fonts=fonts;d->armed=-1;
     d->active=(DisplayOptions){640,480,0,0,0,20};
-    d->vulkan=(SDL_GetWindowFlags(window)&SDL_WINDOW_VULKAN)!=0;
-    if(!d->vulkan){
-    display_fsr_begin(&d->fsr,a);
-    d->fsr_available=d->fsr.available;
-    if((SDL_GL_ExtensionSupported("GL_ARB_framebuffer_object") ||
-        (SDL_GL_ExtensionSupported("GL_EXT_framebuffer_multisample") && SDL_GL_ExtensionSupported("GL_EXT_framebuffer_blit"))) &&
-       (SDL_GL_GetProcAddress("glRenderbufferStorageMultisample") || SDL_GL_GetProcAddress("glRenderbufferStorageMultisampleEXT")) &&
-       (SDL_GL_GetProcAddress("glBlitFramebuffer") || SDL_GL_GetProcAddress("glBlitFramebufferEXT")))
-        glGetIntegerv(GL_MAX_SAMPLES,&d->aa_limit);
-    if(d->aa_limit>8)d->aa_limit=8;
-    }
-#ifdef UPRISING_FSR3_UPSCALER
-    else {VulkanMenu *menu=game_menu_vulkan(a);d->fsr_available=menu && vulkan_menu_device(menu)->fsr3_storage_supported;}
-#endif
-    if(d->vulkan)d->aa_limit=1; /* World-only spatial edge AA, independent of the SDK. */
+    {VulkanMenu *menu=game_menu_vulkan(a);d->fsr_available=menu && vulkan_menu_device(menu)->fsr3_storage_supported;}
     d->canvas=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_RGBA32);
     d->labels=SDL_CreateSurface(640,480,SDL_PIXELFORMAT_INDEX8);d->label_palette=SDL_CreatePalette(4);
     if(!d->canvas || !d->labels || !d->label_palette || !SDL_SetPaletteColors(d->label_palette,colors,0,4) ||
@@ -148,26 +127,25 @@ int game_display_begin(GameApplication *a,SDL_Window *window,GameMenuFonts *font
         DisplayOptions saved={(int)game_config_number(c,"display","width",640),
             (int)game_config_number(c,"display","height",480),
             game_config_number(c,"display","fullscreen",0)==1,
-            d->fsr_available?(int)game_config_number(c,"display",d->vulkan?"fsr3":"fsr1",0):0,
-            (int)game_config_number(c,"display",d->vulkan?"vulkan_aa":"msaa_samples",0),
+            d->fsr_available?(int)game_config_number(c,"display","fsr3",0):0,
+            (int)game_config_number(c,"display","vulkan_aa",0),
             (int)game_config_number(c,"display","fsr3_sharpness",20)};
-        if(saved.fsr<0 || saved.fsr>(d->vulkan?2:1))saved.fsr=0;
-        if(d->vulkan){if(saved.aa!=1)saved.aa=0;}
-        else if((saved.aa!=2 && saved.aa!=4 && saved.aa!=8) || saved.aa>d->aa_limit)saved.aa=0;
+        if(saved.fsr<0 || saved.fsr>2)saved.fsr=0;
+        if(saved.aa!=1)saved.aa=0;
         if(saved.sharpness<0 || saved.sharpness>100)saved.sharpness=20;
         if(!display_set(d,saved)){(void)display_set(d,d->active);SDL_ClearError();}
     }
-    if(d->vulkan){const char *force=SDL_getenv("UPRISING_VULKAN_FSR3");
+    const char *force=SDL_getenv("UPRISING_VULKAN_FSR3");
         if(force && !strcmp(force,"1") && !d->fsr_available){SDL_SetError("FSR3 host unavailable on this architecture/device");return 0;}
         if(force && (!strcmp(force,"1") || !strcmp(force,"0")))d->active.fsr=!strcmp(force,"1");
-    }
+
     d->draft=d->active;display_modes(d);return 1;
 }
 void game_display_end(GameApplication *a){
     GameDisplay *d=a->display;if(!d)return;a->display=NULL;
     /* Restore the desktop before destroying the window/context. */
     (void)SDL_SetWindowFullscreen(d->window,false);
-    display_fsr_end(&d->fsr);SDL_DestroySurface(d->labels);SDL_DestroySurface(d->canvas);SDL_DestroyPalette(d->label_palette);
+    SDL_DestroySurface(d->labels);SDL_DestroySurface(d->canvas);SDL_DestroyPalette(d->label_palette);
     free(d);
 }
 void game_display_graphics_drawer(GameApplication *a,int x,int y,int visible,int enabled){
@@ -179,8 +157,8 @@ static int inside(int x,int y,int left,int top,int width,int height){return x>=l
 static int display_hit(GameDisplay *d,int x,int y){
     if(!d->open)return d->drawer_visible && d->drawer_enabled && inside(x,y,d->drawer_x,d->drawer_y,112,26)?7:-1;
     if(d->deadline){if(inside(x,y,170,357,140,30))return 5;if(inside(x,y,330,357,140,30))return 6;return -1;}
-    if(d->vulkan && inside(x,y,322,316,180,30))return x<348?14:13;
-    {int row;for(row=0;row<4;++row)if(inside(x,y,322,176+row*(d->vulkan?35:38),180,30))
+    if(inside(x,y,322,316,180,30))return x<348?14:13;
+    {int row;for(row=0;row<4;++row)if(inside(x,y,322,176+row*35,180,30))
         return row==3?(x<348?12:11):(x<348?8+row:row);}
     if(inside(x,y,170,357,140,30))return 3;
     if(inside(x,y,330,357,140,30))return 4;
@@ -205,15 +183,9 @@ static void display_action(GameDisplay *d,int action,int direction){
         if(d->draft.fullscreen)break;
         index=display_mode_index(d);index=(index+direction+d->mode_count)%d->mode_count;
         d->draft.width=d->modes[index].width;d->draft.height=d->modes[index].height;break;
-    case 2:if(d->fsr_available)d->draft.fsr=(d->draft.fsr+direction+(d->vulkan?3:2))%(d->vulkan?3:2);break;
-    case 11:{
-        if(d->vulkan){if(!d->draft.fsr)d->draft.aa=!d->draft.aa;d->focus=11;break;}
-        static const int samples[]={0,2,4,8};int count=1;
-        while(count<4 && samples[count]<=d->aa_limit)++count;
-        for(index=0;index<count;++index)if(samples[index]==d->draft.aa)break;
-        index=(index+direction+count)%count;d->draft.aa=samples[index];d->focus=11;break;
-    }
-    case 13:if(d->vulkan && d->draft.fsr){d->draft.sharpness=((d->draft.sharpness/20+direction+6)%6)*20;d->focus=13;}break;
+    case 2:if(d->fsr_available)d->draft.fsr=(d->draft.fsr+direction+3)%3;break;
+    case 11:if(!d->draft.fsr)d->draft.aa=!d->draft.aa;d->focus=11;break;
+    case 13:if(d->draft.fsr){d->draft.sharpness=((d->draft.sharpness/20+direction+6)%6)*20;d->focus=13;}break;
     case 3:
         d->previous=d->active;
         if(display_set(d,d->draft)){d->deadline=SDL_GetTicks()+20000;d->focus=5;d->status[0]=0;}
@@ -253,7 +225,7 @@ int game_display_event(GameApplication *a,const SDL_Event *event){
         display_redraw(d);
         if(key==SDL_SCANCODE_ESCAPE)display_action(d,d->deadline?6:4,1);
         else if(key==SDL_SCANCODE_TAB || key==SDL_SCANCODE_DOWN || key==SDL_SCANCODE_UP){
-            int controls[]={0,1,2,11,d->vulkan?13:3,d->vulkan?3:4,4};int i,count=d->vulkan?7:6;
+            int controls[]={0,1,2,11,13,3,4};int i,count=7;
             if(d->deadline)d->focus=d->focus==5?6:5;
             else {
                 for(i=0;i<count;++i)if(controls[i]==d->focus)break;
@@ -304,7 +276,7 @@ static void display_button(GameDisplay *d,SDL_Surface *s,int x,int y,int w,int h
     display_center(d,text,x,y+pressed,w,h,2,focused?1:2);
 }
 static void display_selector(GameDisplay *d,SDL_Surface *s,int row,const char *text,int enabled){
-    int x=322,y=176+(d->vulkan?35:38)*row,i,hover=display_hit(d,d->mouse_x,d->mouse_y);
+    int x=322,y=176+35*row,i,hover=display_hit(d,d->mouse_x,d->mouse_y);
     int action=row==4?13:row==3?11:row,previous=row==4?14:row==3?12:row+8;
     int focused=enabled && (d->focus==action || hover==action || hover==previous);
     Uint32 arrow=display_color(s,focused?148:83,focused?255:116,focused?72:63);
@@ -343,8 +315,7 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
         display_fill(s,128,121,384,49,display_color(s,30,34,24));
         display_fill(s,128,170,384,1,display_color(s,66,83,47));
         display_label(d,"ADVANCED GRAPHICS",140,130,485,3,2);
-        display_label(d,d->vulkan?"AA affects the world; menus and HUD stay separate.":
-            "3D AA: next mission load. FSR scales all screens.",140,155,505,0,2);
+        display_label(d,"AA affects the world; menus and HUD stay separate.",140,155,505,0,2);
         display_fill(s,493,131,7,7,display_color(s,27,49,16));
         display_fill(s,495,133,3,3,display_color(s,148,255,72));
         display_rivet(s,119,112);display_rivet(s,520,112);
@@ -362,14 +333,14 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
             display_button(d,s,330,357,140,30,"REVERT",d->focus==6 || hover==6,d->armed==6);
         }else{
             display_label(d,"DISPLAY MODE",138,185,315,2,2);
-            display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,d->vulkan?220:223,315,2,2);
-            display_label(d,d->vulkan?"FSR 3.1 (3D)":"FSR 1 UPSCALING",138,d->vulkan?255:261,315,2,2);
-            display_label(d,"3D ANTI-ALIASING",138,d->vulkan?290:299,315,2,2);
-            if(d->vulkan)display_label(d,"FSR SHARPNESS",138,325,315,2,2);
+            display_label(d,d->draft.fullscreen?"OUTPUT SIZE":"RESOLUTION",138,220,315,2,2);
+            display_label(d,"FSR 3.1 (3D)",138,255,315,2,2);
+            display_label(d,"3D ANTI-ALIASING",138,290,315,2,2);
+            display_label(d,"FSR SHARPNESS",138,325,315,2,2);
             display_fill(s,138,210,364,1,display_color(s,29,42,29));
-            display_fill(s,138,d->vulkan?245:248,364,1,display_color(s,29,42,29));
-            display_fill(s,138,d->vulkan?280:286,364,1,display_color(s,29,42,29));
-            if(d->vulkan)display_fill(s,138,315,364,1,display_color(s,29,42,29));
+            display_fill(s,138,245,364,1,display_color(s,29,42,29));
+            display_fill(s,138,280,364,1,display_color(s,29,42,29));
+            display_fill(s,138,315,364,1,display_color(s,29,42,29));
             display_selector(d,s,0,d->draft.fullscreen?"FULLSCREEN":"WINDOWED",1);
             snprintf(text,sizeof(text),"%d x %d",d->draft.width,d->draft.height);
             if(d->draft.fullscreen){
@@ -380,39 +351,17 @@ int game_display_overlay(GameApplication *a,SDL_Surface *rgba){
                 }else snprintf(text,sizeof(text),"DESKTOP 4:3");
             }
             display_selector(d,s,1,text,!d->draft.fullscreen);
-            display_selector(d,s,2,!d->fsr_available?(d->vulkan?(sizeof(void*)==4?"64-BIT ONLY":"GPU UNSUPPORTED"):"UNAVAILABLE"):d->draft.fsr==2?"NATIVE AA":d->draft.fsr?(d->vulkan?"UPSCALE":"ON"):"OFF",d->fsr_available);
-            if(d->draft.aa)snprintf(text,sizeof(text),"MSAA %dx",d->draft.aa);else snprintf(text,sizeof(text),"OFF");
-            if(d->vulkan){
+            display_selector(d,s,2,!d->fsr_available?"GPU UNSUPPORTED":d->draft.fsr==2?"NATIVE AA":d->draft.fsr?("UPSCALE"):"OFF",d->fsr_available);
+
                 display_selector(d,s,3,d->draft.fsr?"TEMPORAL":d->draft.aa?"EDGE AA":"OFF",!d->draft.fsr);
                 snprintf(text,sizeof(text),"%d%%",d->draft.sharpness);
                 display_selector(d,s,4,text,d->fsr_available && d->draft.fsr);
-            }else display_selector(d,s,3,d->aa_limit>=2?text:"UNAVAILABLE",d->aa_limit>=2);
+
             display_button(d,s,170,357,140,30,"APPLY",d->focus==3 || hover==3,d->armed==3);
             display_button(d,s,330,357,140,30,"CANCEL",d->focus==4 || hover==4,d->armed==4);
-            if(d->status[0])display_label(d,d->status,138,d->vulkan?348:334,505,0,2);
+            if(d->status[0])display_label(d,d->status,138,348,505,0,2);
         }
     }
     (void)SDL_BlitSurface(d->labels,NULL,s,NULL);target=(SDL_Rect){0,0,rgba->w,rgba->h};
     x=SDL_BlitSurfaceScaled(s,NULL,rgba,&target,SDL_SCALEMODE_NEAREST);return x;
-}
-int game_display_present(GameApplication *a,unsigned texture,int sw,int sh,int top_down){
-    GameDisplay *d=a->display;int width,height,r[4],mode,ok=1;
-    if(!d || !SDL_GetWindowSizeInPixels(d->window,&width,&height))return 0;
-    if(width<=0 || height<=0)return 1;
-    game_display_viewport(width,height,sw,sh,r);
-    glGetIntegerv(GL_MATRIX_MODE,&mode);glPushAttrib(GL_ALL_ATTRIB_BITS);
-    glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_STENCIL_TEST);glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_ALPHA_TEST);glDisable(GL_BLEND);glDisable(GL_FOG);glDisable(GL_LIGHTING);glDisable(GL_CULL_FACE);
-    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
-    glEnable(GL_TEXTURE_2D);glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_REPLACE);glColor4f(1,1,1,1);
-    glMatrixMode(GL_PROJECTION);glPushMatrix();glLoadIdentity();glOrtho(0,1,1,0,-1,1);
-    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();glViewport(r[0],r[1],r[2],r[3]);
-    if(d->active.fsr && (r[2]>sw || r[3]>sh)){
-        ok=display_fsr_draw(&d->fsr,texture,sw,sh,r,top_down);
-        if(!ok){d->active.fsr=0;d->draft.fsr=0;snprintf(d->status,sizeof(d->status),"FSR failed; original scaling restored.");
-            game_application_log(a,"%s\n",d->status);}
-    }else ok=0;
-    if(!ok){glViewport(r[0],r[1],r[2],r[3]);display_pixel_art_draw(&d->fsr,texture,sw,sh,r,top_down);}
-    glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();glMatrixMode(mode);glPopAttrib();
-    return glGetError()==GL_NO_ERROR;
 }

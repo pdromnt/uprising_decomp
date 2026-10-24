@@ -6,7 +6,6 @@
 
 /* Platform services borrow SDL's native window/context owners. */
 SDL_Window *game_menu_sdl_window(GameApplication *application);
-SDL_GLContext game_menu_gl_context(GameApplication *application);
 int game_menu_game_palette(GameApplication *,const uint32_t[256]);
 int game_menu_pump_events(GameApplication *application,int deliver_input);
 int game_menu_event_forward(GameApplication *application,const SDL_Event *event);

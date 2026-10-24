@@ -6,10 +6,10 @@ A behavior-focused reconstruction of **Uprising: Join or Die**, the 1997 game
 by Cyclone Studios. Game data is included alongside the source; original game
 content and third-party components retain their separate ownership and terms.
 
-This `FSR3` branch provides Vulkan game packages with optional FSR 3.1 upscaling
-on 64-bit systems. Download the **vulkan-game-...** CI artifact for your platform;
-it launches normally, without flags. See [Vulkan / FSR3](docs/FSR3.md) for build
-instructions and current validation limits. Stable `main` remains unchanged.
+This `FSR3` branch uses Vulkan throughout, with optional FSR 3.1 temporal
+upscaling. Download the **runtime-...** CI artifact for your platform; it launches
+normally, without flags. See [Graphics](docs/FSR3.md) for current validation limits.
+Stable `main` remains unchanged until this branch is accepted.
 
 The game runs ordinary C with native rendering, without CPU/x87 emulation,
 generated instruction execution, Glide or loading the original executable.
@@ -29,7 +29,8 @@ Keep it beside `uprising.cln`, `FONTS/`, `GRIDS/`, `Music/` and `VIDEO/`, using 
 complete fonts supplied by this project. Assets resolve beside the executable,
 regardless of the launch directory. The macOS app contains its own assets.
 
-Target platforms: Windows x86/x64/ARM64, macOS ARM64, and Linux x64/ARM64.
+Target platforms: Windows x64/ARM64, macOS ARM64, and Linux x64/ARM64.
+A Vulkan 1.2-capable driver is required. macOS requires Apple Silicon and macOS 26+.
 CI builds native runtime packages for each target; see [Building](docs/BUILDING.md).
 macOS users may need to change some game keybindings in Options to avoid
 conflicts with macOS system shortcuts.
@@ -47,7 +48,7 @@ Options → Graphics → **ADVANCED** provides:
 - **Display mode:** windowed or desktop fullscreen. The game stays 4:3 with black
   borders on wide monitors; windowed resolutions are 4:3 only.
 - **FSR 3.1 (3D):** Off, Upscale or Native AA, with adjustable sharpening.
-  Available on supported 64-bit Vulkan devices; 32-bit builds use native Vulkan.
+  Available on supported Vulkan devices.
   FSR processes the world separately from HUD and menus.
   Menus and HUD use automatic spatial filtering at fractional display scales;
   integer scaling keeps the original pixel edges crisp.
@@ -68,13 +69,13 @@ lobbies, IPX, modem and serial-cable connections are unsupported.
 
 ## Building and contributing
 
-Use MinGW-w64 GCC/G++, windres, CMake 3.24+ and Ninja on Windows:
+Use MinGW-w64 GCC/G++, windres, CMake 3.24+, Ninja and glslang on Windows:
 
 ```powershell
-./source/scripts/build.ps1 -Bits 32 -Tests
+./source/scripts/build.ps1 -Tests
 ```
 
-`source\scripts\build.bat` is the batch shortcut. Use `-Bits 64` for x64.
+`source\scripts\build.bat` is the batch shortcut. Local Windows builds output `uprising64.exe`.
 Outputs go beside the assets; CI packages each architecture as `uprising.exe`.
 See [Building](docs/BUILDING.md), [Codebase](docs/CODEBASE.md),
 [Remaining work](docs/BACKLOG.md) and [Manual testing](docs/MANUAL_TESTING.md).

@@ -1,13 +1,12 @@
 # Remaining work
 
-- `FSR3` branch: Vulkan renderer and FSR 3.1 temporal upscaling; frame generation
-  deferred;32-bit builds are Vulkan-only. Stages, current proof and platform gaps: [experiment](FSR3.md).
-  Physical Mac gameplay/FSR is user-confirmed. Next approved cleanup: remove x86,
-  OpenGL and FSR1; first confirm the current UI/occlusion and horizon/geometry
-  jitter fixes. The unexpected Novus combat exit still needs a captured failure.
+- Finish visual acceptance of the Vulkan/FSR3 branch, especially subtle edge
+  shimmer and stationary texture animation. x86, OpenGL and standalone FSR1 have
+  been retired. Current renderer contract and evidence: [Graphics](FSR3.md).
+- Capture the unexpected Novus combat exit through the manual debugger launcher.
 
 - Collect manual gameplay results on Windows ARM64 and Linux x64; extend the
-  confirmed macOS ARM64 and CM5/Linux ARM64 runs to longer sessions and reloads.
+  confirmed macOS ARM64 and Linux ARM64 runs to longer sessions and reloads.
 - Fix concrete gameplay, menu, mission-transition and performance reports from
   continued play. Use the focused checklist in [Manual testing](MANUAL_TESTING.md).
 - Broaden coverage on older GPUs and physical controllers/haptics, and exercise

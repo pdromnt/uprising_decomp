@@ -41,29 +41,26 @@ also included in binary packages.
 Original game data and historical TXT documentation retain their separate
 ownership and licenses.
 
-AMD FidelityFX Super Resolution 1 shader headers are bundled unmodified from
-GPUOpen-Effects/FidelityFX-FSR revision `a21ffb8f6c13233ba336352bdff293894c706575`.
-Copyright (c) 2021 Advanced Micro Devices, Inc. Used under the MIT license in
-`source/third_party/fsr/LICENSE.txt`, included as `FSR-LICENSE.txt` in packages.
-
-The optional Vulkan/FSR3 developer probe uses unmodified AMD FidelityFX SDK
+The Vulkan renderer and developer probe use AMD FidelityFX SDK
 v1.1.4 host/backend/shader sources at revision `c6efa6bf7f2027b3ec94f28578bb5965eabb9e55`,
 downloaded into the build cache with per-file SHA256 checks. Their MIT license is
 in `source/third_party/FSR3-LICENSE.txt`. Vulkan headers v1.3.296 come from Khronos,
-under their upstream Apache-2.0/MIT terms. Developer probe artifacts include
-these notices; the released OpenGL game does not link this experimental target.
+under their upstream Apache-2.0/MIT terms. Game and developer probe artifacts include these notices. Derived build files
+adapt memory selection/alignment and trusted stationary accumulation; downloaded
+SDK files remain checksum-pinned. The SDK shares RCAS helpers with its earlier FSR
+code; the game has no FSR1 renderer or upscaling mode.
 
-The 64-bit experimental upscaler uses Khronos SPIRV-Reflect, tag
+The upscaler uses Khronos SPIRV-Reflect, tag
 `vulkan-sdk-1.3.296.0`, for metadata from its compiled shaders. Copyright
 2017-2022 Google Inc.; Apache-2.0, in `source/third_party/SPIRV-Reflect-LICENSE.txt`.
 Its bundled SPIR-V header retains the Khronos MIT notice. Files are downloaded
 with per-file SHA256 checks and stay in the build cache.
 
-Experimental macOS Vulkan game bundles include the Khronos Vulkan Loader and
+macOS game bundles include the Khronos Vulkan Loader and
 Mesa KosmicKrisp from LunarG SDK1.4.363.0, plus their non-system dynamic-library
 dependencies. SDK license files are retained under `Vulkan-Licenses` in the app's
 Resources directory. Vulkan header, AMD SDK and SPIRV-Reflect notices are included
-alongside the other runtime notices. The stable OpenGL release is unchanged.
+alongside the other runtime notices.
 Matching loader licenses are from tag `vulkan-sdk-1.4.363`; Mesa's license set and
 licensing guide are from SDK tag `vulkan-sdk-1.4.363.0`, revision
 `269a955c898df283fc36f4827643769068cf3d29` in `aitor/mesa` on freedesktop.org.

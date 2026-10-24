@@ -3,9 +3,7 @@
 #include "vulkan_present.h"
 #include "vulkan_temporal.h"
 #include "fsr3_upscaler.h"
-#ifdef UPRISING_FSR3_UPSCALER
 #include "fsr3_reactive_spv.h"
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -93,7 +91,7 @@ static int temporal_mask_pass(VulkanDraw *draw,const float *motion){
         for(i=0;i<64*64;i++){
             unsigned expected=motion[i*4+2]<.99999f || motion[i*4+3]>=1?255:0;
             if(frame && !expected){
-                float px=(float)(i%64)+motion[i*4],py=(float)(i/64)+motion[i*4+1];
+                float px=(float)(i%64)+.5f+motion[i*4],py=(float)(i/64)+.5f+motion[i*4+1];
                 if(px>=0 && py>=0 && px<64 && py<64){
                     int x,y;for(y=-1;y<=1;y++)for(x=-1;x<=1;x++){
                         int sx=(int)floorf(px)+x,sy=(int)floorf(py)+y;unsigned sample;
@@ -620,7 +618,6 @@ done:
 
 /* Runs AMD's unmodified FSR3 reactive-mask shader. This proves a real SDK
  * compute pass, not temporal upscaling or frame generation. No game assets. */
-#ifdef UPRISING_FSR3_UPSCALER
 static int reactive_pass(VulkanDevice *v,float *reactive){
     enum {SIDE=8,PIXELS=SIDE*SIDE};int ok=0;unsigned i;
     VulkanImage image[3]={{0}};VulkanBuffer constants={0},settings={0},readback={0};
@@ -911,7 +908,6 @@ static int upscale_pass(VulkanDevice *v){
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_buffer_destroy(v,&readback);vulkan_draw_close(&composed);vulkan_draw_close(&draw);return ok;
 }
-#endif
 int main(int argc,char **argv){
     SDL_Window *window=NULL;VulkanDevice device={0};int show=0,validation=0,ok=0,i,loaded=0,bundle_check=0;float reactive=0;
     for(i=1;i<argc;i++){
@@ -943,12 +939,7 @@ int main(int argc,char **argv){
     }
     if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !spatial_scale_pass(&device) || !output_depth_pass(&device) || !temporal_monitor_pass(&device) || !vulkan_queue_drain(&device) || device.pending_count)goto done;
     printf("VULKAN_DEFERRED_QUEUE_PASS bounded_queue=checked draw=checked readback=checked reuse=checked destruction=checked retirement=checked\n");
-#ifdef UPRISING_FSR3_UPSCALER
     if(!reactive_pass(&device,&reactive) || !upscale_pass(&device) || !upscale_motion_pass(&device) || !upscale_stability_pass(&device))goto done;
-#else
-    (void)reactive;
-    printf("VULKAN_ONLY_TARGET pointer_bits=32 fsr3=not-built\n");
-#endif
     if(show){SDL_PumpEvents();SDL_Delay(750);}
     if(device.validation_errors){fprintf(stderr,"Vulkan validation errors=%u\n",device.validation_errors);goto done;}
     printf("VULKAN_FSR3_PROBE_PASS validation=%s\n",validation?"enabled":"not-enabled");ok=1;

@@ -25,6 +25,14 @@ uint32_t game_config_number(const GameConfig *c,const char *section,const char *
     const char *s=game_config_get(c,section,key);char *end;unsigned long value;if(!s || !*s || *s=='-')return fallback;
     errno=0;value=strtoul(s,&end,0);return errno || *end || value>UINT32_MAX?fallback:(uint32_t)value;
 }
+int game_config_remove(GameConfig *c,const char *section,const char *key){
+    if(!c || !name_valid(section) || !name_valid(key))return 0;
+    for(size_t i=0;i<c->count;i++)if(!strcmp(c->entries[i].section,section) && !strcmp(c->entries[i].key,key)){
+        free(c->entries[i].section);free(c->entries[i].key);free(c->entries[i].value);
+        memmove(c->entries+i,c->entries+i+1,(c->count-i-1)*sizeof(*c->entries));--c->count;c->dirty=1;return 1;
+    }
+    return 1;
+}
 int game_config_set_number(GameConfig *c,const char *section,const char *key,uint32_t value){char text[16];snprintf(text,sizeof(text),"%lu",(unsigned long)value);return game_config_set(c,section,key,text);}
 static char *trim(char *s){char *end;while(isspace((unsigned char)*s))s++;end=s+strlen(s);while(end>s && isspace((unsigned char)end[-1]))*--end=0;return s;}
 static int hex(unsigned char c){if(c>='0' && c<='9')return c-'0';if(c>='a' && c<='f')return c-'a'+10;if(c>='A' && c<='F')return c-'A'+10;return -1;}

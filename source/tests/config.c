@@ -8,9 +8,13 @@ int main(void){
     CHECK(game_config_set(a,"profile","name"," Player\\name\n"));
     CHECK(game_config_set_number(a,"music","mode",2));
     CHECK(game_config_set_number(a,"legacy_options","field_54",UINT32_MAX));
+    CHECK(game_config_set_number(a,"display","fsr1",1) && game_config_set_number(a,"display","msaa_samples",4));
+    CHECK(game_config_remove(a,"display","fsr1") && game_config_remove(a,"display","msaa_samples"));
     for(i=0;i<287;i++){snprintf(key,sizeof(key),"key_%03u",i);CHECK(game_config_set_number(a,"bindings",key,i));}
     CHECK(game_config_write(a,file));rewind(file);CHECK(game_config_read(b,file));
     CHECK(!strcmp(game_config_get(b,"profile","name")," Player\\name\n"));
+    CHECK(!game_config_get(b,"display","fsr1") && !game_config_get(b,"display","msaa_samples"));
+    CHECK(game_config_remove(b,"display","absent") && !game_config_dirty(b));
     CHECK(game_config_number(b,"music","mode",0)==2);
     CHECK(game_config_number(b,"legacy_options","field_54",0)==UINT32_MAX);
     CHECK(!game_config_dirty(b));CHECK(game_config_set_number(b,"music","mode",2));CHECK(!game_config_dirty(b));

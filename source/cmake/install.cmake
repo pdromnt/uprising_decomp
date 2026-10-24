@@ -16,20 +16,13 @@ install(FILES "${asset_root}/uprising.cln" "${asset_root}/README.TXT" "${asset_r
 install(FILES third_party/libsmacker/COPYING DESTINATION "${runtime_assets}" RENAME libsmacker-COPYING.txt COMPONENT Runtime)
 install(FILES third_party/SDL3-LICENSE.txt third_party/FreeType-FTL.txt third_party/stb-LICENSE.txt third_party/enet-LICENSE.txt
     DESTINATION "${runtime_assets}" COMPONENT Runtime)
-install(FILES third_party/fsr/LICENSE.txt DESTINATION "${runtime_assets}" RENAME FSR-LICENSE.txt COMPONENT Runtime)
-if(UPRISING_EXPERIMENTAL_VULKAN)
-    install(FILES "${FETCHCONTENT_BASE_DIR}/vulkan-headers-src/LICENSE.md"
-        DESTINATION "${runtime_assets}/Vulkan-Headers-Licenses" COMPONENT Runtime)
-    install(DIRECTORY "${FETCHCONTENT_BASE_DIR}/vulkan-headers-src/LICENSES/"
-        DESTINATION "${runtime_assets}/Vulkan-Headers-Licenses" COMPONENT Runtime)
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        install(FILES third_party/FSR3-LICENSE.txt third_party/SPIRV-Reflect-LICENSE.txt
-            DESTINATION "${runtime_assets}" COMPONENT Runtime)
-    endif()
-endif()
+install(FILES "${FETCHCONTENT_BASE_DIR}/vulkan-headers-src/LICENSE.md"
+    DESTINATION "${runtime_assets}/Vulkan-Headers-Licenses" COMPONENT Runtime)
+install(DIRECTORY "${FETCHCONTENT_BASE_DIR}/vulkan-headers-src/LICENSES/"
+    DESTINATION "${runtime_assets}/Vulkan-Headers-Licenses" COMPONENT Runtime)
+install(FILES third_party/FSR3-LICENSE.txt third_party/SPIRV-Reflect-LICENSE.txt
+    DESTINATION "${runtime_assets}" COMPONENT Runtime)
 if(APPLE)
     install(FILES "${asset_root}/README.TXT" DESTINATION . COMPONENT Runtime)
-    if(UPRISING_EXPERIMENTAL_VULKAN)
-        include("${CMAKE_CURRENT_LIST_DIR}/macos_vulkan.cmake")
-    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/macos_vulkan.cmake")
 endif()

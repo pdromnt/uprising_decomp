@@ -7,7 +7,7 @@ live in `source/`; build outputs go beside the assets.
 source/
   core/          Algorithms, record/storage owners and source-defined initial data
   game/          Application, menus, simulation, weapons and presentation
-  platform/      SDL services, OpenGL renderer and small host adapters
+  platform/      SDL services, Vulkan renderer and small host adapters
   resources/     Icon, version information and Windows resource script
   third_party/   Bundled codecs/shaders and component licenses
   cmake/         Explicit source manifest and pinned dependencies
@@ -42,11 +42,11 @@ case-sensitive filesystems without copying or renaming the assets.
 
 | Owner | Responsibility |
 | --- | --- |
-| `portable_window.c` | SDL window/context, indexed menu surfaces, palette, pointer mapping and event delivery |
+| `portable_window.c` | SDL window and Vulkan device, indexed menu surfaces, palette, pointer mapping and event delivery |
 | `portable_display.c` | Advanced graphics modal, display preferences, 4:3 viewport and timed mode rollback |
-| `portable_gl1.inc` | Fixed-function rendering, texture/FBO ownership, MSAA and CPU pixel access |
-| `portable_gl1_sky.inc` | Layered BMP skies/horizon, fog sampling and citadel monitor masks |
-| `portable_fsr.inc` | Embedded FSR1 EASU/RCAS and fractional pixel-art presentation filtering |
+| `portable_render.inc` / `portable_vk.inc` | Native render state, texture decoding, projected Vulkan draws and CPU pixel access |
+| `portable_render_sky.inc` | Layered BMP skies/horizon, fog sampling and citadel monitor masks |
+| `platform/vulkan/` | GPU ownership, world-only FSR3/AA, spatial UI filtering and presentation |
 | `portable_font.c` | FreeType rasterization using the supplied fonts and preserved layout metrics |
 | `portable_input_devices.c` | SDL input queues, scan-ID bindings, joystick samples and periodic haptics |
 | `sound_platform.c` | SDL PCM mixer, shared immutable clips and independent voice cursors |

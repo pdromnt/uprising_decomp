@@ -1,4 +1,4 @@
-# Optional native Vulkan backend; no dependency in the stable OpenGL build.
+# Native Vulkan renderer and temporal reconstruction.
 FetchContent_Declare(VulkanHeaders
     URL https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/v1.3.296
     URL_HASH SHA256=e204e0b3c19f622d197df945737f5db913d6621830999b8578d34e80a7c90585
@@ -37,9 +37,4 @@ target_link_libraries(uprising_vulkan PUBLIC SDL3::SDL3-static Vulkan::Headers)
 if(NOT MSVC)
     target_compile_options(uprising_vulkan PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
 endif()
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    include("${CMAKE_CURRENT_LIST_DIR}/fsr3_upscaler.cmake")
-    target_compile_definitions(uprising_vulkan PUBLIC UPRISING_FSR3_UPSCALER=1)
-else()
-    message(STATUS "32-bit target: native Vulkan only; FSR3 is a 64-bit feature")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/fsr3_upscaler.cmake")

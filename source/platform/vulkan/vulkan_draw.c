@@ -1,6 +1,8 @@
 #include "vulkan_draw.h"
 #include "projected_vert_spv.h"
 #include "projected_frag_spv.h"
+#include "fullscreen_vert_spv.h"
+#include "depth_copy_frag_spv.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,12 +44,8 @@ int vulkan_draw_texture_update(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t 
     if(bytes!=(size_t)t->width*t->height*4)return 0;
     return vulkan_draw_texture_region(d,t,rgba,0,0,t->width,t->height);
 }
-int vulkan_draw_texture_region(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t *rgba,uint32_t x,uint32_t y,uint32_t width,uint32_t height){
-    VulkanDevice *v=d->device;VkCommandBuffer command;
+static void texture_copy_record(VulkanDevice *v,VkCommandBuffer command,VulkanDrawTexture *t,uint32_t x,uint32_t y,uint32_t width,uint32_t height){
     VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkBufferImageCopy copy={0};
-    if(!t->image.image || !rgba || !width || !height || x>t->width || y>t->height || width>t->width-x || height>t->height-y)return 0;
-    TRY(vulkan_buffer_write(v,&t->upload,rgba,(size_t)width*height*4));
-    TRY(vulkan_command_begin(v,&command));
     barrier.oldLayout=t->initialized?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.srcAccessMask=t->initialized?VK_ACCESS_SHADER_READ_BIT:0;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
@@ -58,8 +56,14 @@ int vulkan_draw_texture_region(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t 
     barrier.oldLayout=barrier.newLayout;barrier.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,NULL,0,NULL,1,&barrier);
-    TRY(vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE));
-    t->initialized=1;return 1;
+    t->initialized=1;
+}
+int vulkan_draw_texture_region(VulkanDraw *d,VulkanDrawTexture *t,const uint8_t *rgba,uint32_t x,uint32_t y,uint32_t width,uint32_t height){
+    VulkanDevice *v=d->device;VkCommandBuffer command;
+    if(!t->image.image || !rgba || !width || !height || x>t->width || y>t->height || width>t->width-x || height>t->height-y)return 0;
+    TRY(vulkan_buffer_write(v,&t->upload,rgba,(size_t)width*height*4));
+    TRY(vulkan_command_begin(v,&command));texture_copy_record(v,command,t,x,y,width,height);
+    return vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE);
 fail:return 0;
 }
 void vulkan_draw_texture_destroy(VulkanDraw *d,VulkanDrawTexture *t){
@@ -153,7 +157,7 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     d->material.color_mode=d->material.alpha_mode=4;d->material.alpha_function=4;
     if(!width || !height || width>v->properties.limits.maxFramebufferWidth || height>v->properties.limits.maxFramebufferHeight || (uint64_t)width*height>SIZE_MAX/16)goto fail;
     TRY(vulkan_image_create(v,&d->color,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
-    TRY(vulkan_image_create_aspect(v,&d->depth,VK_FORMAT_D32_SFLOAT,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,width,height,VK_IMAGE_ASPECT_DEPTH_BIT));
+    TRY(vulkan_image_create_aspect(v,&d->depth,VK_FORMAT_D32_SFLOAT,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height,VK_IMAGE_ASPECT_DEPTH_BIT));
     TRY(vulkan_image_create(v,&d->reciprocal_depth,VK_FORMAT_R32_SFLOAT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_image_create(v,&d->motion,VK_FORMAT_R32G32B32A32_SFLOAT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
     TRY(vulkan_image_create(v,&d->scene,VK_FORMAT_R8G8B8A8_UNORM,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,width,height));
@@ -170,7 +174,7 @@ int vulkan_draw_open(VulkanDraw *d,VulkanDevice *v,uint32_t width,uint32_t heigh
     subpass.pipelineBindPoint=VK_PIPELINE_BIND_POINT_GRAPHICS;subpass.colorAttachmentCount=4;subpass.pColorAttachments=color;subpass.pDepthStencilAttachment=&depth;
     dependency[0].srcSubpass=VK_SUBPASS_EXTERNAL;dependency[0].dstSubpass=0;
     dependency[0].srcStageMask=VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;dependency[0].srcAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;
-    dependency[0].dstStageMask=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency[0].dstStageMask=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependency[0].dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependency[1].srcSubpass=0;dependency[1].dstSubpass=VK_SUBPASS_EXTERNAL;
     dependency[1].srcStageMask=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;dependency[1].dstStageMask=VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -205,6 +209,8 @@ void vulkan_draw_close(VulkanDraw *d){
     v->DeviceWaitIdle(v->device);vulkan_draw_texture_destroy(d,&d->white);
     for(i=0;i<1728;i++)if(d->pipelines[i])v->DestroyPipeline(v->device,d->pipelines[i],NULL);
     for(i=0;i<2;i++)if(d->shaders[i])v->DestroyShaderModule(v->device,d->shaders[i],NULL);
+    if(d->depth_copy_pipeline)v->DestroyPipeline(v->device,d->depth_copy_pipeline,NULL);
+    for(i=0;i<2;i++)if(d->depth_copy_shaders[i])v->DestroyShaderModule(v->device,d->depth_copy_shaders[i],NULL);
     for(i=0;i<8;i++)if(d->samplers[i])v->DestroySampler(v->device,d->samplers[i],NULL);
     if(d->layout)v->DestroyPipelineLayout(v->device,d->layout,NULL);
     if(d->descriptors)v->DestroyDescriptorPool(v->device,d->descriptors,NULL);
@@ -221,11 +227,79 @@ void vulkan_draw_close(VulkanDraw *d){
 }
 int vulkan_draw_begin(VulkanDraw *d,const float clear[4]){
     if(!d->pass || d->recording)return 0;
+    d->pending_upload=(VulkanDrawUpload){0};
     d->vertex_count=d->batch_count=0;memcpy(d->clear,clear,sizeof(d->clear));d->recording=1;d->resuming=0;d->clear_reciprocal=d->clear_depth_on_resume=0;return 1;
 }
 int vulkan_draw_resume(VulkanDraw *d){
     if(d->recording || !d->has_frame)return 0;
     d->vertex_count=d->batch_count=0;d->recording=1;d->resuming=1;return 1;
+}
+static int depth_copy_pipeline(VulkanDraw *d){
+    VulkanDevice *v=d->device;
+    VkShaderModuleCreateInfo module={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    VkPipelineShaderStageCreateInfo stages[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+    VkPipelineVertexInputStateCreateInfo input={VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo assembly={VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    VkPipelineViewportStateCreateInfo viewport={VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    VkViewport rect={0,0,(float)d->width,(float)d->height,0,1};VkRect2D scissor={{0,0},{d->width,d->height}};
+    VkPipelineRasterizationStateCreateInfo raster={VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    VkPipelineMultisampleStateCreateInfo samples={VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    VkPipelineDepthStencilStateCreateInfo depth={VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    VkPipelineColorBlendAttachmentState blend[4]={{0}};
+    VkPipelineColorBlendStateCreateInfo blending={VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    VkGraphicsPipelineCreateInfo pipeline={VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    VkDescriptorSetAllocateInfo allocate={VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    if(d->depth_copy_pipeline)return 1;
+    module.codeSize=sizeof(fullscreen_vert_spv);module.pCode=fullscreen_vert_spv;
+    VK(v->CreateShaderModule(v->device,&module,NULL,d->depth_copy_shaders));
+    module.codeSize=sizeof(depth_copy_frag_spv);module.pCode=depth_copy_frag_spv;
+    VK(v->CreateShaderModule(v->device,&module,NULL,d->depth_copy_shaders+1));
+    stages[0].stage=VK_SHADER_STAGE_VERTEX_BIT;stages[1].stage=VK_SHADER_STAGE_FRAGMENT_BIT;
+    for(unsigned i=0;i<2;i++){stages[i].module=d->depth_copy_shaders[i];stages[i].pName="main";}
+    assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    viewport.viewportCount=viewport.scissorCount=1;viewport.pViewports=&rect;viewport.pScissors=&scissor;
+    raster.polygonMode=VK_POLYGON_MODE_FILL;raster.lineWidth=1;samples.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT;
+    depth.depthTestEnable=depth.depthWriteEnable=VK_TRUE;depth.depthCompareOp=VK_COMPARE_OP_ALWAYS;
+    blending.attachmentCount=4;blending.pAttachments=blend; /* Depth only. */
+    pipeline.stageCount=2;pipeline.pStages=stages;pipeline.pVertexInputState=&input;pipeline.pInputAssemblyState=&assembly;
+    pipeline.pViewportState=&viewport;pipeline.pRasterizationState=&raster;pipeline.pMultisampleState=&samples;
+    pipeline.pDepthStencilState=&depth;pipeline.pColorBlendState=&blending;pipeline.layout=d->layout;pipeline.renderPass=d->pass;
+    VK(v->CreateGraphicsPipelines(v->device,VK_NULL_HANDLE,1,&pipeline,NULL,&d->depth_copy_pipeline));
+    allocate.descriptorPool=d->descriptors;allocate.descriptorSetCount=1;allocate.pSetLayouts=&d->texture_layout;
+    VK(v->AllocateDescriptorSets(v->device,&allocate,&d->depth_copy_set));return 1;
+fail:return 0;
+}
+int vulkan_draw_copy_depth(VulkanDraw *d,const VulkanDraw *source){
+    VulkanDevice *v=d->device;VkCommandBuffer command;
+    VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    VkRenderPassBeginInfo begin={VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    const float view[4]={(float)d->width,(float)d->height,source->scene_jitter[0],source->scene_jitter[1]};
+    if(!v || source->device!=v || d==source || d->recording || source->recording || !d->has_frame || !source->has_frame)return 0;
+    if(!depth_copy_pipeline(d))return 0;
+    if(d->depth_copy_source!=source->depth.view){
+        VkDescriptorImageInfo image={d->white.sampler,source->depth.view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet write={VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        if(d->depth_copy_source && !vulkan_queue_drain(v))return 0;
+        write.dstSet=d->depth_copy_set;write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;write.pImageInfo=&image;
+        v->UpdateDescriptorSets(v->device,1,&write,0,NULL);d->depth_copy_source=source->depth.view;
+    }
+    if(!vulkan_command_begin(v,&command))return 0;
+    barrier.oldLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_SHADER_READ_BIT;
+    barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.image=source->depth.image;
+    barrier.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_DEPTH_BIT,0,1,0,1};
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    begin.renderPass=d->resume_pass;begin.framebuffer=d->framebuffer;begin.renderArea.extent=(VkExtent2D){d->width,d->height};
+    v->CmdBeginRenderPass(command,&begin,VK_SUBPASS_CONTENTS_INLINE);
+    v->CmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->depth_copy_pipeline);
+    v->CmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,d->layout,0,1,&d->depth_copy_set,0,NULL);
+    v->CmdPushConstants(command,d->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(view),view);
+    v->CmdDraw(command,3,1,0,0);v->CmdEndRenderPass(command);
+    barrier.oldLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;barrier.newLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.srcAccessMask=VK_ACCESS_SHADER_READ_BIT;barrier.dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
+    d->clear_depth_on_resume=0;return 1;
 }
 int vulkan_draw_blit_color(VulkanDraw *d,const VulkanImage *source,uint32_t width,uint32_t height){
     VulkanDevice *v=d->device;VkCommandBuffer command;VkImageBlit copy={0};
@@ -307,11 +381,17 @@ int vulkan_draw_finish(VulkanDraw *d,uint8_t *rgba,size_t bytes){
     VkRenderPassBeginInfo begin={VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};VkClearValue clear[5]={0};
     VkBufferImageCopy copy={0};VkBufferMemoryBarrier host={VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
     if(!d->recording || (rgba && bytes<(size_t)d->width*d->height*4))return 0;
-    d->recording=0;
+    VulkanDrawUpload upload=d->pending_upload;
+    d->pending_upload=(VulkanDrawUpload){0};d->recording=0;
     for(i=0;i<d->batch_count;i++)TRY(draw_pipeline(d,d->batches[i].flags));
     if(vertex_bytes>d->vertices.size){vulkan_buffer_destroy(v,&d->vertices);TRY(vulkan_buffer_create(v,&d->vertices,d->vertex_capacity*sizeof(*d->staging),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT));}
     if(vertex_bytes)TRY(vulkan_buffer_write(v,&d->vertices,d->staging,vertex_bytes));
+    if(upload.texture){
+        if(!upload.pixels || !upload.width || !upload.height || upload.width>upload.texture->width || upload.height>upload.texture->height)goto fail;
+        TRY(vulkan_buffer_write(v,&upload.texture->upload,upload.pixels,(size_t)upload.width*upload.height*4));
+    }
     TRY(vulkan_command_begin(v,&command));memcpy(clear[0].color.float32,d->clear,sizeof(d->clear));clear[1].depthStencil.depth=d->clear_depth;
+    if(upload.texture)texture_copy_record(v,command,upload.texture,0,0,upload.width,upload.height);
     clear[3].color.float32[3]=1;
     begin.renderPass=d->resuming?d->resume_pass:d->pass;begin.framebuffer=d->framebuffer;begin.renderArea.extent=(VkExtent2D){d->width,d->height};begin.clearValueCount=5;begin.pClearValues=clear;
     v->CmdBeginRenderPass(command,&begin,VK_SUBPASS_CONTENTS_INLINE);

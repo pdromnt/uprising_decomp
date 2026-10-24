@@ -1,9 +1,14 @@
 /* Experimental native device consuming the established projected vertices and
  * owned texture bytes. The GL comparator shares those material semantics;
  * this path submits Vulkan buffers/shaders and never creates a GL context. */
+typedef struct VulkanGlyphAtlas {
+    VulkanDrawTexture texture;uint8_t *pixels;
+    unsigned x,y,row_height,height;int dirty;
+} VulkanGlyphAtlas;
 typedef struct Vk1Device {
     VulkanMenu *menu;VulkanDraw frame[2];VulkanDrawTexture sky[3],remote_mask;
     VulkanDrawTexture tiles;
+    VulkanGlyphAtlas glyphs[2];
     struct {uint64_t hash;uint32_t next;uint8_t pixels[4096];} tile[1024];
     uint32_t tile_buckets[1024],tile_count;
     uint64_t frames,submissions,uploads,atlas_uploads;
@@ -41,6 +46,11 @@ static VulkanDraw *vk1_target(unsigned index){
 static VulkanDraw *vk1_back(void){return vk1_target(gl1_current->back);}
 static int vk1_flush(VulkanDraw *d,int resume){
     Vk1Device *n=gl1_current->vulkan;Uint64 started=d->recording && n->observe?SDL_GetTicksNS():0;
+    for(unsigned i=0;i<2;i++)if(d->recording && (d==n->frame+i || d==n->output+i) && n->glyphs[i].dirty){
+        VulkanGlyphAtlas *atlas=n->glyphs+i;
+        d->pending_upload=(VulkanDrawUpload){&atlas->texture,atlas->pixels,1024,atlas->height};
+        atlas->dirty=0;
+    }
     if(d->recording){n->submissions++;n->vertices+=d->vertex_count;n->batches+=d->batch_count;}
     if(d->recording && !vulkan_draw_finish(d,NULL,0)){gl1_fail("Vulkan submission");return 0;}
     if(started)n->flush_cost_ns+=SDL_GetTicksNS()-started;
@@ -119,9 +129,9 @@ static int vk1_scene_complete(void){
     }
     if(!vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE))return 0;
     if(n->observe)n->fsr_cost_ns+=SDL_GetTicksNS()-now;
-    /* Composition replaces only color. Late billboard/HUD draws resume this
-     * owner, so retire the previous frame's depth before those draws begin. */
-    target->clear_depth_on_resume=1;
+    /* Late billboards need this frame's world occlusion, never last frame's
+     * sprite depth or an empty depth buffer. Keep the original W-depth encoding. */
+    if(!vulkan_draw_copy_depth(target,scene))return 0;
     n->composed[g->back]=1;
     if(n->spatial_view)return 1;
     n->fsr_time=now;n->fsr_frames++;if(n->fsr_reset)n->fsr_resets++;
@@ -177,7 +187,10 @@ static void vk1_close(void){
     fsr3_upscaler_close(g->vulkan->upscaler);
 #endif
     vulkan_temporal_close(&g->vulkan->temporal);
-    for(i=0;i<2;i++){vulkan_draw_close(g->vulkan->output+i);vulkan_draw_close(g->vulkan->frame+i);}
+    for(i=0;i<2;i++){
+        vulkan_draw_texture_destroy(g->vulkan->frame+i,&g->vulkan->glyphs[i].texture);free(g->vulkan->glyphs[i].pixels);
+        vulkan_draw_close(g->vulkan->output+i);vulkan_draw_close(g->vulkan->frame+i);
+    }
     render_motion_release(&g->vulkan->history);
     vulkan_menu_device(g->vulkan->menu)->defer_submissions=0;
     free(g->vulkan);g->vulkan=NULL;
@@ -296,6 +309,7 @@ static uint32_t vk1_material(VulkanDraw *d){
     if(m->fog_mode==2)m->fog_range[0]=g->density;
     d->texture_sampler=(g->min_filter==GL_LINEAR?1:0)|(g->wrap_s==GL_REPEAT?2:0)|(g->wrap_t==GL_REPEAT?4:0);
     m->texture_sampling=(uint32_t)d->texture_sampler;
+    if(g->textured && g->bound && g->bound->ui_tile && !g->world_depth_capture)m->texture_sampling|=8u;
     m->padding[1]=g->textured && g->bound && g->bound->ui_tile?g->bound->native_tile:0;
     return (g->depth_mode?VULKAN_DRAW_DEPTH_TEST:0)|(g->native_depth_write?VULKAN_DRAW_DEPTH_WRITE:0)|
         (g->native_blend?VULKAN_DRAW_BLEND:0)|(g->native_depth_func<<3);
@@ -349,6 +363,8 @@ static void vk1_clear(uint32_t color,uint32_t alpha,uint32_t depth){
     Gl1Device *g=gl1_current;VulkanDraw *d;float clear[4]={((color>>16)&255)/255.0f,((color>>8)&255)/255.0f,(color&255)/255.0f,(alpha&255)/255.0f};
     if(g->vulkan->composed[g->back] && !vk1_flush(vk1_back(),0))return;
     g->vulkan->composed[g->back]=0;d=vk1_back();
+    g->vulkan->glyphs[g->back].x=g->vulkan->glyphs[g->back].y=g->vulkan->glyphs[g->back].row_height=g->vulkan->glyphs[g->back].height=0;
+    g->vulkan->glyphs[g->back].dirty=0;
     d->recording=0;d->clear_depth=(depth&65535)/65535.0f;if(!vulkan_draw_begin(d,clear))gl1_fail("Vulkan clear");
     gl1_current->vulkan->frame_start=SDL_GetTicksNS();
 }
@@ -413,15 +429,54 @@ static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,flo
         memcpy(v[i].previous,previous[c],sizeof(v[i].previous));
     }
     d->material.color_mode=texture?4:1;d->material.alpha_mode=texture?4:3;d->material.fog_mode=0;d->material.chroma=0;
+    /* Sky quads select their own sampler; never inherit pixel-art filtering
+     * from a preceding HUD tile or glyph lock. */
+    d->material.texture_sampling=d->texture_sampler>=0?(uint32_t)d->texture_sampler:0;
     d->material.alpha_function=4;d->material.alpha_reference=0;
     /* Opaque base sky has texture-space motion at infinite depth. Independently
      * scrolling layers/horizon reject history without replacing its vectors. */
     d->capture_scene=1;ok=vulkan_draw_triangles(d,v,6,texture,flags);
     d->capture_scene=d->capture_background=0;return ok;
 }
+static int vk1_glyphs(VulkanDraw *d,unsigned buffer,unsigned left,unsigned top,unsigned right,unsigned bottom){
+    Gl1Device *g=gl1_current;VulkanGlyphAtlas *atlas=g->vulkan->glyphs+buffer;
+    unsigned width=right-left+2,height=bottom-top+2,x,y;
+    const unsigned corner[6]={0,1,2,0,2,3};VulkanDrawVertex vertex[6]={0};
+    if(!atlas->pixels){
+        atlas->pixels=calloc(1024u*1024u,4);
+        if(!atlas->pixels || !vulkan_draw_texture_create(g->vulkan->frame+buffer,&atlas->texture,atlas->pixels,1024,1024,0,0))return 0;
+    }
+    if(width>1024 || height>1024)return 0;
+    if(atlas->x+width>1024){atlas->x=0;atlas->y+=atlas->row_height;atlas->row_height=0;}
+    if(atlas->y+height>1024){
+        if(!vk1_flush(d,1))return 0;
+        atlas->x=atlas->y=atlas->row_height=atlas->height=0;
+    }
+    for(y=0;y<height;y++)memset(atlas->pixels+((size_t)(atlas->y+y)*1024+atlas->x)*4,0,width*4);
+    for(y=top;y<bottom;y++)for(x=left;x<right;x++){
+        uint16_t color=g->lfb[(size_t)y*g->width+x];if(color==0xf81f)continue;
+        uint8_t *p=atlas->pixels+((size_t)(atlas->y+y-top+1)*1024+atlas->x+x-left+1)*4;
+        p[0]=(uint8_t)(((color>>11)&31)*255/31);p[1]=(uint8_t)(((color>>5)&63)*255/63);p[2]=(uint8_t)((color&31)*255/31);p[3]=255;
+    }
+    for(unsigned i=0;i<6;i++){
+        unsigned c=corner[i];int on_right=c==1 || c==2,on_bottom=c>=2;
+        vertex[i].position[0]=on_right?(float)right+1:(float)left-1;
+        vertex[i].position[1]=on_bottom?(float)bottom+1:(float)top-1;
+        vertex[i].color[0]=vertex[i].color[1]=vertex[i].color[2]=vertex[i].color[3]=1;
+        vertex[i].uv[0]=(atlas->x+(on_right?width:0))/1024.0f;
+        vertex[i].uv[1]=(atlas->y+(on_bottom?height:0))/1024.0f;vertex[i].uv[2]=1;
+    }
+    atlas->x+=width;if(height>atlas->row_height)atlas->row_height=height;
+    if(atlas->y+height>atlas->height)atlas->height=atlas->y+height;
+    atlas->dirty=1;
+    if(!d->recording && !vulkan_draw_resume(d))return 0;
+    d->material.color_mode=d->material.alpha_mode=2;d->material.chroma=d->material.fog_mode=d->material.mask_enabled=0;
+    d->material.alpha_function=4;d->material.alpha_reference=0;d->material.padding[1]=0;d->material.texture_sampling=8;
+    d->mask_texture=NULL;d->texture_sampler=-1;d->capture_depth=0;
+    return vulkan_draw_triangles(d,vertex,6,&atlas->texture,VULKAN_DRAW_BLEND);
+}
 static int vk1_unmap(void){
     Gl1Device *g=gl1_current;VulkanDraw *d=vk1_target(g->lock_buffer?g->back:g->front);unsigned x,y,i,left=g->width,top=g->height,right=0,bottom=0;
-    static const unsigned corner[6]={0,1,2,0,2,3};
     if(!g->locked)return 0;
     if(g->write_lock){
         unsigned first=0,end=g->width*g->height;
@@ -432,25 +487,9 @@ static int vk1_unmap(void){
             if(x<left)left=x;if(x>=right)right=x+1;if(y<top)top=y;if(y>=bottom)bottom=y+1;
         }
         if(left==g->width){g->vulkan->scratch_clean=1;g->locked=0;return 1;}
-        if(!d->recording && !vulkan_draw_resume(d))return 0;
-        /* Convert opaque RGB565 ink runs directly to native rectangles. This
-         * preserves the existing bounded text lock without a texture upload,
-         * render-pass flush or GPU fence for every string. Magenta is untouched. */
-        d->material.color_mode=0;d->material.alpha_mode=1;d->material.chroma=d->material.fog_mode=d->material.mask_enabled=0;d->material.alpha_function=7;d->mask_texture=NULL;
-        d->capture_depth=0;
-        for(y=top;y<bottom;y++)for(x=left;x<right;){
-            uint16_t color=g->lfb[(size_t)y*g->width+x];unsigned end=x+1;
-            if(color==0xf81f){x++;continue;}
-            VulkanDrawVertex vertex[6]={0};
-            while(end<right && g->lfb[(size_t)y*g->width+end]==color)end++;
-            for(i=0;i<6;i++){
-                unsigned c=corner[i];vertex[i].position[0]=(float)(c==1 || c==2?end:x);vertex[i].position[1]=(float)(c>=2?y+1:y);
-                vertex[i].color[0]=(float)(((color>>11)&31)*255/31)/255;
-                vertex[i].color[1]=(float)(((color>>5)&63)*255/63)/255;vertex[i].color[2]=(float)((color&31)*255/31)/255;
-                vertex[i].color[3]=1;vertex[i].uv[2]=1;
-            }
-            if(!vulkan_draw_triangles(d,vertex,6,NULL,0))return 0;x=end;
-        }
+        /* Preserve whole glyph shapes for filtering; upload the accumulated
+         * padded atlas once at the next real submission, not once per string. */
+        if(!vk1_glyphs(d,g->lock_buffer?g->back:g->front,left,top,right,bottom))return 0;
         /* Retire exactly the written scratch span after its vertices were copied.
          * Generic pixel locks still scan the complete buffer; glyph locks report
          * their validated writes, including multiple strings and clipped text. */

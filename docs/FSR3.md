@@ -14,6 +14,11 @@ The scene source remains640x480, or the actual O-monitor crop. UPSCALE reconstru
 to the drawable's fitted4:3 canvas (minimum640x480). NATIVE AA reconstructs at the
 source size and scales that result into the fitted output. These are fixed-source
 modes, not AMD Quality/Balanced/Performance presets. HUD is drawn afterward.
+Menus/artwork use a separate spatial filter: fractional scales interpolate pixel
+boundaries, while native/integer sizes retain exact pixels. HUD text uses padded
+glyph atlases with filtered coverage; it never enters temporal history. Atlas
+uploads share the draw submission. Sky quads explicitly select world sampling
+instead of inheriting the HUD filter.
 
 FSR provides temporal AA. With it off, **EDGE AA** filters diagonal world edges
 without filtering menus, HUD or pre-scene artwork. It supports32-bit Vulkan too.
@@ -92,8 +97,9 @@ sets its own loader/ICD before loading Vulkan, and needs no SDK environment.
 It does not unconditionally request Apple's portability-enumeration extension,
 which KosmicKrisp does not support. The CI bundle-loader check temporarily runs
 the existing probe under the app's executable identity, without SDK/driver shell
-settings, before restoring/signing the game. This checks library loading, not
-native Apple GPU rendering. Physical Apple GPU execution remains unverified.
+settings, before restoring/signing the game. This checks library loading.
+User testing on physical Apple Silicon confirmed gameplay and FSR working;
+the first loading-screen-to-game transition was slower and remains unprofiled.
 
 Standalone developer probes can use:
 
@@ -141,17 +147,35 @@ Short profiles are guard-terminated;
 clean shutdown is checked separately. A speculative arena-access change was
 dropped after timings failed to justify it.
 
-Reported infantry/explosion stripes traced to late billboards rendered after
-FSR: composition replaced output color but retained previous-frame output depth.
-Each new composition now requests a depth-only clear before late draws resume.
-The focused GPU regression fails without that clear and passes with it, preserving
-composed color. The earlier coverage-mask change did not resolve this report.
-User manual testing confirmed the sprite smearing fixed and looking correct.
+Late billboards now receive the current world's hardware depth, resampled to
+the output size with jitter compensation. This replaces the earlier clear-only
+fix, which removed sprite stripes but let soldiers show through terrain.
+Focused GPU checks cover world occlusion, visible sprites, previous-depth
+retirement, fractional output and jitter. Manual Novus confirmation is pending.
+
+The new UI checks compare all pixels against an independent spatial-sampling
+reference, plus atlas/chroma edges and immediate/deferred uploads. Windows x86/x64
+builds and probes pass; the x64 movement/fire/save/reload/shutdown route passes
+1740 frames with exact restored position/ammo. A matched quiet Training1 sample
+at960x720 with FSR measured149.27FPS before and141.60FPS after (about5% slower),
+excluding the first5seconds. This is not crowded-battle performance evidence.
+
+User reports visible terrain/sky jitter and blur during the latest tests. Keep
+this open: a discovered HUD-sampler leak into sky quads is corrected, but that
+alone does not establish terrain parity. A stationary sloped-edge GPU fixture
+checks native AA and2x reconstruction; measured resolved displacement is below
+0.005source pixels against1pixel of raster variation. A static Training1 terrain
+sample also shows stable resolved output with one initial history reset. A
+moving192-frame diagnostic confirms dispatch on every frame, with only two
+resets; these checks do not replace visual acceptance during motion.
 
 Remaining: real crowded-target performance, broad moving-edge/particle/layered-sky
-quality and scripted-camera/alternate-monitor coverage, native Apple GPU execution,
-and hardware coverage beyond the initial RTX4060Ti.32-bit FSR and hardware Vulkan
-MSAA are not acceptance blockers. Keep the OpenGL release until Vulkan acceptance.
+quality (including the reported terrain/sky jitter), scripted-camera/alternate-monitor
+coverage, and hardware coverage beyond the initial RTX4060Ti and user-tested Mac.
+The reported unexpected Novus combat exit has not been reproduced; use the
+normal-menu debugger launcher to retain a failure stack.32-bit FSR and hardware
+Vulkan MSAA are not acceptance blockers. Removing x86/OpenGL/FSR1 is authorized
+as the next cleanup after these rendering fixes are checked.
 
 References: [AMD integration](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-interpolation/),
 [pinned SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/c6efa6bf7f2027b3ec94f28578bb5965eabb9e55),

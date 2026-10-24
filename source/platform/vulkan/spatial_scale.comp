@@ -1,0 +1,12 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "pixel_filter.glsl"
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0) uniform sampler2D source;
+layout(set=0,binding=1,rgba8) uniform writeonly image2D output_color;
+void main(){
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy),size=imageSize(output_color);
+    if(any(greaterThanEqual(p,size)))return;
+    vec2 input_size=vec2(textureSize(source,0));
+    imageStore(output_color,p,vec4(pixel_filter_sample(source,(vec2(p)+0.5)*input_size/vec2(size),vec2(size)/input_size).rgb,1));
+}

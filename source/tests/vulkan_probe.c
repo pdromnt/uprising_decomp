@@ -37,12 +37,13 @@ static int ui_atlas_pass(VulkanDevice *v){
     for(i=3;i<1024u*1024u*4;i+=4)pixels[i]=255; /* Opaque black neighboring tiles. */
     if(!vulkan_draw_texture_create(&draw,&atlas,pixels,1024,1024,1,0))goto done;
     atlas.atlas=1;
-    for(test=0;test<4;test++){
+    for(test=0;test<8;test++){
+        unsigned style=test&3u;
         for(y=0;y<32;y++)for(x=0;x<32;x++){
             uint8_t *p=tile+(x+y*32)*4;int border=x==0 || y==0 || x==31 || y==31;
-            p[0]=border?(test>=2?255:0):(uint8_t)(x*6);
-            p[1]=border?0:(uint8_t)(y*6);p[2]=border?(test>=2?255:0):32;
-            p[3]=border && test<2?0:255;
+            p[0]=border?(style>=2?255:0):(uint8_t)(x*6);
+            p[1]=border?0:(uint8_t)(y*6);p[2]=border?(style>=2?255:0):32;
+            p[3]=border && style<2?0:255;
         }
         if(!standalone.image.image){if(!vulkan_draw_texture_create(&draw,&standalone,tile,32,32,1,0))goto done;}
         else if(!vulkan_draw_texture_update(&draw,&standalone,tile,sizeof(tile)))goto done;
@@ -50,22 +51,28 @@ static int ui_atlas_pass(VulkanDevice *v){
         for(pass=0;pass<2;pass++){
             float low=test&1?-.25f:0,high=test&1?1.25f:1;VulkanDrawTexture *texture=pass?&atlas:&standalone;
             if(!vulkan_draw_begin(&draw,blue))goto done;
-            draw.texture_sampler=test&1?7:1;draw.material.texture_sampling=(uint32_t)draw.texture_sampler;
+            if(test>=4 && !pass){
+                uint8_t blank[32*32*4]={0};
+                if(!vulkan_draw_texture_update(&draw,&standalone,blank,sizeof(blank)))goto done;
+                draw.pending_upload=(VulkanDrawUpload){&standalone,tile,32,32};
+            }
+            draw.texture_sampler=test&1?7:1;draw.material.texture_sampling=(uint32_t)draw.texture_sampler|(test>=4?8u:0u);
             draw.material.color_mode=draw.material.alpha_mode=4;draw.material.alpha_function=4;draw.material.alpha_reference=0;
-            draw.material.chroma=test>=2?0x1ff00ffu:0;draw.material.padding[1]=34; /* Tile33, origin32/32. */
-            if(!draw_quad(&draw,8,8,56,56,0,1,1,1,1,texture,0))goto done;
+            draw.material.chroma=style>=2?0x1ff00ffu:0;draw.material.padding[1]=34; /* Tile33, origin32/32. */
+            if(!draw_quad(&draw,8,8,56,56,0,1,1,1,1,texture,test>=4?VULKAN_DRAW_BLEND:0))goto done;
             for(i=0;i<draw.vertex_count;i++){
                 VulkanDrawVertex *p=draw.staging+i;float u=p->position[0]==56?high:low,w=p->position[1]==56?high:low;
                 p->uv[0]=pass?(32+u*32)/1024:u;p->uv[1]=pass?(32+w*32)/1024:w;p->uv[2]=1;
             }
             if(!vulkan_draw_finish(&draw,pass?actual:reference,sizeof(actual)))goto done;
         }
-        if((test&1) && !pixel(reference,15,8,0,0,255))goto done;
+        if(test<4 && (test&1) && !pixel(reference,15,8,0,0,255))goto done;
+        if(test==6 && !pixel(reference,9,16,3,16,144))goto done; /* Half-covered ink, no magenta fringe. */
         for(i=0;i<sizeof(actual);i++)if(abs((int)actual[i]-(int)reference[i])>2){
             fprintf(stderr,"Vulkan UI atlas mismatch test=%u pixel=%u,%u channel=%u atlas=%u standalone=%u\n",test,(i/4)%64,(i/4)/64,i%4,actual[i],reference[i]);goto done;
         }
     }
-    printf("VULKAN_UI_ATLAS_PASS fractional=1.5 clamp=checked repeat=checked alpha=checked chroma=checked standalone_comparison=all_pixels\n");ok=1;
+    printf("VULKAN_UI_ATLAS_PASS fractional=1.5 clamp=checked repeat=checked alpha=checked chroma=checked spatial_ink=checked premultiplied_edges=checked standalone_comparison=all_pixels\n");ok=1;
 done:
     free(pixels);vulkan_draw_texture_destroy(&draw,&standalone);vulkan_draw_texture_destroy(&draw,&atlas);vulkan_draw_close(&draw);return ok;
 }
@@ -115,6 +122,66 @@ static int read_image(VulkanDevice *v,const VulkanImage *image,uint32_t width,ui
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,NULL,1,&host,0,NULL);
     ok=vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) && vulkan_buffer_read(v,&buffer,pixels,bytes);
 done:vulkan_buffer_destroy(v,&buffer);return ok;
+}
+/* Independent reference: bilinear sampling of a conceptual nearest-integer
+ * enlargement. No shader coordinate-warp implementation is reused here. */
+static float scaled_channel(const uint8_t *pixels,unsigned width,unsigned height,unsigned x,unsigned y,unsigned out_width,unsigned out_height,unsigned channel){
+    unsigned nx=out_width/width,ny=out_height/height;if(!nx)nx=1;if(!ny)ny=1;
+    double px=((double)x+.5)*width*nx/out_width-.5,py=((double)y+.5)*height*ny/out_height-.5;
+    int bx=(int)floor(px),by=(int)floor(py);double result=0;
+    for(int j=0;j<2;j++)for(int i=0;i<2;i++){
+        int sx=bx+i,sy=by+j;
+        if(sx<0)sx=0;if(sy<0)sy=0;
+        if(sx>=(int)(width*nx))sx=(int)(width*nx)-1;if(sy>=(int)(height*ny))sy=(int)(height*ny)-1;
+        result+=pixels[((unsigned)(sy/(int)ny)*width+(unsigned)(sx/(int)nx))*4+channel]*
+            (i?px-floor(px):1-(px-floor(px)))*(j?py-floor(py):1-(py-floor(py)));
+    }
+    return (float)result;
+}
+static int spatial_scale_pass(VulkanDevice *v){
+    VulkanDraw source={0};VulkanSpatial scale={0};const float black[4]={0,0,0,1};
+    uint8_t input[64*64*4],output[128*128*4];int ok=0;unsigned size,x,y,c;
+    if(!vulkan_draw_open(&source,v,64,64) || !vulkan_draw_begin(&source,black) ||
+       !draw_quad(&source,4,4,32,60,0,0,1,0,1,NULL,0) || !vulkan_draw_finish(&source,input,sizeof(input)))goto done;
+    for(size=64;size<=128;size+=32){
+        VkCommandBuffer command;
+        if(!vulkan_spatial_open(&scale,v,size,size) || !vulkan_command_begin(v,&command) ||
+           !vulkan_spatial_record(&scale,command,&source.color) || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+           !read_image(v,&scale.output,size,size,output,(size_t)size*size*4))goto done;
+        for(y=0;y<size;y++)for(x=0;x<size;x++)for(c=0;c<3;c++)
+            if(fabsf(output[(y*size+x)*4+c]-scaled_channel(input,64,64,x,y,size,size,c))>1.01f){
+                fprintf(stderr,"Spatial UI mismatch size=%u pixel=%u/%u channel=%u\n",size,x,y,c);goto done;
+            }
+        if(size==96 && (!output[(30*size+47)*4+1] || output[(30*size+47)*4+1]==255))goto done;
+        vulkan_spatial_close(&scale);
+    }
+    printf("VULKAN_UI_SCALING_PASS native=exact integer=exact fractional=filtered all_pixels=checked\n");ok=1;
+done:vulkan_spatial_close(&scale);vulkan_draw_close(&source);return ok;
+}
+static int output_depth_pass(VulkanDevice *v){
+    VulkanDraw world={0},output={0};const float black[4]={0,0,0,1};uint8_t rgba[96*96*4];int ok=0;
+    if(!vulkan_draw_open(&world,v,64,64) || !vulkan_draw_open(&output,v,96,96) ||
+       !vulkan_draw_begin(&output,black) || !vulkan_draw_finish(&output,NULL,0))goto done;
+    output.material.extent[0]=output.material.extent[1]=64;
+    for(unsigned frame=0;frame<2;frame++){
+        unsigned near_x=frame?40:8;
+        if(!vulkan_draw_projection(&world,10,1,.25f,-.25f) || !vulkan_draw_begin(&world,black) ||
+           !draw_quad(&world,0,0,64,64,.8f,0,0,1,1,NULL,3) ||
+           !draw_quad(&world,(float)near_x,8,(float)near_x+24,40,.2f,0,1,0,1,NULL,3) ||
+           !vulkan_draw_finish(&world,NULL,0) || !vulkan_draw_blit_color(&output,&world.color,64,64) ||
+           !vulkan_draw_copy_depth(&output,&world) || !vulkan_draw_resume(&output) ||
+           !draw_quad(&output,16,8,56,40,frame?.4f:.3f,1,0,0,1,NULL,3) ||
+           !vulkan_draw_finish(&output,rgba,sizeof(rgba)))goto done;
+        for(unsigned sample=0;sample<2;sample++){
+            const uint8_t *p=rgba+(30*96+(sample?75:30))*4;
+            int hidden=frame?(sample==1):(sample==0);
+            if(p[0]!=(hidden?0:255) || p[1]!=(hidden?255:0) || p[2]){
+                fprintf(stderr,"Output occlusion mismatch frame=%u sample=%u rgb=%u/%u/%u\n",frame,sample,p[0],p[1],p[2]);goto done;
+            }
+        }
+    }
+    printf("VULKAN_OUTPUT_OCCLUSION_PASS terrain=occludes visible_sprite=preserved previous_depth=retired fractional=checked jitter=checked\n");ok=1;
+done:vulkan_draw_close(&output);vulkan_draw_close(&world);return ok;
 }
 static int temporal_monitor_pass(VulkanDevice *v){
     VulkanDraw source={0},upscaled={0},output={0};VulkanTemporal temporal={0};int ok=0;unsigned i,x,y,frame=0,stage=0;
@@ -185,7 +252,7 @@ static int temporal_monitor_pass(VulkanDevice *v){
             unsigned sx=(2*x+1)*64/(2*output.width),sy=(2*y+1)*64/(2*output.height);
             int hud=(2*x+1)*64<8*output.width && (2*y+1)*64<8*output.height;
             if(frame==2 && !hud && sx>=8 && sx<39 && sy>=12 && sy<35 && scene[(sy*64+sx)*4+3])continue;
-            int expected=hud?255:native[(sy*64+sx)*4+i];
+            int expected=hud?255:(int)lroundf(scaled_channel(native,64,64,x,y,output.width,output.height,i));
             if(abs(final[(y*output.width+x)*4+i]-expected)>1){fprintf(stderr,"Monitor composition mismatch %u/%u channel=%u\n",x,y,i);goto done;}
         }
         if(frame==2 && (!pixel(final,0,0,255,255,255) || final[(45*100+20)*4]!=255 || final[(45*100+20)*4+2]!=0 ||
@@ -202,7 +269,7 @@ static int temporal_monitor_pass(VulkanDevice *v){
             unsigned sx=(2*x+1)*64/(2*output.width),sy=(2*y+1)*64/(2*output.height);
             int hud=(2*x+1)*64<8*output.width && (2*y+1)*64<8*output.height;
             int covered=sx>=8 && sx<39 && sy>=12 && sy<35 && scene[(sy*64+sx)*4+3];
-            int difference=abs(final[(y*output.width+x)*4+i]-(hud?255:native[(sy*64+sx)*4+i]));
+            int difference=abs(final[(y*output.width+x)*4+i]-(hud?255:(int)lroundf(scaled_channel(native,64,64,x,y,output.width,output.height,i))));
             if(!hud && covered)changed+=difference>2;
             else if(difference>1){fprintf(stderr,"Spatial AA changed artwork/HUD at %u,%u\n",x,y);goto done;}
         }
@@ -231,7 +298,7 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
            !pixel(rgba,36,16,0,255,255) || !pixel(rgba,44,16,255,0,0) ||
            !pixel(rgba,16,48,128,0,128) || !pixel(rgba,56,56,255,255,0))goto done;
         if(frame==1)present.recreate=1;
-        if(!vulkan_present_image(&present,draw.color.image,64,64))goto done;
+        if(!vulkan_present_image(&present,&draw.color,64,64))goto done;
     }
     printf("VULKAN_GRAPHICS_PASS frames=3 depth=checked alpha=checked projective_uv=checked hud_order=checked resume=checked\n");ok=1;
     printf("VULKAN_PRESENT_PASS frames=3 swapchain_rebuild=checked aspect=preserved\n");
@@ -681,6 +748,52 @@ static int upscale_motion_pass(VulkanDevice *v){
 done:
     fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
 }
+/* A stationary sloped edge must settle despite changing raster samples. Uniform
+ * patch tests cannot detect an exposed jitter sequence or a bypassed resolve. */
+static int upscale_stability_pass(VulkanDevice *v){
+    VulkanDraw draw={0},result={0};VulkanTemporal temporal={0};Fsr3Upscaler *upscaler=NULL;
+    const float black[4]={0,0,0,1};uint8_t raw[64*64*4],resolved[128*128*4];int ok=0;
+    if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_temporal_open(&temporal,v,64,64))goto done;
+    for(unsigned scale=1;scale<=2;scale++){
+        float low[2]={1000,1000},high[2]={-1000,-1000};unsigned size=64*scale;
+        if(!vulkan_draw_open(&result,v,size,size))goto done;
+        upscaler=fsr3_upscaler_open(v,64,64,size,size);if(!upscaler)goto done;
+        for(unsigned frame=0;frame<48;frame++){
+            VkCommandBuffer command;const VulkanImage *output;
+            float jitter[2]={(frame&1)?.375f:-.375f,(frame&2)?.25f:-.25f};
+            if(!vulkan_draw_projection(&draw,10,1,jitter[0],jitter[1]) || !vulkan_draw_begin(&draw,black))goto done;
+            draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
+            if(!moving_quad(&draw,0,0,64,64,.8f,0,0,0,.001f,0) ||
+               !moving_quad(&draw,20,0,64,64,.2f,1,1,1,.01f,0))goto done;
+            for(unsigned i=6;i<draw.vertex_count;i++){
+                VulkanDrawVertex *p=draw.staging+i;
+                if(p->position[0]==20)p->position[0]+=p->position[1]*.375f;
+                p->previous[0]=p->position[0];p->previous[1]=p->position[1];
+            }
+            if(!vulkan_draw_finish(&draw,raw,sizeof(raw)) || !vulkan_command_begin(v,&command) ||
+               !vulkan_temporal_record(&temporal,command,&draw.motion))goto done;
+            output=fsr3_upscaler_dispatch(upscaler,command,&draw.scene,&draw.reciprocal_depth,&draw.motion,&temporal.rejection,
+                jitter[0],jitter[1],16.667f,10,1,frame==0,0);
+            if(!output || !vulkan_command_submit(v,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
+               !vulkan_draw_begin(&result,black) || !vulkan_draw_finish(&result,NULL,0) ||
+               !vulkan_draw_blit_color(&result,output,size,size) || !vulkan_draw_readback(&result,resolved,sizeof(resolved)))goto done;
+            if(frame>=24)for(unsigned target=0;target<2;target++){
+                unsigned factor=target?scale:1,side=64*factor;float ink=0;
+                const uint8_t *pixels=target?resolved:raw;
+                for(unsigned y=16*factor;y<48*factor;y++)for(unsigned x=8*factor;x<56*factor;x++)ink+=pixels[(x+y*side)*4]/255.0f;
+                ink/=32*factor*factor; /* Edge displacement in source pixels. */
+                if(ink<low[target])low[target]=ink;
+                if(ink>high[target])high[target]=ink;
+            }
+        }
+        printf("FSR3_STABILITY_SAMPLE scale=%u raster_range=%.4f resolved_range=%.4f source_pixels\n",scale,high[0]-low[0],high[1]-low[1]);
+        if(high[0]-low[0]<.4f || high[1]-low[1]>.25f){fprintf(stderr,"FSR3 exposed stationary-edge jitter\n");goto done;}
+        fsr3_upscaler_close(upscaler);upscaler=NULL;vulkan_draw_close(&result);
+    }
+    printf("FSR3_STABILITY_PASS native=checked upscale=checked stationary_edge=stable\n");ok=1;
+done:
+    fsr3_upscaler_close(upscaler);vulkan_temporal_close(&temporal);vulkan_draw_close(&result);vulkan_draw_close(&draw);return ok;
+}
 static int upscale_pass(VulkanDevice *v){
     VulkanDraw draw={0},composed={0};VulkanTemporal temporal={0};VulkanBuffer readback={0};Fsr3Upscaler *upscaler=NULL;int ok=0;unsigned frame,i;
     const float black[4]={0,0,0,1};float pixels[128*128*4];
@@ -756,17 +869,17 @@ int main(int argc,char **argv){
     window=SDL_CreateWindow("Uprising Vulkan/FSR3 probe",640,480,SDL_WINDOW_VULKAN|SDL_WINDOW_HIDDEN);
     if(!window || !vulkan_device_open(&device,window,validation))goto done;
     if(show && !SDL_ShowWindow(window))goto done;
-    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !temporal_monitor_pass(&device))goto done;
+    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !spatial_scale_pass(&device) || !output_depth_pass(&device) || !temporal_monitor_pass(&device))goto done;
     device.defer_submissions=1;
     for(i=0;i<65;i++){
         VkCommandBuffer command;
         if(!vulkan_command_begin(&device,&command) || !vulkan_command_submit(&device,command,VK_NULL_HANDLE,VK_NULL_HANDLE) ||
            device.pending_count!=(unsigned)(i%64+1))goto done;
     }
-    if(!graphics_pass(&device,window) || !temporal_monitor_pass(&device) || !vulkan_queue_drain(&device) || device.pending_count)goto done;
+    if(!graphics_pass(&device,window) || !ui_atlas_pass(&device) || !spatial_scale_pass(&device) || !output_depth_pass(&device) || !temporal_monitor_pass(&device) || !vulkan_queue_drain(&device) || device.pending_count)goto done;
     printf("VULKAN_DEFERRED_QUEUE_PASS bounded_queue=checked draw=checked readback=checked reuse=checked destruction=checked retirement=checked\n");
 #ifdef UPRISING_FSR3_UPSCALER
-    if(!reactive_pass(&device,&reactive) || !upscale_pass(&device) || !upscale_motion_pass(&device))goto done;
+    if(!reactive_pass(&device,&reactive) || !upscale_pass(&device) || !upscale_motion_pass(&device) || !upscale_stability_pass(&device))goto done;
 #else
     (void)reactive;
     printf("VULKAN_ONLY_TARGET pointer_bits=32 fsr3=not-built\n");

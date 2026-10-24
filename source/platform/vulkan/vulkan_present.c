@@ -48,16 +48,17 @@ fail:free(formats);vulkan_present_close(p);return 0;
 void vulkan_present_close(VulkanPresent *p){
     VulkanDevice *v=p->device;if(!v)return;
     v->DeviceWaitIdle(v->device);
+    vulkan_spatial_close(&p->spatial);
     if(p->acquired)v->DestroySemaphore(v->device,p->acquired,NULL);
     if(p->finished)v->DestroySemaphore(v->device,p->finished,NULL);
     if(p->swapchain)v->DestroySwapchainKHR(v->device,p->swapchain,NULL);
     free(p->images);memset(p,0,sizeof(*p));
 }
-int vulkan_present_image(VulkanPresent *p,VkImage image,uint32_t width,uint32_t height){
+int vulkan_present_image(VulkanPresent *p,const VulkanImage *image,uint32_t width,uint32_t height){
     VulkanDevice *v=p->device;VkResult status;uint32_t index,w,h;VkCommandBuffer command;int x,y;
     VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};VkClearColorValue black={{0,0,0,1}};VkImageBlit blit={0};
     VkPresentInfoKHR present={VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-    if(!width || !height || !image)return 0;
+    if(!width || !height || !image || !image->image)return 0;
     {int pixels_w,pixels_h;
      if(!SDL_GetWindowSizeInPixels(p->window,&pixels_w,&pixels_h))return 0;
      if(pixels_w<=0 || pixels_h<=0)return 1;
@@ -65,10 +66,22 @@ int vulkan_present_image(VulkanPresent *p,VkImage image,uint32_t width,uint32_t 
     }
     if(p->recreate){SDL_Window *window=p->window;vulkan_present_close(p);if(!vulkan_present_open(p,v,window))return 0;}
     if(!p->swapchain)return 1;
+    w=p->extent.width;h=(uint32_t)((uint64_t)w*height/width);
+    if(h>p->extent.height){h=p->extent.height;w=(uint32_t)((uint64_t)h*width/height);}
+    if(!w)w=1;
+    if(!h)h=1;
+    if(w!=width || h!=height){
+        if(p->spatial.device && (p->spatial.width!=w || p->spatial.height!=h))vulkan_spatial_close(&p->spatial);
+        if(!p->spatial.device && !vulkan_spatial_open(&p->spatial,v,w,h))return 0;
+    }
     status=v->AcquireNextImageKHR(v->device,p->swapchain,5000000000ull,p->acquired,VK_NULL_HANDLE,&index);
     if(status==VK_ERROR_OUT_OF_DATE_KHR){p->recreate=1;return 1;}
     if(status==VK_SUBOPTIMAL_KHR)p->recreate=1;else if(status!=VK_SUCCESS){fprintf(stderr,"Vulkan acquire: %d\n",(int)status);return 0;}
     if(!vulkan_command_begin(v,&command))return 0;
+    if(w!=width || h!=height){
+        if(!vulkan_spatial_record(&p->spatial,command,image)){v->FreeCommandBuffers(v->device,v->commands,1,&command);return 0;}
+        image=&p->spatial.output;width=w;height=h;
+    }
     barrier.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED;barrier.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
     barrier.image=p->images[index];barrier.subresourceRange=(VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
@@ -86,7 +99,7 @@ int vulkan_present_image(VulkanPresent *p,VkImage image,uint32_t width,uint32_t 
     blit.srcSubresource=blit.dstSubresource=(VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
     blit.srcOffsets[1]=(VkOffset3D){(int32_t)width,(int32_t)height,1};
     blit.dstOffsets[0]=(VkOffset3D){x,y,0};blit.dstOffsets[1]=(VkOffset3D){x+(int32_t)w,y+(int32_t)h,1};
-    v->CmdBlitImage(command,image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,p->images[index],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_NEAREST);
+    v->CmdBlitImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,p->images[index],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_NEAREST);
     barrier.newLayout=VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;barrier.dstAccessMask=0;
     v->CmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&barrier);
     if(!vulkan_command_submit(v,command,p->acquired,p->finished))return 0;

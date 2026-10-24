@@ -10,14 +10,15 @@ FetchContent_MakeAvailable(VulkanHeaders)
 find_program(UPRISING_GLSLANG NAMES glslang glslangValidator REQUIRED)
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(graphics_headers)
-foreach(stage vert frag)
-    set(source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/projected.${stage}")
-    set(binary "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}.spv")
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/projected_${stage}_spv.h")
+foreach(program projected.vert projected.frag fullscreen.vert depth_copy.frag spatial_scale.comp)
+    string(REPLACE "." "_" symbol "${program}")
+    set(source "${CMAKE_CURRENT_SOURCE_DIR}/platform/vulkan/${program}")
+    set(binary "${CMAKE_CURRENT_BINARY_DIR}/generated/${symbol}.spv")
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/${symbol}_spv.h")
     add_custom_command(OUTPUT "${header}"
         COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${source}" -o "${binary}"
-        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=projected_${stage}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        DEPENDS "${source}" cmake/embed_spirv.cmake VERBATIM)
+        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${binary}" "-DOUTPUT=${header}" "-DSYMBOL=${symbol}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+        DEPENDS "${source}" platform/vulkan/pixel_filter.glsl cmake/embed_spirv.cmake VERBATIM)
     list(APPEND graphics_headers "${header}")
 endforeach()
 foreach(pass mask compose)
@@ -27,10 +28,10 @@ foreach(pass mask compose)
     add_custom_command(OUTPUT "${temporal_header}"
         COMMAND "${UPRISING_GLSLANG}" -V --target-env vulkan1.2 "${temporal_source}" -o "${temporal_binary}"
         COMMAND "${CMAKE_COMMAND}" "-DINPUT=${temporal_binary}" "-DOUTPUT=${temporal_header}" "-DSYMBOL=temporal_${pass}_spv" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
-        DEPENDS "${temporal_source}" cmake/embed_spirv.cmake VERBATIM)
+        DEPENDS "${temporal_source}" platform/vulkan/pixel_filter.glsl cmake/embed_spirv.cmake VERBATIM)
     list(APPEND graphics_headers "${temporal_header}")
 endforeach()
-add_library(uprising_vulkan STATIC platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c platform/vulkan/vulkan_menu.c platform/vulkan/vulkan_temporal.c ${graphics_headers})
+add_library(uprising_vulkan STATIC platform/vulkan/vulkan_device.c platform/vulkan/vulkan_draw.c platform/vulkan/vulkan_present.c platform/vulkan/vulkan_menu.c platform/vulkan/vulkan_temporal.c platform/vulkan/vulkan_spatial.c ${graphics_headers})
 target_include_directories(uprising_vulkan PUBLIC platform/vulkan PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(uprising_vulkan PUBLIC SDL3::SDL3-static Vulkan::Headers)
 if(NOT MSVC)

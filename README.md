@@ -49,6 +49,8 @@ Options → Graphics → **ADVANCED** provides:
 - **FSR 3.1 (3D):** Off, Upscale or Native AA, with adjustable sharpening.
   Available on supported 64-bit Vulkan devices; 32-bit builds use native Vulkan.
   FSR processes the world separately from HUD and menus.
+  Menus and HUD use automatic spatial filtering at fractional display scales;
+  integer scaling keeps the original pixel edges crisp.
 - **3D anti-aliasing:** Edge AA when FSR is off; temporal AA when FSR is enabled.
   HUD, text, menus and 2D artwork remain outside the AA pass.
 

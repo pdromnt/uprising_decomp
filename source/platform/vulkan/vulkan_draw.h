@@ -25,6 +25,9 @@ enum {VULKAN_DRAW_DEPTH_TEST=1,VULKAN_DRAW_DEPTH_WRITE=2,VULKAN_DRAW_BLEND=4,
 typedef struct VulkanDrawBatch {
     uint32_t first,count,flags;VkDescriptorSet texture,mask;VulkanDrawMaterial material;
 } VulkanDrawBatch;
+typedef struct VulkanDrawUpload {
+    VulkanDrawTexture *texture;const uint8_t *pixels;uint32_t width,height;
+} VulkanDrawUpload;
 typedef struct VulkanDraw {
     VulkanDevice *device;uint32_t width,height;
     VulkanImage color,depth,reciprocal_depth,motion,scene;VulkanBuffer vertices,readback;
@@ -44,12 +47,19 @@ typedef struct VulkanDraw {
      * Other scene-only layers raise rejection without replacing vectors. */
     int capture_depth,capture_scene,capture_background,clear_reciprocal,clear_depth_on_resume;
     float scene_jitter[2],scene_depth_scale;
+    VkPipeline depth_copy_pipeline;VkShaderModule depth_copy_shaders[2];
+    VkDescriptorSet depth_copy_set;VkImageView depth_copy_source;
+    /* Borrowed until finish: upload with the draw, without an extra submission. */
+    VulkanDrawUpload pending_upload;
 } VulkanDraw;
 /* q=numerator/z becomes reversed infinite perspective depth near/z. Hardware
  * W-depth remains unchanged. Jitter is in top-left pixel coordinates, applied
  * only to captured world draws; previous positions remain unjittered. */
 int vulkan_draw_projection(VulkanDraw *,float near_z,float numerator,float jitter_x,float jitter_y);
 int vulkan_draw_open(VulkanDraw *,VulkanDevice *,uint32_t width,uint32_t height);
+/* Copy the current frame's hardware W-depth to a differently sized output.
+ * Both owners must have completed drawing; color and auxiliary MRTs survive. */
+int vulkan_draw_copy_depth(VulkanDraw *output,const VulkanDraw *source);
 void vulkan_draw_close(VulkanDraw *);
 /* Each texture owns its descriptor until destroyed; batches borrow it through
  * finish(). Flush before mutating texels referenced by queued batches. Disjoint

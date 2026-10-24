@@ -37,15 +37,15 @@ int vulkan_menu_present(VulkanMenu *m,const SDL_Surface *rgba){
         vertex[i].uv[0]=right?1:0;vertex[i].uv[1]=bottom?1:0;vertex[i].uv[2]=1;
     }
     return vulkan_draw_begin(&m->draw,clear) && vulkan_draw_triangles(&m->draw,vertex,6,&m->texture,0) &&
-        vulkan_draw_finish(&m->draw,NULL,0) && vulkan_present_image(&m->present,m->draw.color.image,640,480);
+        vulkan_draw_finish(&m->draw,NULL,0) && vulkan_present_image(&m->present,&m->draw.color,640,480);
 }
 int vulkan_menu_clear(VulkanMenu *m){
     const float clear[4]={0,0,0,1};
     return vulkan_draw_begin(&m->draw,clear) && vulkan_draw_finish(&m->draw,NULL,0) &&
-        vulkan_present_image(&m->present,m->draw.color.image,640,480);
+        vulkan_present_image(&m->present,&m->draw.color,640,480);
 }
 int vulkan_menu_readback(VulkanMenu *m,uint8_t *rgba,size_t bytes){return vulkan_draw_readback(&m->draw,rgba,bytes);}
 VulkanDevice *vulkan_menu_device(VulkanMenu *m){return &m->device;}
 int vulkan_menu_present_image(VulkanMenu *m,VulkanDraw *draw){
-    return vulkan_present_image(&m->present,draw->color.image,draw->width,draw->height);
+    return vulkan_present_image(&m->present,&draw->color,draw->width,draw->height);
 }

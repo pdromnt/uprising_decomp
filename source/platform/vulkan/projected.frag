@@ -1,4 +1,6 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+#include "pixel_filter.glsl"
 layout(set=0,binding=0) uniform sampler2D image;
 layout(set=1,binding=0) uniform sampler2D coverage;
 layout(push_constant) uniform Material {
@@ -30,6 +32,20 @@ vec4 keyed_texel(ivec2 p) {
     return value;
 }
 vec4 sample_material(vec2 uv) {
+    if((material.texture_sampling&8u)!=0u){
+        vec2 pixel=uv*vec2(textureSize(image,0));
+        vec2 step_size=max(abs(dFdx(pixel)),abs(dFdy(pixel)));
+        pixel=pixel_filter_coord(pixel,1.0/max(step_size,vec2(0.00001)))-0.5;
+        ivec2 p=ivec2(floor(pixel));vec2 f=fract(pixel);
+        vec4 a=keyed_texel(p),b=keyed_texel(p+ivec2(1,0));
+        vec4 c=keyed_texel(p+ivec2(0,1)),d=keyed_texel(p+ivec2(1,1));
+        // Filter coverage and premultiplied ink together, so transparent
+        // padding/chroma colors cannot tint or darken the glyph's edges.
+        a.rgb*=a.a;b.rgb*=b.a;c.rgb*=c.a;d.rgb*=d.a;
+        vec4 result=mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+        if(result.a>0.0)result.rgb/=result.a;
+        return result;
+    }
     if(material.chroma==0u && material.padding.y==0u)return texture(image,uv);
     vec2 pixel=uv*vec2(textureSize(image,0));
     if(material.chroma==0u){

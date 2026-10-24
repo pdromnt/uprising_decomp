@@ -9,7 +9,7 @@ layout(push_constant) uniform Material {
     vec4 constant_color;vec4 fog_color;vec2 fog_range;
     uint fog_mode;uint alpha_function;float alpha_reference;uint chroma;
     uvec2 padding;vec4 mask_bounds;uint mask_enabled;uint texture_sampling;
-    vec2 jitter;float depth_scale;uint projection_padding;
+    vec2 jitter;float depth_scale;uint background_valid;vec2 background_motion;
 } material;
 layout(location=0) out vec4 vertex_color;
 layout(location=1) out vec3 texture_coordinate;

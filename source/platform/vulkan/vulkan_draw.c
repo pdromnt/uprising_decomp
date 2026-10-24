@@ -8,8 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-_Static_assert(sizeof(VulkanDrawMaterial)==120,"Vulkan push block layout");
+_Static_assert(sizeof(VulkanDrawMaterial)==128,"Vulkan push block layout");
 _Static_assert(offsetof(VulkanDrawMaterial,jitter)==104 && offsetof(VulkanDrawMaterial,depth_scale)==112,"Vulkan projection offsets");
+_Static_assert(offsetof(VulkanDrawMaterial,background_motion)==120,"Vulkan background motion offsets");
 enum {CAPTURE_RECIPROCAL_DEPTH=256,CAPTURE_REACTIVE=512,CAPTURE_SCENE=1024};
 
 #define VK(call) do {VkResult status=(call);if(status!=VK_SUCCESS){fprintf(stderr,"Vulkan draw %s: %d\n",#call,(int)status);goto fail;}}while(0)
@@ -355,6 +356,7 @@ static int draw_primitives(VulkanDraw *d,const VulkanDrawVertex *vertices,uint32
         (flags&VULKAN_DRAW_BLEND?2u:0u)|
         (d->capture_background?4u:0u);
     material.depth_scale=d->scene_depth_scale;
+    if(!d->capture_background)material.background_valid=0;
     material.jitter[0]=flags&CAPTURE_SCENE?d->scene_jitter[0]:0;
     material.jitter[1]=flags&CAPTURE_SCENE?d->scene_jitter[1]:0;
     descriptor=texture?texture_binding(d,texture):d->white.descriptor;if(!descriptor)return 0;

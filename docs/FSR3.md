@@ -37,9 +37,11 @@ cover all options. Changing SDK input/output dimensions recreates its context.
   Depth is reversed-infinite `10/z`; motion is unjittered previous-minus-current
   pixel displacement. Terrain/model allocation identities and clipped-edge
   provenance retain correspondence; missing/ambiguous identities reject history.
-- Opaque base skies have texture-space motion at infinite depth. Independent
-  layers, unknown geometry and surviving translucent coverage conservatively
-  reject history. Invisible blended no-write effects preserve underlying history.
+- Base skies, clouds, horizons and monitor skies have independent texture-space
+  motion at infinite depth. Cloud flow blends the tracked base/layer translations
+  by actual opacity; remaining motion disagreement raises reactivity. Unknown
+  geometry and untracked effects still reject history. Invisible blended
+  no-write effects preserve underlying history.
   Reprojected raw rejection coverage protects vacated sprite/effect pixels for
   one following frame; it expires rather than feeding the combined mask back.
 - O-view crops actual color/depth/motion and uses its own FOV. MRT coverage and
@@ -160,14 +162,16 @@ builds and probes pass; the x64 movement/fire/save/reload/shutdown route passes
 at960x720 with FSR measured149.27FPS before and141.60FPS after (about5% slower),
 excluding the first5seconds. This is not crowded-battle performance evidence.
 
-User reports visible terrain/sky jitter and blur during the latest tests. Keep
-this open: a discovered HUD-sampler leak into sky quads is corrected, but that
-alone does not establish terrain parity. A stationary sloped-edge GPU fixture
-checks native AA and2x reconstruction; measured resolved displacement is below
-0.005source pixels against1pixel of raster variation. A static Training1 terrain
-sample also shows stable resolved output with one initial history reset. A
-moving192-frame diagnostic confirms dispatch on every frame, with only two
-resets; these checks do not replace visual acceptance during motion.
+The reported horizon/silhouette jitter exposed blanket history rejection on
+untracked sky layers. Those layers now have separate motion; opaque horizon
+texels replace underlying cloud rejection. GPU fixtures check cloud opacity/flow,
+infinite depth and native/2x edge stability (under0.005source pixels of resolved
+variation). Steady Priva960x720/FSR captures reduced mean frame-to-frame RGB change
+in a horizon region from4.21 to1.39 over15pairs. This is a flicker diagnostic,
+not an FPS or full image-quality result; clouds still animate. The120-frame
+camera/options transition check passes. Manual horizon/geometry confirmation
+remains pending. Transition tests deliberately toggle modes/reset history and
+must not be treated as steady visual comparisons.
 
 Remaining: real crowded-target performance, broad moving-edge/particle/layered-sky
 quality (including the reported terrain/sky jitter), scripted-camera/alternate-monitor

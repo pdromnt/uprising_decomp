@@ -18,7 +18,8 @@ typedef struct Vk1Device {
     uint32_t written_range[2];
     int track_text,scratch_clean;
     RenderMotionHistory history;
-    RenderMotionPlane sky_history[2];uint64_t sky_motion_valid;
+    RenderMotionPlane sky_history[8];uint64_t sky_motion_valid;
+    float sky_base_motion[2][2];uint64_t sky_base_frame[2];
     RenderMotionCamera history_pose;unsigned history_cut_reasons;uint64_t history_camera_cuts;
     uint32_t history_camera,history_mode;
     float history_projection[5];
@@ -414,14 +415,30 @@ static int vk1_map(int write,unsigned buffer,RenderPixelView *info){
 static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,float r,float b,float z,float u0,float v0,float u1,float v1,float alpha,uint32_t flags){
     VulkanDrawVertex v[6]={0};float previous[4][4]={{0}};unsigned i;int ok;const unsigned corner[6]={0,1,2,0,2,3};
     Gl1Device *g=gl1_current;Vk1Device *n=g->vulkan;
+    unsigned camera=d->material.mask_enabled!=0;
     if(!d->recording && !vulkan_draw_resume(d))return 0;
     d->capture_depth=0; /* Sky contributes color, never solid world depth. */
-    d->capture_background=texture==n->sky && !(flags&VULKAN_DRAW_BLEND);
+    /* Each sky layer has its own texture-space flow. In particular, opaque
+     * horizon texels must replace the cloud rejection beneath them, rather
+     * than disabling temporal accumulation across the entire silhouette. */
+    unsigned layer=3;
+    for(unsigned sky=0;sky<3;sky++)if(texture==n->sky+sky){layer=sky;break;}
+    d->capture_background=1;
     if(d->capture_background){
         const float bounds[4]={l,t,r,b},uv[4]={u0,v0,u1,v1};
-        if(render_motion_plane(n->sky_history+(d->material.mask_enabled!=0),n->frames+1,
+        if(render_motion_plane(n->sky_history+layer*2+(d->material.mask_enabled!=0),n->frames+1,
                 (uint64_t)g->sky_tick+1,bounds,uv,previous))n->sky_motion_valid++;
     }
+    if(layer==0){
+        n->sky_base_frame[camera]=0;
+        if(previous[0][3] && fabsf((previous[2][0]-r)-(previous[0][0]-l))<.01f &&
+           fabsf((previous[2][1]-b)-(previous[0][1]-t))<.01f){
+            n->sky_base_motion[camera][0]=previous[0][0]-l;n->sky_base_motion[camera][1]=previous[0][1]-t;
+            n->sky_base_frame[camera]=n->frames+1;
+        }
+    }
+    d->material.background_valid=layer==1 && n->sky_base_frame[camera]==n->frames+1;
+    memcpy(d->material.background_motion,n->sky_base_motion[camera],sizeof(d->material.background_motion));
     for(i=0;i<6;i++){unsigned c=corner[i];int right=c==1 || c==2,bottom=c>=2;
         v[i].position[0]=right?r:l;v[i].position[1]=bottom?b:t;v[i].position[2]=z;
         v[i].uv[0]=right?u1:u0;v[i].uv[1]=bottom?v1:v0;v[i].uv[2]=1;
@@ -433,8 +450,8 @@ static int vk1_quad(VulkanDraw *d,VulkanDrawTexture *texture,float l,float t,flo
      * from a preceding HUD tile or glyph lock. */
     d->material.texture_sampling=d->texture_sampler>=0?(uint32_t)d->texture_sampler:0;
     d->material.alpha_function=4;d->material.alpha_reference=0;
-    /* Opaque base sky has texture-space motion at infinite depth. Independently
-     * scrolling layers/horizon reject history without replacing its vectors. */
+    /* Background depth stays infinite. Fully covered texels carry this layer's
+     * motion; partial-alpha texels still reject incompatible blended history. */
     d->capture_scene=1;ok=vulkan_draw_triangles(d,v,6,texture,flags);
     d->capture_scene=d->capture_background=0;return ok;
 }

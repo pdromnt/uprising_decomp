@@ -585,6 +585,34 @@ static int graphics_pass(VulkanDevice *v,SDL_Window *window){
             }
         }
         printf("VULKAN_SKY_MOTION_PASS infinite_depth=checked jitter=checked layers=checked no_depth_effect=checked invisible_effect=checked unblended_alpha=checked hud=checked\n");
+        if(!vulkan_draw_begin(&draw,black)){ok=0;goto done;}
+        draw.capture_background=draw.capture_scene=1;
+        if(!vulkan_draw_triangles(&draw,sky,3,NULL,0)){ok=0;goto done;}
+        draw.material.background_valid=1;
+        draw.material.background_motion[0]=4;draw.material.background_motion[1]=-2;
+        if(!draw_quad(&draw,8,8,24,24,0,1,0,0,.5f,NULL,VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        for(i=3;i<draw.vertex_count;i++){
+            VulkanDrawVertex *p=draw.staging+i;
+            p->previous[0]=p->position[0]+6;p->previous[1]=p->position[1]-2;
+            p->previous[2]=p->previous[3]=1;
+        }
+        draw.material.background_valid=0;
+        if(!draw_quad(&draw,32,32,48,48,0,0,1,0,1,NULL,VULKAN_DRAW_BLEND)){ok=0;goto done;}
+        for(i=9;i<draw.vertex_count;i++){
+            VulkanDrawVertex *p=draw.staging+i;
+            p->previous[0]=p->position[0]+10;p->previous[1]=p->position[1];
+            p->previous[2]=p->previous[3]=1;
+        }
+        draw.capture_background=draw.capture_scene=0;
+        if(!vulkan_draw_finish(&draw,NULL,0) || !vulkan_draw_read_motion(&draw,motion,sizeof(motion)) ||
+           !vulkan_draw_read_reciprocal_depth(&draw,depths,sizeof(depths))){ok=0;goto done;}
+        const float *cloud=motion+(16+16*64)*4,*horizon=motion+(40+40*64)*4;
+        if(fabsf(cloud[0]-5)>.001f || fabsf(cloud[1]+2)>.001f || cloud[2]!=1 || fabsf(cloud[3]-.25f)>.001f ||
+           fabsf(horizon[0]-10)>.001f || fabsf(horizon[1])>.001f || horizon[2]!=1 || horizon[3]!=0 ||
+           depths[16+16*64]!=0 || depths[40+40*64]!=0){
+            fprintf(stderr,"Vulkan tracked cloud/horizon flow failed\n");ok=0;goto done;
+        }
+        printf("VULKAN_LAYERED_SKY_PASS independent_flow=checked alpha_weighting=checked opaque_horizon=checked infinite_depth=checked\n");
     }
 done:
     vulkan_present_close(&present);vulkan_draw_texture_destroy(&draw,&texture);vulkan_draw_close(&draw);return ok;
@@ -754,7 +782,8 @@ static int upscale_stability_pass(VulkanDevice *v){
     VulkanDraw draw={0},result={0};VulkanTemporal temporal={0};Fsr3Upscaler *upscaler=NULL;
     const float black[4]={0,0,0,1};uint8_t raw[64*64*4],resolved[128*128*4];int ok=0;
     if(!vulkan_draw_open(&draw,v,64,64) || !vulkan_temporal_open(&temporal,v,64,64))goto done;
-    for(unsigned scale=1;scale<=2;scale++){
+    for(unsigned variant=0;variant<4;variant++){
+        unsigned scale=variant%2+1;
         float low[2]={1000,1000},high[2]={-1000,-1000};unsigned size=64*scale;
         if(!vulkan_draw_open(&result,v,size,size))goto done;
         upscaler=fsr3_upscaler_open(v,64,64,size,size);if(!upscaler)goto done;
@@ -763,9 +792,22 @@ static int upscale_stability_pass(VulkanDevice *v){
             float jitter[2]={(frame&1)?.375f:-.375f,(frame&2)?.25f:-.25f};
             if(!vulkan_draw_projection(&draw,10,1,jitter[0],jitter[1]) || !vulkan_draw_begin(&draw,black))goto done;
             draw.capture_depth=1;draw.material.color_mode=0;draw.material.alpha_mode=1;draw.material.alpha_function=7;
-            if(!moving_quad(&draw,0,0,64,64,.8f,0,0,0,.001f,0) ||
-               !moving_quad(&draw,20,0,64,64,.2f,1,1,1,.01f,0))goto done;
-            for(unsigned i=6;i<draw.vertex_count;i++){
+            if(!moving_quad(&draw,0,0,64,64,.8f,0,0,0,.001f,0))goto done;
+            if(variant>=2){
+                draw.capture_depth=0;draw.capture_background=draw.capture_scene=1;
+                draw.material.background_valid=1;
+                draw.material.background_motion[0]=draw.material.background_motion[1]=0;
+                if(!draw_quad(&draw,0,0,64,64,.7f,.25f,.25f,.25f,.5f,NULL,VULKAN_DRAW_BLEND))goto done;
+                for(unsigned i=6;i<draw.vertex_count;i++){
+                    VulkanDrawVertex *p=draw.staging+i;
+                    p->previous[0]=p->position[0];p->previous[1]=p->position[1];
+                    p->previous[2]=p->previous[3]=1;
+                }
+                draw.capture_background=draw.capture_scene=0;draw.capture_depth=1;
+            }
+            unsigned first=(unsigned)draw.vertex_count;
+            if(!moving_quad(&draw,20,0,64,64,.2f,1,1,1,.01f,0))goto done;
+            for(unsigned i=first;i<draw.vertex_count;i++){
                 VulkanDrawVertex *p=draw.staging+i;
                 if(p->position[0]==20)p->position[0]+=p->position[1]*.375f;
                 p->previous[0]=p->position[0];p->previous[1]=p->position[1];
@@ -786,8 +828,8 @@ static int upscale_stability_pass(VulkanDevice *v){
                 if(ink>high[target])high[target]=ink;
             }
         }
-        printf("FSR3_STABILITY_SAMPLE scale=%u raster_range=%.4f resolved_range=%.4f source_pixels\n",scale,high[0]-low[0],high[1]-low[1]);
-        if(high[0]-low[0]<.4f || high[1]-low[1]>.25f){fprintf(stderr,"FSR3 exposed stationary-edge jitter\n");goto done;}
+        printf("FSR3_STABILITY_SAMPLE scale=%u background=%u raster_range=%.4f resolved_range=%.4f source_pixels\n",scale,variant/2,high[0]-low[0],high[1]-low[1]);
+        if(high[0]-low[0]<.4f || high[1]-low[1]>.05f){fprintf(stderr,"FSR3 exposed stationary-edge jitter\n");goto done;}
         fsr3_upscaler_close(upscaler);upscaler=NULL;vulkan_draw_close(&result);
     }
     printf("FSR3_STABILITY_PASS native=checked upscale=checked stationary_edge=stable\n");ok=1;

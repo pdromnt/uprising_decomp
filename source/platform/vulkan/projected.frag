@@ -8,7 +8,7 @@ layout(push_constant) uniform Material {
     vec4 constant_color;vec4 fog_color;vec2 fog_range;
     uint fog_mode;uint alpha_function;float alpha_reference;uint chroma;
     uvec2 padding;vec4 mask_bounds;uint mask_enabled;uint texture_sampling;
-    vec2 jitter;float depth_scale;uint projection_padding;
+    vec2 jitter;float depth_scale;uint background_valid;vec2 background_motion;
 } material;
 layout(location=0) in vec4 vertex_color;
 layout(location=1) in vec3 texture_coordinate;
@@ -104,4 +104,13 @@ void main() {
     // effect contributes no color and must preserve the underlying history.
     if((material.padding.x&1u)!=0u)output_motion.w=(material.padding.x&2u)!=0u && alpha<=0.0?0.0:1.0;
     else if((material.padding.x&2u)!=0u && alpha<0.99999)output_motion.w=1.0;
+    if((material.padding.x&6u)==6u && material.background_valid!=0u && output_motion.z>=0.99999){
+        // A cloud blends two known image translations, not an untracked effect.
+        // Use its actual opacity for composite flow. Reactivity reflects the
+        // remaining disagreement (zero for equally moving layers); retain full
+        // rejection when either layer lacks a reliable correspondence.
+        vec2 difference=output_motion.xy-material.background_motion;
+        output_motion.xy=mix(material.background_motion,output_motion.xy,alpha);
+        output_motion.w=clamp(length(difference),0.0,1.0)*alpha*(1.0-alpha);
+    }
 }

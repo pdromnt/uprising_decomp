@@ -11,7 +11,8 @@ typedef struct VulkanDrawMaterial {
     float constant[4],fog_color[4],fog_range[2];
     uint32_t fog_mode,alpha_function;float alpha_reference;uint32_t chroma;
     uint32_t padding[2];float mask_bounds[4];uint32_t mask_enabled,texture_sampling;
-    float jitter[2],depth_scale;uint32_t projection_padding;
+    float jitter[2],depth_scale;uint32_t background_valid;
+    float background_motion[2]; /* Underlying sky translation, in source pixels. */
 } VulkanDrawMaterial;
 typedef struct VulkanDrawTexture {
     VulkanImage image;VkSampler sampler;VkDescriptorSet descriptor;

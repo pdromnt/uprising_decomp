@@ -120,7 +120,10 @@ if(!$locked){$mutex.Dispose();throw 'Another debugger launcher is already runnin
 $capture=$null
 try {
     if(Get-Process uprising,uprising64 -ErrorAction SilentlyContinue){throw 'Close the existing game before starting another session.'}
-    foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
+    # PowerShell coerces $null to an empty string for this .NET call. Recent
+    # runtimes preserve empty variables, which enables presence-tested flags
+    # such as Vulkan validation. Pass a genuine null to remove them.
+    foreach($name in $names){[Environment]::SetEnvironmentVariable($name,[NullString]::Value,'Process')}
     $env:UPRISING_ASSET_DIRECTORY=$root
     $env:UPRISING_USER_DIRECTORY=$user
     $env:UPRISING_RECOMP_WINDOWED='1'
@@ -140,7 +143,10 @@ try {
     Write-Host "Keep these files for investigation: $log and $user/uprising-portable.log"
 } finally {
     if($capture){$capture.Dispose()}
-    foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$before[$name],'Process')}
+    foreach($name in $names){
+        $value=if($null -eq $before[$name]){[NullString]::Value}else{$before[$name]}
+        [Environment]::SetEnvironmentVariable($name,$value,'Process')
+    }
     $mutex.ReleaseMutex();$mutex.Dispose()
 }
 exit $code
